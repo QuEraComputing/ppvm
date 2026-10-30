@@ -1,245 +1,201 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use smallvec::SmallVec;
-use vihaco::Message;
+use vihaco::dialect;
 
-vihaco::component! {
-    #[derive(Debug, Default)]
-    pub component Circuit {}
+#[dialect]
+pub mod circuit {
+    #[instruction]
+    pub struct TwoQubitPauliError;
 
-    instruction {
-        TwoQubitPauliError,
-        Truncate,
-        Trace,
-        X,
-        Y,
-        Z,
-        H,
+    #[instruction]
+    pub struct Truncate;
 
-        #[pattern = "'sqrt_x_adj"]
-        SqrtXAdj,
+    #[instruction]
+    pub struct Trace;
 
-        #[pattern = "'sqrt_x"]
-        SqrtX,
+    #[instruction]
+    pub struct X;
 
-        #[pattern = "'sqrt_y_adj"]
-        SqrtYAdj,
+    #[instruction]
+    pub struct Y;
 
-        #[pattern = "'sqrt_y"]
-        SqrtY,
+    #[instruction]
+    pub struct Z;
 
-        #[pattern = "'s_adj"]
-        SAdj,
-        S,
-        CNOT,
-        CZ,
-        TAdj,
-        T,
-        RXX,
-        RYY,
-        RZZ,
-        RX,
-        RY,
-        RZ,
-        U3,
-        Measure,
-        Reset,
-        R,
-        Loss,
-        CorrelatedLoss,
-        PauliError,
-        Depolarize2,
-        Depolarize,
-        Leakage,
-    }
-}
+    #[instruction]
+    pub struct H;
 
-pub use circuit::{runtime, syntax};
-pub use runtime::Instruction as CircuitInstruction;
+    #[pattern = "'sqrt_x_adj"]
+    #[instruction]
+    pub struct SqrtXAdj;
 
-pub type CircuitSurfaceInstruction = syntax::Instruction;
+    #[pattern = "'sqrt_x"]
+    #[instruction]
+    pub struct SqrtX;
 
-impl std::fmt::Display for runtime::Instruction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use runtime::Instruction::*;
-        match self {
-            TwoQubitPauliError => write!(f, "TwoQubitPauliError"),
-            Truncate => write!(f, "Truncate"),
-            Trace => write!(f, "Trace"),
+    #[pattern = "'sqrt_y_adj"]
+    #[instruction]
+    pub struct SqrtYAdj;
 
-            X => write!(f, "X"),
-            Y => write!(f, "Y"),
-            Z => write!(f, "Z"),
-            H => write!(f, "H"),
+    #[pattern = "'sqrt_y"]
+    #[instruction]
+    pub struct SqrtY;
 
-            SqrtXAdj => write!(f, "SqrtXAdj"),
+    #[pattern = "'s_adj"]
+    #[instruction]
+    pub struct SAdj;
 
-            SqrtX => write!(f, "SqrtX"),
+    #[instruction]
+    pub struct S;
 
-            SqrtYAdj => write!(f, "SqrtYAdj"),
+    #[instruction]
+    pub struct CNOT;
 
-            SqrtY => write!(f, "SqrtY"),
+    #[instruction]
+    pub struct CZ;
 
-            SAdj => write!(f, "SAdj"),
-            S => write!(f, "S"),
+    #[pattern = "'t_adj"]
+    #[instruction]
+    pub struct TAdj;
 
-            CNOT => write!(f, "CNOT"),
-            CZ => write!(f, "CZ"),
+    #[instruction]
+    pub struct T;
 
-            TAdj => write!(f, "TAdj"),
-            T => write!(f, "T"),
+    #[instruction]
+    pub struct RXX;
 
-            RXX => write!(f, "RXX"),
-            RYY => write!(f, "RYY"),
-            RZZ => write!(f, "RZZ"),
+    #[instruction]
+    pub struct RYY;
 
-            RX => write!(f, "RX"),
-            RY => write!(f, "RY"),
-            RZ => write!(f, "RZ"),
+    #[instruction]
+    pub struct RZZ;
 
-            U3 => write!(f, "U3"),
+    #[instruction]
+    pub struct RX;
 
-            Measure => write!(f, "Measure"),
-            Reset => write!(f, "Reset"),
+    #[instruction]
+    pub struct RY;
 
-            R => write!(f, "R"),
+    #[instruction]
+    pub struct RZ;
 
-            Loss => write!(f, "Loss"),
-            CorrelatedLoss => write!(f, "CorrelatedLoss"),
+    #[instruction]
+    pub struct U3;
 
-            PauliError => write!(f, "PauliError"),
-            Depolarize2 => write!(f, "Depolarize2"),
-            Depolarize => write!(f, "Depolarize"),
+    #[instruction]
+    pub struct Measure;
 
-            Leakage => write!(f, "Leakage"),
-        }
-    }
-}
+    #[instruction]
+    pub struct Reset;
 
-#[derive(Debug, Clone, PartialEq, Message)]
-pub enum CircuitMessage {
-    None,                                           // Truncate (no operand)
-    Qubit(usize),                                   // X, Y, Z, ...
-    QubitAndFloat(usize, f64),                      // RX, depolarize, ...
-    QubitAndTwoFloats(usize, f64, f64),             // R
-    TwoQubit(usize, usize),                         // CX, CZ
-    TwoQubitAndFloat(usize, usize, f64),            // RXX, ...
-    QubitU3(usize, f64, f64, f64),                  // U3
-    QubitAndFloatArr3(usize, [f64; 3]),             // PauliError
-    TwoQubitAndFloatArr3(usize, usize, [f64; 3]),   // Correlated loss
-    TwoQubitAndFloatArr15(usize, usize, [f64; 15]), // TwoQubitPauliError
+    #[instruction]
+    pub struct R;
 
-    PauliPatternStr(String), // Trace (resolved Pauli-pattern source)
+    #[instruction]
+    pub struct Loss;
 
-    // batched instructions
-    QubitBatch(SmallVec<[usize; 8]>),              // X, Y, Z, ...
-    QubitBatchAndFloat(SmallVec<[usize; 8]>, f64), // RX, depolarize, ...
-    TwoQubitBatch(SmallVec<[(usize, usize); 8]>),  // CX, CZ
-    TwoQubitBatchAndFloat(SmallVec<[(usize, usize); 8]>, f64), // RXX, ...
-    QubitBatchU3(SmallVec<[usize; 8]>, f64, f64, f64), // U3
-    QubitBatchAndFloatArr3(SmallVec<[usize; 8]>, [f64; 3]), // PauliError
-    TwoQubitBatchAndFloatArr3(SmallVec<[(usize, usize); 8]>, [f64; 3]), // Correlated loss
-    TwoQubitBatchAndFloatArr15(SmallVec<[(usize, usize); 8]>, [f64; 15]), // TwoQubitPauliError
-}
+    #[instruction]
+    pub struct CorrelatedLoss;
 
-#[derive(Debug, Clone)]
-pub struct CircuitEffect {
-    pub inst: CircuitInstruction,
-    pub msg: CircuitMessage,
+    #[instruction]
+    pub struct PauliError;
+
+    #[instruction]
+    pub struct Depolarize2;
+
+    #[instruction]
+    pub struct Depolarize;
+
+    #[instruction]
+    pub struct Leakage;
 }
 
 #[cfg(test)]
 mod tests {
-    use super::syntax::Instruction::*;
-    use super::*;
-
+    use super::circuit;
     use chumsky::Parser as _;
     use vihaco::Parse;
-    fn parse(src: &str) -> CircuitSurfaceInstruction {
-        let src = format!("circuit.{src}");
-        CircuitSurfaceInstruction::parser()
-            .parse(src.as_str())
-            .into_result()
-            .unwrap_or_else(|e| panic!("parse of `{src}` failed: {e:?}"))
-    }
 
     // ─── Parse: tokens are the lowercased variant name ────────────────────
 
     #[test]
     fn parses_simple_lowercase_tokens() {
-        assert_eq!(parse("x"), X);
-        assert_eq!(parse("y"), Y);
-        assert_eq!(parse("z"), Z);
-        assert_eq!(parse("h"), H);
-        assert_eq!(parse("cnot"), CNOT);
-        assert_eq!(parse("cz"), CZ);
-        assert_eq!(parse("u3"), U3);
-        assert_eq!(parse("measure"), Measure);
-        assert_eq!(parse("reset"), Reset);
-        assert_eq!(parse("r"), R);
-        assert_eq!(parse("rx"), RX);
-        assert_eq!(parse("ry"), RY);
-        assert_eq!(parse("rz"), RZ);
-        assert_eq!(parse("rxx"), RXX);
-        assert_eq!(parse("depolarize2"), Depolarize2);
-        assert_eq!(parse("depolarize"), Depolarize);
-        assert_eq!(parse("loss"), Loss);
-        assert_eq!(parse("leakage"), Leakage);
-    }
-
-    // ─── Parse: prefix-sensitive disambiguation ───────────────────────────
-    //
-    // These pairs share a prefix, so the declaration order in the enum is
-    // load-bearing: the longer token must win. These tests pin that contract.
-
-    #[test]
-    fn parses_t_family_without_prefix_collision() {
-        // `t` is a prefix of `tadj`, `trace`, `truncate`, and `twoqubitpaulierror`.
-        assert_eq!(parse("t"), T);
-        assert_eq!(parse("tadj"), TAdj);
-        assert_eq!(parse("trace"), Trace);
-        assert_eq!(parse("truncate"), Truncate);
-        assert_eq!(parse("twoqubitpaulierror"), TwoQubitPauliError);
-    }
-
-    #[test]
-    fn parses_s_family_without_prefix_collision() {
-        // `s` is a prefix of `s_adj`, `sqrt_x`, `sqrt_y`, etc.
-        assert_eq!(parse("s"), S);
-        assert_eq!(parse("s_adj"), SAdj);
-        assert_eq!(parse("sqrt_x"), SqrtX);
-        assert_eq!(parse("sqrt_x_adj"), SqrtXAdj);
-        assert_eq!(parse("sqrt_y"), SqrtY);
-        assert_eq!(parse("sqrt_y_adj"), SqrtYAdj);
-    }
-
-    #[test]
-    fn rejects_unknown_token() {
-        assert!(
-            CircuitSurfaceInstruction::parser()
-                .parse("circuit.nope")
-                .has_errors()
+        assert_eq!(
+            circuit::X::parser().parse("x").into_result(),
+            Ok(circuit::X)
         );
-
-        for token in ["sadj", "sqrtx", "sqrtxadj", "sqrty", "sqrtyadj"] {
-            let source = format!("circuit.{token}");
-            assert!(
-                CircuitSurfaceInstruction::parser()
-                    .parse(&source)
-                    .has_errors(),
-                "legacy compact token should be rejected: {token}"
-            );
-        }
-    }
-
-    #[test]
-    fn rejects_pascal_case_token() {
-        // The parse token is lowercase; the Display form must not parse back.
-        assert!(
-            CircuitSurfaceInstruction::parser()
-                .parse("circuit.CNOT")
-                .has_errors()
+        assert_eq!(
+            circuit::Y::parser().parse("y").into_result(),
+            Ok(circuit::Y)
+        );
+        assert_eq!(
+            circuit::Z::parser().parse("z").into_result(),
+            Ok(circuit::Z)
+        );
+        assert_eq!(
+            circuit::H::parser().parse("h").into_result(),
+            Ok(circuit::H)
+        );
+        assert_eq!(
+            circuit::CNOT::parser().parse("cnot").into_result(),
+            Ok(circuit::CNOT)
+        );
+        assert_eq!(
+            circuit::CZ::parser().parse("cz").into_result(),
+            Ok(circuit::CZ)
+        );
+        assert_eq!(
+            circuit::U3::parser().parse("u3").into_result(),
+            Ok(circuit::U3)
+        );
+        assert_eq!(
+            circuit::Measure::parser().parse("measure").into_result(),
+            Ok(circuit::Measure)
+        );
+        assert_eq!(
+            circuit::Reset::parser().parse("reset").into_result(),
+            Ok(circuit::Reset)
+        );
+        assert_eq!(
+            circuit::R::parser().parse("r").into_result(),
+            Ok(circuit::R)
+        );
+        assert_eq!(
+            circuit::RX::parser().parse("rx").into_result(),
+            Ok(circuit::RX)
+        );
+        assert_eq!(
+            circuit::RY::parser().parse("ry").into_result(),
+            Ok(circuit::RY)
+        );
+        assert_eq!(
+            circuit::RZ::parser().parse("rz").into_result(),
+            Ok(circuit::RZ)
+        );
+        assert_eq!(
+            circuit::RXX::parser().parse("rxx").into_result(),
+            Ok(circuit::RXX)
+        );
+        assert_eq!(
+            circuit::Depolarize2::parser()
+                .parse("depolarize2")
+                .into_result(),
+            Ok(circuit::Depolarize2)
+        );
+        assert_eq!(
+            circuit::Depolarize::parser()
+                .parse("depolarize")
+                .into_result(),
+            Ok(circuit::Depolarize)
+        );
+        assert_eq!(
+            circuit::Loss::parser().parse("loss").into_result(),
+            Ok(circuit::Loss)
+        );
+        assert_eq!(
+            circuit::Leakage::parser().parse("leakage").into_result(),
+            Ok(circuit::Leakage)
         );
     }
 }

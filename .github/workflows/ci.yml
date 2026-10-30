@@ -115,9 +115,13 @@ jobs:
         run: cargo build --target wasm32-unknown-unknown --workspace --exclude ppvm-python-native --exclude ppvm-cli --exclude ppvm-tui
 
   python-tests:
-    name: Python tests
+    name: Python tests (${{ matrix.python-version }})
     needs: pre-commit
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
 
@@ -125,10 +129,16 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Install Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Show test interpreter
+        run: uv run --project ppvm-python --python ${{ matrix.python-version }} python --version
 
       - name: Run Python tests
-        run: uv run --project ppvm-python --group dev pytest ppvm-python/test/ docs/examples/
+        run: uv run --project ppvm-python --python ${{ matrix.python-version }} --group dev pytest ppvm-python/test/ docs/examples/
 
   # The pure-Rust crates are platform-agnostic and fully verified on Linux by
   # the jobs above. The PyO3 extension is the only OS-sensitive artifact (macOS

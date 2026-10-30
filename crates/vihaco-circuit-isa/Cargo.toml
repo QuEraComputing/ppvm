@@ -10,8 +10,5 @@ description = "Quantum-circuit instruction set for the vihaco virtual machine, u
 chumsky = "0.10"
 eyre = "0.6.12"
 smallvec = "1.15.1"
-vihaco = "0.4.1"
-vihaco-parser = "0.4.1"
-
-[package.metadata.cargo-machete]
-ignored = ["eyre", "vihaco-parser"]  # transitive dependency in vihaco, somehow not handled correctly by machete
+vihaco = { version = "0.7.0", features = ["program-image-execution"] }
+vihaco-stdlib = { version = "0.7.0", features = ["program-image-execution"] }

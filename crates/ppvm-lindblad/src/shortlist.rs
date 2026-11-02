@@ -413,6 +413,10 @@ impl<const C: usize> CandidateProposer<C> for ShortlistScoreProposer<C> {
                     .sum();
             },
         );
+        // Selection reads neither table, and both are rebuilt by the next proposal.
+        // Releasing them keeps them out of the exponential's peak allocation.
+        self.shortlist.positions.table = HashTable::new();
+        self.shortlist.order = Vec::new();
         Ok(())
     }
 

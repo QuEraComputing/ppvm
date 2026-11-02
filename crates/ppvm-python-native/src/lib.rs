@@ -33,6 +33,31 @@ pub(crate) fn flat_pairs(targets: &[usize]) -> PyResult<Vec<(usize, usize)>> {
         .collect())
 }
 
+pub(crate) fn flat_triples(
+    targets: &[usize],
+    n_qubits: usize,
+) -> PyResult<Vec<(usize, usize, usize)>> {
+    if !targets.len().is_multiple_of(3) {
+        return Err(PyValueError::new_err(
+            "CCZ requires a multiple of three targets",
+        ));
+    }
+    targets
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .map(|&[a, b, c]| {
+            if a >= n_qubits || b >= n_qubits || c >= n_qubits {
+                return Err(PyValueError::new_err("CCZ target out of range"));
+            }
+            if a == b || a == c || b == c {
+                return Err(PyValueError::new_err("CCZ requires distinct targets"));
+            }
+            Ok((a, b, c))
+        })
+        .collect()
+}
+
 // Imported by Python only as the private `ppvm._core` submodule; maturin's
 // `module-name = "ppvm._core"` maps this `PyInit__core` symbol into the wheel.
 #[pymodule]

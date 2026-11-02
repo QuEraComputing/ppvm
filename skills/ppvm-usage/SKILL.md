@@ -259,10 +259,17 @@ In the tables below: **R** = Rust on both backends, **P-S** = Python `PauliSum` 
 | `rxx`, `ryy`, `rzz`          | ✓ | ✓   | ✓   |
 | `rxy`, `rxz`, `ryx`, `ryz`, `rzx`, `rzy` | ✓ | — | — |
 | `t`, `t_dag`                 | ✓ |  —  | ✓   |
+| `ccz(a, b, c)`               | ✓ | ✓   | ✓   |
 | `u3(q, theta, phi, lam)`     | ✓ |  —  | ✓   |
 | `crx(c, t, theta)`           | trait only (no impl) | — | — |
 
 Important: the six off-diagonal two-qubit rotations (`rxy`, `rxz`, `ryx`, `ryz`, `rzx`, `rzy`) come from the Rust `RotationTwo` trait's `def_rotation!` macro; the Python bindings only forward the diagonal three (`rxx`, `ryy`, `rzz`). Calling any of the off-diagonal names on Python `PauliSum` or `GeneralizedTableau` raises `AttributeError`.
+
+`ccz` is a native gate on `PauliSum`, `GeneralizedTableau`, and
+`GeneralizedTableauSum`. Python accepts flat triples, for example
+`state.ccz([0, 1, 2, 3, 4, 5])`; Rust also exposes `ccz_many`.
+If any operand is lost or leaked, that triple has no effect.
+Pauli sums accept `truncate=False` to defer pruning as with other gates.
 
 ### Measurement, reset, noise
 

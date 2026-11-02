@@ -11,6 +11,7 @@ import numpy as np
 from . import _core
 from ._core import StimProgram
 from .mixins import (
+    CCZMixin,
     CliffordExtensionMixin,
     CliffordMixin,
     LossMixin,
@@ -57,6 +58,7 @@ _BY_VALUE = (MeasurementResult.ZERO, MeasurementResult.ONE, MeasurementResult.LO
 
 @dataclass(frozen=True)
 class GeneralizedTableau(
+    CCZMixin,
     CliffordMixin,
     CliffordExtensionMixin,
     RotationsMixin,

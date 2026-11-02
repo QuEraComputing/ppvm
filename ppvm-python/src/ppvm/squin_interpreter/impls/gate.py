@@ -105,28 +105,11 @@ class GateMethods(interp.MethodTable):
         frame: interp.Frame,
         stmt: gate.stmts.CCZ,
     ):
-        """Apply CCZ using seven T/T-adjoint gates and six CNOTs."""
         controls1: ilist.IList[GeneralizedTableauQubit, Any] = frame.get(stmt.controls1)
         controls2: ilist.IList[GeneralizedTableauQubit, Any] = frame.get(stmt.controls2)
         targets: ilist.IList[GeneralizedTableauQubit, Any] = frame.get(stmt.targets)
-        backend = interp_.backend
-
         for control1, control2, target in zip(controls1, controls2, targets):
-            a, b, c = control1.addr, control2.addr, target.addr
-            if any(backend.is_lost(q) or backend.is_leaked(q) for q in (a, b, c)):
-                continue
-            # 4abc = a + b + c - (a^b) - (a^c) - (b^c) + (a^b^c).
-            backend.t(a, b, c)
-            backend.cnot(a, b)
-            backend.t_dag(b)
-            backend.cnot(a, b)
-            backend.cnot(a, c)
-            backend.t_dag(c)
-            backend.cnot(b, c)
-            backend.t(c)
-            backend.cnot(a, c)
-            backend.t_dag(c)
-            backend.cnot(b, c)
+            interp_.backend.ccz(control1.addr, control2.addr, target.addr)
 
     @interp.impl(gate.stmts.U3)
     def u3(

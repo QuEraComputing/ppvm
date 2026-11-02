@@ -5,7 +5,7 @@
 
 use crate::sector::Sector;
 use crate::spec::LindbladSpec;
-use crate::truncate::{add_leakage_capped, cap_basis, prune_basis};
+use crate::truncate::{add_leakage_capped, cap_basis, cap_basis_with_scratch, prune_basis};
 use crate::word::Word;
 use crate::{CandidateBuffer, CandidateProposer, Error, PcStepConfig, PcStepWorkspace, mf_expm};
 use num::Complex;
@@ -332,7 +332,8 @@ impl<const C: usize> LindbladSpec<C> {
 
         // 5. Prune basis entries below `drop_tol` (protected words never dropped).
         prune_basis(basis, coeffs, drop_tol, protected);
-        cap_basis(basis, coeffs, max_basis, protected);
+        // The exponential's work vector is idle until the next step's proposal.
+        cap_basis_with_scratch(basis, coeffs, max_basis, protected, &mut workspace.taylor);
         Ok(t)
     }
 

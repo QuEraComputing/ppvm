@@ -3,8 +3,8 @@
 
 // pub mod bytecode;
 pub mod component;
-// pub mod composite;
 pub mod device_info;
+pub mod machine;
 pub mod measurements;
 pub mod observable;
 // pub mod shots;

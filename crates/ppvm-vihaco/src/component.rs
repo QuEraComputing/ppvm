@@ -67,33 +67,117 @@ macro_rules! batch_pairs_for {
     };
 }
 
-#[component]
-#[instructions { circuit }]
-pub struct CircuitExecutor<T, I, C>
+/// Trait defining all methods required to implement the backend of the VM component
+pub trait CircuitBackend {
+    type Config: Config<Coeff = f64>;
+    type State: Clifford
+        + CliffordExtensions
+        + Reset
+        + TGate<Self::Config>
+        + U3Gate<Self::Config>
+        + RotationOne<Self::Config>
+        + RotXY<Self::Config>
+        + RotationTwo<Self::Config>
+        + Depolarizing<Self::Config>
+        + Depolarizing2<Self::Config>
+        + PauliError<Self::Config>
+        + TwoQubitPauliError<Self::Config>
+        + LossChannel<Self::Config>
+        + CorrelatedLossChannel<Self::Config>
+        + LeakageChannel<Self::Config>;
+
+    fn state(&mut self) -> &mut Self::State;
+
+    // NOTE: methods that differ between backends get dedicated methods
+
+    fn measure(&mut self, _addr0: usize) -> eyre::Result<MeasurementOutcome> {
+        Err(eyre!("measure is not supported on this backend"))
+    }
+
+    fn leakage(&mut self, _addr0: usize, p0: f64, p1: f61) -> eyre::Result<()> {
+        Err(eyre!("leakage is not supported on this backend"))
+    }
+
+    fn loss(&mut self, _addr0: usize, p: f64) -> eyre::Result<()> {
+        Err(eyre!("loss is not supported on this backend"))
+    }
+
+    fn correlated_loss(&mut self, _addr0: usize, p0: f64, p1: f64, p2: f64) -> eyre::Result<()> {
+        Err(eyre!("loss is not supported on this backend"))
+    }
+
+    fn truncate(&mut self);
+
+    fn reset(&mut self);
+}
+
+impl<T, I, C> CircuitBackend for GeneralizedTableau<T, I, C>
 where
     T: Config<Coeff = f64>,
     <<T as Config>::Storage as BitView>::Store: PrimInt,
     I: TableauIndex + Send + Sync + std::fmt::Debug,
     C: SparseVector<Complex64, I> + std::fmt::Debug,
 {
-    pub tab: GeneralizedTableau<T, I, C>,
+    type Config = T;
+    type State = GeneralizedTableau<T, I, C>;
+
+    fn state(&mut self) -> &mut Self::State {
+        self
+    }
+
+    fn measure(&mut self, q: usize) -> eyre::Result<MeasurementOutcome> {
+        let m = LossyMeasure::measure(self, q);
+        let e = match m {
+            Some(b) => {
+                if b {
+                    MeasurementOutcome::One
+                } else {
+                    MeasurementOutcome::Zero
+                }
+            }
+            None => MeasurementOutcome::Lost,
+        };
+        Ok(e)
+    }
+
+    fn truncate(&mut self) {}
+
+    fn reset(&mut self) {
+        self.reset_all();
+    }
+}
+
+impl<T> CircuitBackend for PauliSum<T>
+where
+    T: Config<Coeff = f64>,
+{
+    type Config = T;
+    type State = PauliSum<T>;
+
+    fn state(&mut self) -> &mut Self::State {
+        self
+    }
+
+    fn reset(&mut self) {
+        unimplemented!("TODO")
+    }
+}
+
+#[component]
+#[instructions { circuit }]
+pub struct CircuitExecutor<B: CircuitBackend> {
+    pub backend: B,
 }
 
 macro_rules! single_qubit_execute {
     ($leaf:ident, $method:ident) => {
-        impl<T, I, C> Execute<circuit::$leaf> for CircuitExecutor<T, I, C>
-        where
-            T: Config<Coeff = f64>,
-            <<T as Config>::Storage as BitView>::Store: PrimInt,
-            I: TableauIndex + Send + Sync + std::fmt::Debug,
-            C: SparseVector<Complex64, I> + std::fmt::Debug,
-        {
+        impl<B: CircuitBackend> Execute<circuit::$leaf> for CircuitExecutor<B> {
             type Effect = ();
             type Message = PopFromStack<usize>;
             type Error = eyre::Report;
 
             fn execute(&mut self, _: &circuit::$leaf, msg: Self::Message) -> eyre::Result<()> {
-                self.tab.$method(msg.0);
+                self.backend.state().$method(msg.0);
                 Ok(())
             }
         }
@@ -102,19 +186,13 @@ macro_rules! single_qubit_execute {
 
 macro_rules! two_qubit_execute {
     ($leaf:ident, $method:ident) => {
-        impl<T, I, C> Execute<circuit::$leaf> for CircuitExecutor<T, I, C>
-        where
-            T: Config<Coeff = f64>,
-            <<T as Config>::Storage as BitView>::Store: PrimInt,
-            I: TableauIndex + Send + Sync + std::fmt::Debug,
-            C: SparseVector<Complex64, I> + std::fmt::Debug,
-        {
+        impl<B: CircuitBackend> Execute<circuit::$leaf> for CircuitExecutor<B> {
             type Effect = ();
             type Message = PopFromStack<(usize, usize)>;
             type Error = eyre::Report;
 
             fn execute(&mut self, _: &circuit::$leaf, msg: Self::Message) -> eyre::Result<()> {
-                self.tab.$method(msg.0.0, msg.0.1);
+                self.backend.state().$method(msg.0.0, msg.0.1);
                 Ok(())
             }
         }
@@ -123,19 +201,13 @@ macro_rules! two_qubit_execute {
 
 macro_rules! single_qubit_rotation_execute {
     ($leaf:ident, $method:ident) => {
-        impl<T, I, C> Execute<circuit::$leaf> for CircuitExecutor<T, I, C>
-        where
-            T: Config<Coeff = f64>,
-            <<T as Config>::Storage as BitView>::Store: PrimInt,
-            I: TableauIndex + Send + Sync + std::fmt::Debug,
-            C: SparseVector<Complex64, I> + std::fmt::Debug,
-        {
+        impl<B: CircuitBackend> Execute<circuit::$leaf> for CircuitExecutor<B> {
             type Effect = ();
             type Message = PopFromStack<(usize, f64)>;
             type Error = eyre::Report;
 
             fn execute(&mut self, _: &circuit::$leaf, msg: Self::Message) -> eyre::Result<()> {
-                self.tab.$method(msg.0.0, msg.0.1);
+                self.backend.state().$method(msg.0.0, msg.0.1);
                 Ok(())
             }
         }
@@ -144,19 +216,13 @@ macro_rules! single_qubit_rotation_execute {
 
 macro_rules! two_qubit_rotation_execute {
     ($leaf:ident, $method:ident) => {
-        impl<T, I, C> Execute<circuit::$leaf> for CircuitExecutor<T, I, C>
-        where
-            T: Config<Coeff = f64>,
-            <<T as Config>::Storage as BitView>::Store: PrimInt,
-            I: TableauIndex + Send + Sync + std::fmt::Debug,
-            C: SparseVector<Complex64, I> + std::fmt::Debug,
-        {
+        impl<B: CircuitBackend> Execute<circuit::$leaf> for CircuitExecutor<B> {
             type Effect = ();
             type Message = PopFromStack<(usize, usize, f64)>;
             type Error = eyre::Report;
 
             fn execute(&mut self, _: &circuit::$leaf, msg: Self::Message) -> eyre::Result<()> {
-                self.tab.$method(msg.0.0, msg.0.1, msg.0.2);
+                self.backend.state().$method(msg.0.0, msg.0.1, msg.0.2);
                 Ok(())
             }
         }
@@ -194,121 +260,86 @@ two_qubit_rotation_execute!(Depolarize2, depolarize2);
 
 // TODO: batched gates; need custom messages
 
-impl<T, I, C> Execute<circuit::U3> for CircuitExecutor<T, I, C>
-where
-    T: Config<Coeff = f64>,
-    <<T as Config>::Storage as BitView>::Store: PrimInt,
-    I: TableauIndex + Send + Sync + std::fmt::Debug,
-    C: SparseVector<Complex64, I> + std::fmt::Debug,
-{
+impl<B: CircuitBackend> Execute<circuit::U3> for CircuitExecutor<B> {
     type Effect = ();
     type Message = PopFromStack<(usize, f64, f64, f64)>;
     type Error = eyre::Report;
 
     fn execute(&mut self, _: &circuit::U3, msg: Self::Message) -> eyre::Result<()> {
-        self.tab.u3(msg.0.0, msg.0.1, msg.0.2, msg.0.3);
+        self.backend.state().u3(msg.0.0, msg.0.1, msg.0.2, msg.0.3);
         Ok(())
     }
 }
 
-impl<T, I, C> Execute<circuit::R> for CircuitExecutor<T, I, C>
-where
-    T: Config<Coeff = f64>,
-    <<T as Config>::Storage as BitView>::Store: PrimInt,
-    I: TableauIndex + Send + Sync + std::fmt::Debug,
-    C: SparseVector<Complex64, I> + std::fmt::Debug,
-{
+impl<B: CircuitBackend> Execute<circuit::R> for CircuitExecutor<B> {
     type Effect = ();
     type Message = PopFromStack<(usize, f64, f64)>;
     type Error = eyre::Report;
 
     fn execute(&mut self, _: &circuit::R, msg: Self::Message) -> eyre::Result<()> {
-        self.tab.r(msg.0.0, msg.0.1, msg.0.2);
+        self.backend.state().r(msg.0.0, msg.0.1, msg.0.2);
         Ok(())
     }
 }
 
-impl<T, I, C> Execute<circuit::Leakage> for CircuitExecutor<T, I, C>
-where
-    T: Config<Coeff = f64>,
-    <<T as Config>::Storage as BitView>::Store: PrimInt,
-    I: TableauIndex + Send + Sync + std::fmt::Debug,
-    C: SparseVector<Complex64, I> + std::fmt::Debug,
-{
+impl<B: CircuitBackend> Execute<circuit::Leakage> for CircuitExecutor<B> {
     type Effect = ();
     type Message = PopFromStack<(usize, f64, f64)>;
     type Error = eyre::Report;
 
     fn execute(&mut self, _: &circuit::Leakage, msg: Self::Message) -> eyre::Result<()> {
-        self.tab.leakage_channel(msg.0.0, msg.0.1, msg.0.2);
+        self.backend
+            .state()
+            .leakage_channel(msg.0.0, msg.0.1, msg.0.2);
         Ok(())
     }
 }
 
-impl<T, I, C> Execute<circuit::PauliError> for CircuitExecutor<T, I, C>
-where
-    T: Config<Coeff = f64>,
-    <<T as Config>::Storage as BitView>::Store: PrimInt,
-    I: TableauIndex + Send + Sync + std::fmt::Debug,
-    C: SparseVector<Complex64, I> + std::fmt::Debug,
-{
+impl<B: CircuitBackend> Execute<circuit::PauliError> for CircuitExecutor<B> {
     type Effect = ();
     type Message = PopFromStack<(usize, [f64; 3])>;
     type Error = eyre::Report;
 
     fn execute(&mut self, _: &circuit::PauliError, msg: Self::Message) -> eyre::Result<()> {
-        self.tab.pauli_error(msg.0.0, msg.0.1);
+        self.backend.state().pauli_error(msg.0.0, msg.0.1);
         Ok(())
     }
 }
 
-impl<T, I, C> Execute<circuit::TwoQubitPauliError> for CircuitExecutor<T, I, C>
-where
-    T: Config<Coeff = f64>,
-    <<T as Config>::Storage as BitView>::Store: PrimInt,
-    I: TableauIndex + Send + Sync + std::fmt::Debug,
-    C: SparseVector<Complex64, I> + std::fmt::Debug,
-{
+impl<B: CircuitBackend> Execute<circuit::TwoQubitPauliError> for CircuitExecutor<B> {
     type Effect = ();
     type Message = PopFromStack<(usize, usize, [f64; 15])>;
     type Error = eyre::Report;
 
     fn execute(&mut self, _: &circuit::TwoQubitPauliError, msg: Self::Message) -> eyre::Result<()> {
-        self.tab.two_qubit_pauli_error(msg.0.0, msg.0.1, msg.0.2);
+        // TODO: probably needs a custom message since we can't pop float arrays
+        self.backend
+            .state()
+            .two_qubit_pauli_error(msg.0.0, msg.0.1, msg.0.2);
         Ok(())
     }
 }
 
-impl<T, I, C> Execute<circuit::CorrelatedLoss> for CircuitExecutor<T, I, C>
-where
-    T: Config<Coeff = f64>,
-    <<T as Config>::Storage as BitView>::Store: PrimInt,
-    I: TableauIndex + Send + Sync + std::fmt::Debug,
-    C: SparseVector<Complex64, I> + std::fmt::Debug,
-{
+impl<B: CircuitBackend> Execute<circuit::CorrelatedLoss> for CircuitExecutor<B> {
     type Effect = ();
     type Message = PopFromStack<(usize, usize, [f64; 3])>;
     type Error = eyre::Report;
 
     fn execute(&mut self, _: &circuit::CorrelatedLoss, msg: Self::Message) -> eyre::Result<()> {
-        self.tab.correlated_loss_channel(msg.0.0, msg.0.1, msg.0.2);
+        self.backend
+            .state()
+            .correlated_loss_channel(msg.0.0, msg.0.1, msg.0.2);
         Ok(())
     }
 }
 
-impl<T, I, C> Execute<circuit::Measure> for CircuitExecutor<T, I, C>
-where
-    T: Config<Coeff = f64>,
-    <<T as Config>::Storage as BitView>::Store: PrimInt,
-    I: TableauIndex + Send + Sync + std::fmt::Debug,
-    C: SparseVector<Complex64, I> + std::fmt::Debug,
-{
+impl<B: CircuitBackend> Execute<circuit::Measure> for CircuitExecutor<B> {
     type Effect = Effects<CircuitOutcomeEffect>;
     type Message = PopFromStack<usize>;
     type Error = eyre::Report;
 
     fn execute(&mut self, _: &circuit::Measure, msg: Self::Message) -> eyre::Result<Self::Effect> {
-        let outcome: MeasurementOutcome = self.tab.measure(msg.0).into();
+        let outcome = self.backend.measure(msg.0)?;
         Ok(Effects::one(CircuitOutcomeEffect::Measurement(
             MeasurementEffect {
                 measurement_results: smallvec::smallvec![outcome],
@@ -317,30 +348,18 @@ where
     }
 }
 
-// Truncate is a no-op on the tableau: gate methods already prune via the threshold.
-impl<T, I, C> Execute<circuit::Truncate> for CircuitExecutor<T, I, C>
-where
-    T: Config<Coeff = f64>,
-    <<T as Config>::Storage as BitView>::Store: PrimInt,
-    I: TableauIndex + Send + Sync + std::fmt::Debug,
-    C: SparseVector<Complex64, I> + std::fmt::Debug,
-{
+impl<B: CircuitBackend> Execute<circuit::Truncate> for CircuitExecutor<B> {
     type Effect = ();
     type Message = vihaco::NoMessage;
     type Error = eyre::Report;
 
     fn execute(&mut self, _: &circuit::Truncate, _: Self::Message) -> eyre::Result<()> {
+        self.backend.truncate();
         Ok(())
     }
 }
 
-impl<T, I, C> Execute<circuit::Trace> for CircuitExecutor<T, I, C>
-where
-    T: Config<Coeff = f64>,
-    <<T as Config>::Storage as BitView>::Store: PrimInt,
-    I: TableauIndex + Send + Sync + std::fmt::Debug,
-    C: SparseVector<Complex64, I> + std::fmt::Debug,
-{
+impl<B: CircuitBackend> Execute<circuit::Trace> for CircuitExecutor<B> {
     type Effect = ();
     type Message = vihaco::NoMessage;
     type Error = eyre::Report;
@@ -350,398 +369,8 @@ where
     }
 }
 
-impl<T, I, C> vihaco::Reset for CircuitExecutor<T, I, C>
-where
-    T: Config<Coeff = f64>,
-    <<T as Config>::Storage as BitView>::Store: PrimInt,
-    I: TableauIndex + Send + Sync + std::fmt::Debug,
-    C: SparseVector<Complex64, I> + std::fmt::Debug,
-{
+impl<B: CircuitBackend> vihaco::Reset for CircuitExecutor<B> {
     fn reset(&mut self) {
-        self.tab.reset_all();
+        self.backend.reset();
     }
 }
-
-/// PauliSum-backed executor (Heisenberg picture). Answers the same `circuit`
-/// dialect as `CircuitExecutor`, but without measurement / reset / loss support.
-#[component]
-#[instructions { circuit }]
-pub struct PauliSumExecutor<T>
-where
-    T: Config<Coeff = f64>,
-{
-    pub state: PauliSum<T>,
-    /// Snapshot of the seeded observable, restored by `reset`.
-    initial: PauliSum<T>,
-}
-
-/// LossyPauliSum-backed executor. Same as `PauliSumExecutor` plus `Loss` /
-/// `CorrelatedLoss`; `T` uses `LossyPauliWord` (see `LossyPauliSumConfig`).
-#[component]
-#[instructions { circuit }]
-pub struct LossyPauliSumExecutor<T>
-where
-    T: Config<Coeff = f64>,
-{
-    pub state: PauliSum<T>,
-    /// Snapshot of the seeded observable, restored by `reset`.
-    initial: PauliSum<T>,
-}
-
-macro_rules! paulisum_single_qubit_execute {
-    ($exec:ident, $leaf:ident, $method:ident) => {
-        impl<T> Execute<circuit::$leaf> for $exec<T>
-        where
-            T: Config<Coeff = f64>,
-        {
-            type Effect = ();
-            type Message = PopFromStack<usize>;
-            type Error = eyre::Report;
-
-            fn execute(&mut self, _: &circuit::$leaf, msg: Self::Message) -> eyre::Result<()> {
-                self.state.$method(msg.0);
-                Ok(())
-            }
-        }
-    };
-}
-
-macro_rules! paulisum_two_qubit_execute {
-    ($exec:ident, $leaf:ident, $method:ident) => {
-        impl<T> Execute<circuit::$leaf> for $exec<T>
-        where
-            T: Config<Coeff = f64>,
-        {
-            type Effect = ();
-            type Message = PopFromStack<(usize, usize)>;
-            type Error = eyre::Report;
-
-            fn execute(&mut self, _: &circuit::$leaf, msg: Self::Message) -> eyre::Result<()> {
-                self.state.$method(msg.0.0, msg.0.1);
-                Ok(())
-            }
-        }
-    };
-}
-
-macro_rules! paulisum_single_qubit_rotation_execute {
-    ($exec:ident, $leaf:ident, $method:ident) => {
-        impl<T> Execute<circuit::$leaf> for $exec<T>
-        where
-            T: Config<Coeff = f64>,
-        {
-            type Effect = ();
-            type Message = PopFromStack<(usize, f64)>;
-            type Error = eyre::Report;
-
-            fn execute(&mut self, _: &circuit::$leaf, msg: Self::Message) -> eyre::Result<()> {
-                self.state.$method(msg.0.0, msg.0.1);
-                Ok(())
-            }
-        }
-    };
-}
-
-macro_rules! paulisum_two_qubit_rotation_execute {
-    ($exec:ident, $leaf:ident, $method:ident) => {
-        impl<T> Execute<circuit::$leaf> for $exec<T>
-        where
-            T: Config<Coeff = f64>,
-        {
-            type Effect = ();
-            type Message = PopFromStack<(usize, usize, f64)>;
-            type Error = eyre::Report;
-
-            fn execute(&mut self, _: &circuit::$leaf, msg: Self::Message) -> eyre::Result<()> {
-                self.state.$method(msg.0.0, msg.0.1, msg.0.2);
-                Ok(())
-            }
-        }
-    };
-}
-
-/// Rejects an instruction the backend can't simulate. Message / effect types
-/// match `CircuitExecutor` so programs stay backend-agnostic.
-macro_rules! paulisum_unsupported_execute {
-    ($exec:ident, $leaf:ident, $msg:ty, $effect:ty, $why:expr) => {
-        impl<T> Execute<circuit::$leaf> for $exec<T>
-        where
-            T: Config<Coeff = f64>,
-        {
-            type Effect = $effect;
-            type Message = $msg;
-            type Error = eyre::Report;
-
-            fn execute(&mut self, _: &circuit::$leaf, _: Self::Message) -> eyre::Result<$effect> {
-                Err(eyre!($why))
-            }
-        }
-    };
-}
-
-/// Every `Execute` impl shared by `PauliSumExecutor` and `LossyPauliSumExecutor`.
-macro_rules! paulisum_common_execute {
-    ($exec:ident, $backend:literal) => {
-        paulisum_single_qubit_execute!($exec, X, x);
-        paulisum_single_qubit_execute!($exec, Y, y);
-        paulisum_single_qubit_execute!($exec, Z, z);
-        paulisum_single_qubit_execute!($exec, H, h);
-        paulisum_single_qubit_execute!($exec, S, s);
-        paulisum_single_qubit_execute!($exec, SAdj, s_dag);
-        paulisum_single_qubit_execute!($exec, SqrtX, sqrt_x);
-        paulisum_single_qubit_execute!($exec, SqrtXAdj, sqrt_x_dag);
-        paulisum_single_qubit_execute!($exec, SqrtY, sqrt_y);
-        paulisum_single_qubit_execute!($exec, SqrtYAdj, sqrt_y_dag);
-
-        paulisum_two_qubit_execute!($exec, CNOT, cnot);
-        paulisum_two_qubit_execute!($exec, CZ, cz);
-
-        paulisum_single_qubit_rotation_execute!($exec, RX, rx);
-        paulisum_single_qubit_rotation_execute!($exec, RY, ry);
-        paulisum_single_qubit_rotation_execute!($exec, RZ, rz);
-
-        paulisum_two_qubit_rotation_execute!($exec, RXX, rxx);
-        paulisum_two_qubit_rotation_execute!($exec, RYY, ryy);
-        paulisum_two_qubit_rotation_execute!($exec, RZZ, rzz);
-
-        paulisum_single_qubit_rotation_execute!($exec, Depolarize, depolarize1);
-        paulisum_two_qubit_rotation_execute!($exec, Depolarize2, depolarize2);
-
-        // Leakage is GeneralizedTableau-only (pinned |0⟩/|1⟩), not a qutrit |L⟩ channel.
-        paulisum_unsupported_execute!($exec, Measure, PopFromStack<usize>, Effects<CircuitOutcomeEffect>,
-            concat!("measure is not supported on the ", $backend, " backend"));
-        paulisum_unsupported_execute!($exec, Reset, PopFromStack<usize>, (),
-            concat!("reset is not supported on the ", $backend, " backend"));
-        paulisum_unsupported_execute!($exec, Leakage, PopFromStack<(usize, f64, f64)>, (),
-            concat!("leakage is not supported on the ", $backend, " backend"));
-
-        // TODO: batched gates; need custom messages
-
-        impl<T> Execute<circuit::T> for $exec<T>
-        where
-            T: Config<Coeff = f64>,
-        {
-            type Effect = ();
-            type Message = PopFromStack<usize>;
-            type Error = eyre::Report;
-
-            fn execute(&mut self, _: &circuit::T, msg: Self::Message) -> eyre::Result<()> {
-                self.state.rz(msg.0, std::f64::consts::PI / 8.0);
-                Ok(())
-            }
-        }
-
-        impl<T> Execute<circuit::TAdj> for $exec<T>
-        where
-            T: Config<Coeff = f64>,
-        {
-            type Effect = ();
-            type Message = PopFromStack<usize>;
-            type Error = eyre::Report;
-
-            fn execute(&mut self, _: &circuit::TAdj, msg: Self::Message) -> eyre::Result<()> {
-                self.state.rz(msg.0, -std::f64::consts::PI / 8.0);
-                Ok(())
-            }
-        }
-
-        // U3(θ, φ, λ) = RZ(φ)·RY(θ)·RZ(λ); Heisenberg picture, so the tableau's
-        // rz(λ); ry(θ); rz(φ) runs reversed here.
-        impl<T> Execute<circuit::U3> for $exec<T>
-        where
-            T: Config<Coeff = f64>,
-        {
-            type Effect = ();
-            type Message = PopFromStack<(usize, f64, f64, f64)>;
-            type Error = eyre::Report;
-
-            fn execute(&mut self, _: &circuit::U3, msg: Self::Message) -> eyre::Result<()> {
-                let (addr, theta, phi, lam) = msg.0;
-                self.state.rz(addr, phi);
-                self.state.ry(addr, theta);
-                self.state.rz(addr, lam);
-                Ok(())
-            }
-        }
-
-        impl<T> Execute<circuit::R> for $exec<T>
-        where
-            T: Config<Coeff = f64>,
-        {
-            type Effect = ();
-            type Message = PopFromStack<(usize, f64, f64)>;
-            type Error = eyre::Report;
-
-            fn execute(&mut self, _: &circuit::R, msg: Self::Message) -> eyre::Result<()> {
-                self.state.r(msg.0.0, msg.0.1, msg.0.2);
-                Ok(())
-            }
-        }
-
-        impl<T> Execute<circuit::PauliError> for $exec<T>
-        where
-            T: Config<Coeff = f64>,
-        {
-            type Effect = ();
-            type Message = PopFromStack<(usize, [f64; 3])>;
-            type Error = eyre::Report;
-
-            fn execute(&mut self, _: &circuit::PauliError, msg: Self::Message) -> eyre::Result<()> {
-                self.state.pauli_error(msg.0.0, msg.0.1);
-                Ok(())
-            }
-        }
-
-        // CUSTOM MESSAGE: 2 addresses + 15 probabilities exceed vihaco's 16-element tuple limit.
-        impl<T> Execute<circuit::TwoQubitPauliError> for $exec<T>
-        where
-            T: Config<Coeff = f64>,
-        {
-            type Effect = ();
-            type Message = vihaco::NoMessage;
-            type Error = eyre::Report;
-
-            fn execute(
-                &mut self,
-                _: &circuit::TwoQubitPauliError,
-                _: Self::Message,
-            ) -> eyre::Result<()> {
-                unimplemented!("TODO: needs a custom message");
-            }
-        }
-
-        impl<T> Execute<circuit::Truncate> for $exec<T>
-        where
-            T: Config<Coeff = f64>,
-        {
-            type Effect = ();
-            type Message = vihaco::NoMessage;
-            type Error = eyre::Report;
-
-            fn execute(&mut self, _: &circuit::Truncate, _: Self::Message) -> eyre::Result<()> {
-                self.state.truncate();
-                Ok(())
-            }
-        }
-
-        // CUSTOM MESSAGE: the Pauli-pattern string can't come off the operand stack.
-        impl<T> Execute<circuit::Trace> for $exec<T>
-        where
-            T: Config<Coeff = f64>,
-        {
-            type Effect = ();
-            type Message = vihaco::NoMessage;
-            type Error = eyre::Report;
-
-            fn execute(&mut self, _: &circuit::Trace, _: Self::Message) -> eyre::Result<()> {
-                unimplemented!("TODO: needs a custom message");
-            }
-        }
-    };
-}
-
-paulisum_common_execute!(PauliSumExecutor, "PauliSum");
-paulisum_common_execute!(LossyPauliSumExecutor, "LossyPauliSum");
-
-paulisum_unsupported_execute!(PauliSumExecutor, Loss, PopFromStack<(usize, f64)>, (),
-    "loss is not supported on the PauliSum backend; use the LossyPauliSum backend instead");
-paulisum_unsupported_execute!(PauliSumExecutor, CorrelatedLoss, PopFromStack<(usize, usize, [f64; 3])>, (),
-    "correlated_loss is not supported on the PauliSum backend; use the LossyPauliSum backend instead");
-
-paulisum_single_qubit_rotation_execute!(LossyPauliSumExecutor, Loss, loss_channel);
-
-impl<T> Execute<circuit::CorrelatedLoss> for LossyPauliSumExecutor<T>
-where
-    T: Config<Coeff = f64>,
-{
-    type Effect = ();
-    type Message = PopFromStack<(usize, usize, [f64; 3])>;
-    type Error = eyre::Report;
-
-    fn execute(&mut self, _: &circuit::CorrelatedLoss, msg: Self::Message) -> eyre::Result<()> {
-        self.state.correlated_loss_channel(msg.0.0, msg.0.1, msg.0.2);
-        Ok(())
-    }
-}
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-
-//     fn info(n_qubits: usize) -> PPVMDeviceInfo {
-//         PPVMDeviceInfo {
-//             n_qubits,
-//             ..Default::default()
-//         }
-//     }
-
-//     /// Dispatch a single-qubit `Measure` and read the outcome out of the
-//     /// returned effect.
-//     fn measure(circuit: &mut Circuit, addr: usize) -> MeasurementOutcome {
-//         let effects = circuit
-//             .execute_instruction(&CircuitInstruction::Measure, &CircuitMessage::Qubit(addr))
-//             .unwrap();
-//         match effects.into_iter().next() {
-//             Some(CircuitOutcomeEffect::Measurement(m)) => m.measurement_results[0],
-//             other => panic!("expected a measurement effect, got {other:?}"),
-//         }
-//     }
-
-//     /// Smoke test: a single-qubit gate dispatches to the tableau backend and
-//     /// flips the qubit.
-//     #[test]
-//     fn tableau_backend_x_flips_qubit() {
-//         let mut circuit = Circuit::tableau(&info(1)).unwrap();
-//         circuit
-//             .execute_instruction(&CircuitInstruction::X, &CircuitMessage::Qubit(0))
-//             .unwrap();
-//         assert_eq!(measure(&mut circuit, 0), MeasurementOutcome::One);
-//     }
-
-//     /// Smoke test: a two-qubit gate dispatches correctly — `X(0); CNOT(0, 1)`
-//     /// leaves both qubits in |1⟩.
-//     #[test]
-//     fn tableau_backend_cnot_propagates_flip() {
-//         let mut circuit = Circuit::tableau(&info(2)).unwrap();
-//         circuit
-//             .execute_instruction(&CircuitInstruction::X, &CircuitMessage::Qubit(0))
-//             .unwrap();
-//         circuit
-//             .execute_instruction(&CircuitInstruction::CNOT, &CircuitMessage::TwoQubit(0, 1))
-//             .unwrap();
-//         assert_eq!(measure(&mut circuit, 0), MeasurementOutcome::One);
-//         assert_eq!(measure(&mut circuit, 1), MeasurementOutcome::One);
-//     }
-
-//     // ─── Construction rejects more qubits than the backend ceiling ────────
-//     //
-//     // The widest executor bucket is 2048 qubits (U2048 / `[u8; 256]`); beyond
-//     // that there is no backing width, so the constructors return an error
-//     // rather than panicking — a panic would tear down the TUI that drives this.
-
-//     #[test]
-//     fn tableau_rejects_more_than_2048_qubits() {
-//         assert!(Circuit::tableau(&info(MAX_QUBITS + 1)).is_err());
-//     }
-
-//     #[test]
-//     fn tableau_with_seed_rejects_more_than_2048_qubits() {
-//         assert!(Circuit::tableau_with_seed(&info(MAX_QUBITS + 1), 0).is_err());
-//     }
-
-//     #[test]
-//     fn paulisum_rejects_more_than_2048_qubits() {
-//         assert!(Circuit::paulisum(&info(MAX_QUBITS + 1), &[]).is_err());
-//     }
-
-//     #[test]
-//     fn lossy_paulisum_rejects_more_than_2048_qubits() {
-//         assert!(Circuit::lossy_paulisum(&info(MAX_QUBITS + 1), &[]).is_err());
-//     }
-
-//     #[test]
-//     fn constructs_at_the_2048_qubit_boundary() {
-//         // 2048 is the last valid bucket; it must still succeed.
-//         assert!(Circuit::tableau(&info(MAX_QUBITS)).is_ok());
-//     }
-// }

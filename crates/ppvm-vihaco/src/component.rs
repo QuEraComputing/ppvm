@@ -396,10 +396,10 @@ macro_rules! dispatch_common_paulisum {
                 return Err(eyre!("{} is not supported on the {} backend", $inst, $backend));
             }
 
-            (T, Qubit(addr)) => $self.state.rz(*addr, std::f64::consts::PI / 8.0),
-            (T, QubitBatch(addrs)) => $self.state.rz_many(addrs, std::f64::consts::PI / 8.0),
-            (TAdj, Qubit(addr)) => $self.state.rz(*addr, -std::f64::consts::PI / 8.0),
-            (TAdj, QubitBatch(addrs)) => $self.state.rz_many(addrs, -std::f64::consts::PI / 8.0),
+            (T, Qubit(addr)) => $self.state.t(*addr),
+            (T, QubitBatch(addrs)) => $self.state.t_many(addrs),
+            (TAdj, Qubit(addr)) => $self.state.t_dag(*addr),
+            (TAdj, QubitBatch(addrs)) => $self.state.t_dag_many(addrs),
 
             // U3(θ, φ, λ) = RZ(φ)·RY(θ)·RZ(λ), matching the tableau / Python
             // `u3` (which applies rz(λ); ry(θ); rz(φ)). PauliSum is the

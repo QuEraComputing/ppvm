@@ -7,6 +7,7 @@ mod display;
 mod noise;
 mod ops;
 mod proj;
+mod reset;
 mod rot1;
 mod rot2;
 mod trace;

@@ -142,6 +142,33 @@ where
     }
 }
 
+impl<T: Config> TGate<T> for PauliSum<T>
+where
+    PauliSum<T>: RotationOne<T>,
+{
+    fn t(&mut self, addr0: usize) {
+        // T = e^{iπ/8} · RZ(π/4); the global phase drops out under conjugation.
+        self.rz(addr0, T::Coeff::from(std::f64::consts::FRAC_PI_4));
+    }
+
+    fn t_dag(&mut self, addr0: usize) {
+        self.rz(addr0, T::Coeff::from(-std::f64::consts::FRAC_PI_4));
+    }
+}
+
+impl<T: Config> U3Gate<T> for PauliSum<T>
+where
+    PauliSum<T>: RotationOne<T>,
+{
+    fn u3(&mut self, addr: usize, theta: T::Coeff, phi: T::Coeff, lambda: T::Coeff) {
+        // U3(θ, φ, λ) = RZ(φ)·RY(θ)·RZ(λ). Heisenberg picture, so the
+        // sub-rotations run in reverse of the tableau's forward order.
+        self.rz(addr, phi);
+        self.ry(addr, theta);
+        self.rz(addr, lambda);
+    }
+}
+
 /// 2-bit Pauli code: 00 I, 01 X, 10 Z, 11 Y
 /// Returns \(ε, k\) so that  –i \[P_i, P_j\]/2 = ε · P_k.
 /// For every commuting pair it yields (0, 0).
@@ -180,6 +207,7 @@ pub fn levi_civita(i: u8, j: u8) -> (i8, u8) {
 #[cfg(test)]
 mod tests {
     use crate::config::fxhash::ByteF64;
+    use std::f64::consts::PI;
 
     use super::*;
 
@@ -307,5 +335,80 @@ mod tests {
         let mut expect: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
         expect += ("I", 1.0);
         assert_eq!(answer, expect);
+    }
+
+    /// `⟨0|O|0⟩` for a one-qubit observable: the I and Z coefficients.
+    fn zero_state_expectation(o: &PauliSum<ByteF64<2>>) -> f64 {
+        let mut zero_state: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
+        zero_state += ("I", 1.0);
+        zero_state += ("Z", 1.0);
+        o.overlap(&zero_state)
+    }
+
+    /// Heisenberg-evolve `pauli` back through `circuit` and evaluate on `|0⟩`.
+    fn expectation(pauli: &str, circuit: impl Fn(&mut PauliSum<ByteF64<2>>)) -> f64 {
+        let mut o: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
+        o += (pauli, 1.0);
+        circuit(&mut o);
+        zero_state_expectation(&o)
+    }
+
+    #[test]
+    fn test_t_on_plus_state() {
+        // T·H|0⟩ = (|0⟩ + e^{iπ/4}|1⟩)/√2, so ⟨X⟩ = cos(π/4), ⟨Y⟩ = sin(π/4).
+        // Gates are listed in reverse (Heisenberg) order: T first, then H.
+        let s = std::f64::consts::FRAC_1_SQRT_2;
+        let x = expectation("X", |o| {
+            o.t(0);
+            o.h(0);
+        });
+        let y = expectation("Y", |o| {
+            o.t(0);
+            o.h(0);
+        });
+        assert!((x - s).abs() < 1e-12, "⟨X⟩ = {x}");
+        assert!((y - s).abs() < 1e-12, "⟨Y⟩ = {y}");
+
+        let y_dag = expectation("Y", |o| {
+            o.t_dag(0);
+            o.h(0);
+        });
+        assert!((y_dag + s).abs() < 1e-12, "⟨Y⟩ after T† = {y_dag}");
+    }
+
+    #[test]
+    fn test_t_squared_is_s() {
+        let mut via_t: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
+        via_t += ("X", 1.0);
+        via_t.t(0);
+        via_t.t(0);
+        let mut via_s: PauliSum<ByteF64<2>> = PauliSum::builder().n_qubits(1).build();
+        via_s += ("X", 1.0);
+        via_s.s(0);
+        assert!((via_t.overlap(&via_s) - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn test_u3_on_zero_state() {
+        // U3(θ, φ, λ)|0⟩ = cos(θ/2)|0⟩ + e^{iφ} sin(θ/2)|1⟩ (λ only sets a phase).
+        let (theta, phi, lambda) = (0.34 * PI, 0.21 * PI, 0.46 * PI);
+        let u3 = |o: &mut PauliSum<ByteF64<2>>| o.u3(0, theta, phi, lambda);
+        let x = expectation("X", u3);
+        let y = expectation("Y", u3);
+        let z = expectation("Z", u3);
+        assert!((x - theta.sin() * phi.cos()).abs() < 1e-12, "⟨X⟩ = {x}");
+        assert!((y - theta.sin() * phi.sin()).abs() < 1e-12, "⟨Y⟩ = {y}");
+        assert!((z - theta.cos()).abs() < 1e-12, "⟨Z⟩ = {z}");
+    }
+
+    #[test]
+    fn test_u3_on_plus_state() {
+        // On |+⟩ the λ phase becomes visible: ⟨Z⟩ = -sin θ · cos λ.
+        let (theta, phi, lambda) = (0.34 * PI, 0.21 * PI, 0.46 * PI);
+        let z = expectation("Z", |o| {
+            o.u3(0, theta, phi, lambda);
+            o.h(0);
+        });
+        assert!((z + theta.sin() * lambda.cos()).abs() < 1e-12, "⟨Z⟩ = {z}");
     }
 }

@@ -83,8 +83,7 @@ pub trait CircuitBackend {
         + PauliError<Self::Config>
         + TwoQubitPauliError<Self::Config>
         + LossChannel<Self::Config>
-        + CorrelatedLossChannel<Self::Config>
-        + LeakageChannel<Self::Config>;
+        + CorrelatedLossChannel<Self::Config>;
 
     fn state(&mut self) -> &mut Self::State;
 
@@ -94,16 +93,8 @@ pub trait CircuitBackend {
         Err(eyre!("measure is not supported on this backend"))
     }
 
-    fn leakage(&mut self, _addr0: usize, p0: f64, p1: f61) -> eyre::Result<()> {
+    fn leakage(&mut self, _addr0: usize, p0: f64, p1: f64) -> eyre::Result<()> {
         Err(eyre!("leakage is not supported on this backend"))
-    }
-
-    fn loss(&mut self, _addr0: usize, p: f64) -> eyre::Result<()> {
-        Err(eyre!("loss is not supported on this backend"))
-    }
-
-    fn correlated_loss(&mut self, _addr0: usize, p0: f64, p1: f64, p2: f64) -> eyre::Result<()> {
-        Err(eyre!("loss is not supported on this backend"))
     }
 
     fn truncate(&mut self);
@@ -145,9 +136,29 @@ where
     fn reset(&mut self) {
         self.reset_all();
     }
+
+    fn leakage(&mut self, _addr0: usize, p0: f64, p1: f64) -> eyre::Result<()> {
+        self.leakage_channel(_addr0, p0, p1);
+        Ok(())
+    }
 }
 
-impl<T> CircuitBackend for PauliSum<T>
+/// PauliSum that also stores the initial observable so we can reset the component
+pub struct PauliSumBackend<T: Config<Coeff = f64>> {
+    pub state: PauliSum<T>,
+    initial_state: PauliSum<T>,
+}
+
+impl<T: Config<Coeff = f64>> PauliSumBackend<T> {
+    pub fn new(observable: PauliSum<T>) -> Self {
+        Self {
+            state: observable.clone(),
+            initial_state: observable.clone(),
+        }
+    }
+}
+
+impl<T> CircuitBackend for PauliSumBackend<T>
 where
     T: Config<Coeff = f64>,
 {
@@ -155,11 +166,15 @@ where
     type State = PauliSum<T>;
 
     fn state(&mut self) -> &mut Self::State {
-        self
+        &mut self.state
     }
 
     fn reset(&mut self) {
-        unimplemented!("TODO")
+        self.state = self.initial_state.clone();
+    }
+
+    fn truncate(&mut self) {
+        self.state.truncate();
     }
 }
 
@@ -288,9 +303,7 @@ impl<B: CircuitBackend> Execute<circuit::Leakage> for CircuitExecutor<B> {
     type Error = eyre::Report;
 
     fn execute(&mut self, _: &circuit::Leakage, msg: Self::Message) -> eyre::Result<()> {
-        self.backend
-            .state()
-            .leakage_channel(msg.0.0, msg.0.1, msg.0.2);
+        self.backend.leakage(msg.0.0, msg.0.1, msg.0.2)?;
         Ok(())
     }
 }

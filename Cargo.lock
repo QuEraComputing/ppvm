@@ -2196,6 +2196,8 @@ name = "ppvm-lindblad"
 version = "0.1.1"
 dependencies = [
  "approx",
+ "bitvec",
+ "bytemuck",
  "criterion 0.7.0",
  "fxhash",
  "hashbrown 0.17.1",

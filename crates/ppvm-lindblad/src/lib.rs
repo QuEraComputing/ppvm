@@ -27,9 +27,11 @@
 //!   to `f64` at the boundary (with a debug-only check that `|Im|` is at
 //!   FP noise).
 //!
-//! Pauli strings are stored as [`ppvm_pauli_word::word::PauliWord`] backed by
-//! a fixed array of `C` chunks (64-bit, or 32-bit on 32-bit targets) with
-//! cached hashes for fast HashMap lookup. The crate is const-generic in `C`
+//! Pauli strings are stored as [`Word`]: an X and a Z bit plane of `C`
+//! chunks each (64-bit, or 32-bit on 32-bit targets) and nothing else, so a
+//! 128-qubit word is 32 bytes. Hashes are computed from the planes when a table
+//! needs them. [`GeneralWord`] is the corresponding `ppvm_pauli_word` type taken
+//! by `ppvm_pauli_sum` symmetry routines. The crate is const-generic in `C`
 //! ([`Word`], [`LindbladSpec`]); the default is the 128-qubit width,
 //! and [`chunks_for`] picks the narrowest of the 128/256/512-qubit widths
 //! for a register. The hot-path commutator/
@@ -75,7 +77,7 @@ pub use shortlist::ShortlistScoreProposer;
 pub use spec::{JumpInput, LindbladSpec};
 pub use step::PcStepTimings;
 pub use word::{
-    CHUNK_BITS, MAX_QUBITS, MAX_SUPPORTED_QUBITS, W_CHUNKS, WIDTHS, Word, chunks_for,
+    CHUNK_BITS, GeneralWord, MAX_QUBITS, MAX_SUPPORTED_QUBITS, W_CHUNKS, WIDTHS, Word, chunks_for,
     codes_from_word, max_qubits, parse_pauli_string, word_from_codes,
 };
 

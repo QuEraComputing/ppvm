@@ -6,7 +6,6 @@
 use crate::algebra::comm_product;
 use crate::word::{CHUNK_BITS, Word, word_from_codes, word_support};
 use fxhash::FxHashSet;
-use ppvm_traits::PauliWordTrait;
 
 struct Term<const C: usize> {
     word: Word<C>,
@@ -160,7 +159,6 @@ impl<const C: usize> PauliActionPlan<C> {
                         result.xbits.data[chunk] ^= term.word.xbits.data[chunk];
                         result.zbits.data[chunk] ^= term.word.zbits.data[chunk];
                     }
-                    result.rehash();
                     (result, term.signs[pattern] as f64)
                 } else {
                     comm_product(&term.word, word)

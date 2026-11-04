@@ -2,17 +2,21 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use eyre::{Result, eyre};
+use ppvm_pauli_sum::config::fx64hash::Byte8F64;
+use ppvm_tableau::data::GeneralizedTableau;
+use vihaco::PushToStack;
 use vihaco::frame::Frame;
 use vihaco::machine::StackFrame;
 use vihaco::observer::stdio::{StdoutEffect, StdoutObserver};
 use vihaco::traits::{GetProgramInfo, ProgramCounter, StackMemory};
 use vihaco::{
-    Effects, NoContext, Observe, ProgramImage, Step, Type, Value, composite, observe, program,
+    BuildMessage, Effects, Execute, ExecutionState, HasInstructionSet, NoContext, Observe,
+    ProgramImage, Step, Type, Value, composite, field, module::LocalModule, observe, program,
 };
 use vihaco_cpu::CPU;
 
 use crate::component::{CircuitBackend, CircuitExecutor};
-use crate::measurements::{MeasurementObserver, TraceObserver};
+use crate::measurements::{CircuitOutcomeEffect, MeasurementObserver, TraceObserver};
 
 use vihaco_circuit_isa::circuit;
 
@@ -40,6 +44,106 @@ pub struct PPVM<B: CircuitBackend> {
     measurement_record: MeasurementObserver,
 
     trace_record: TraceObserver,
+}
+
+type Instruction<B> = <PPVM<B> as HasInstructionSet>::Runtime;
+
+type SourceInstruction<B> = <PPVM<B> as HasInstructionSet>::Syntax;
+
+type Program<B> = LocalModule<Instruction<B>, Value, Type>;
+
+// TODO: this workaround relies on internals and should be fixed upstream
+type ExecMarker = __vihaco_fields_PPVM::__markers::execution;
+type CpuMarker = __vihaco_fields_PPVM::__markers::cpu;
+type CircuitMarker = __vihaco_fields_PPVM::__markers::circuit;
+
+// execution stepping
+impl<I, B: CircuitBackend> Step<ExecMarker, I, Program<B>> for PPVM<B>
+where
+    Self: BuildMessage<ExecMarker, I, Program<B>>,
+    <Self as vihaco::Field<ExecMarker>>::Child: Execute<I, Effect = (), Error = eyre::Report>,
+{
+    fn step(&mut self, instruction: &I, module: &Program<B>) -> eyre::Result<()> {
+        let message = <Self as BuildMessage<ExecMarker, I, Program<B>>>::build_message(
+            self,
+            instruction,
+            module,
+        )?;
+        <Self as vihaco::Field<ExecMarker>>::get_mut(self).execute(instruction, message)
+    }
+}
+
+// CPU stepping
+impl<I, B: CircuitBackend> Step<CpuMarker, I, Program<B>> for PPVM<B>
+where
+    Self: BuildMessage<CpuMarker, I, Program<B>>,
+    <Self as vihaco::Field<CpuMarker>>::Child: Execute<I, Error = eyre::Report>,
+    ExecutionState:
+        vihaco::Apply<<<Self as vihaco::Field<CpuMarker>>::Child as Execute<I>>::Effect>,
+{
+    fn step(&mut self, instruction: &I, module: &Program<B>) -> eyre::Result<()> {
+        let message = <Self as BuildMessage<CpuMarker, I, Program<B>>>::build_message(
+            self,
+            instruction,
+            module,
+        )?;
+        let effect =
+            <Self as vihaco::Field<CpuMarker>>::get_mut(self).execute(instruction, message)?;
+        vihaco::Apply::apply(&mut self.execution, effect);
+        Ok(())
+    }
+}
+
+// handling circuit effects
+impl<B: CircuitBackend> vihaco::Apply<Effects<CircuitOutcomeEffect>> for PPVM<B> {
+    fn apply(&mut self, effects: Effects<CircuitOutcomeEffect>) {
+        for effect in effects {
+            match effect {
+                CircuitOutcomeEffect::Measurement(m) => {
+                    self.measurement_record.record.push(m.measurement_results)
+                }
+                CircuitOutcomeEffect::Trace(t) => {
+                    self.trace_record.record.push(t.value);
+                }
+            }
+        }
+    }
+}
+
+impl<B: CircuitBackend> vihaco::Apply<()> for PPVM<B> {
+    fn apply(&mut self, _effect: ()) {}
+}
+
+// Circuit stepping
+impl<I, B: CircuitBackend> Step<CircuitMarker, I, Program<B>> for PPVM<B>
+where
+    Self: BuildMessage<CircuitMarker, I, Program<B>>,
+    <Self as vihaco::Field<CircuitMarker>>::Child: Execute<I, Error = eyre::Report>,
+    Self: vihaco::Apply<<<Self as vihaco::Field<CircuitMarker>>::Child as Execute<I>>::Effect>,
+{
+    fn step(&mut self, instruction: &I, module: &Program<B>) -> eyre::Result<()> {
+        let message = <Self as BuildMessage<CircuitMarker, I, Program<B>>>::build_message(
+            self,
+            instruction,
+            module,
+        )?;
+        let effect =
+            <Self as vihaco::Field<CircuitMarker>>::get_mut(self).execute(instruction, message)?;
+        vihaco::Apply::apply(self, effect);
+        Ok(())
+    }
+}
+
+pub type TableauBackend64 = GeneralizedTableau<Byte8F64<1>>;
+
+#[cfg(test)]
+#[allow(dead_code)]
+fn assert_dispatch_coverage(
+    m: &mut PPVM<TableauBackend64>,
+    inst: &Instruction<TableauBackend64>,
+    module: &Program<TableauBackend64>,
+) -> eyre::Result<()> {
+    vihaco::Dispatch::<Program<TableauBackend64>>::dispatch(m, inst, module)
 }
 
 // pub(crate) use self::ppvm as ppvm_module;

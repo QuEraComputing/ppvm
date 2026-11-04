@@ -27,3 +27,4 @@ vihaco-stdlib = { version = "0.7.0", features = ["program-image-execution"] }
 vihaco-circuit-isa = { version = "0.1.1", path = "../vihaco-circuit-isa" }
 ppvm-pauli-sum = { version = "0.1.1", path = "../ppvm-pauli-sum" }
 rand = "0.10.3"
+vihaco-cpu = { version = "0.7.0", features = ["program-image-execution"] }

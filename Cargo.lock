@@ -2417,6 +2417,7 @@ dependencies = [
  "smallvec",
  "vihaco",
  "vihaco-circuit-isa",
+ "vihaco-cpu",
  "vihaco-stdlib",
 ]
 

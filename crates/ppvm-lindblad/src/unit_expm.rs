@@ -5,7 +5,7 @@
 
 use crate::compact_index::CompactBasisIndex;
 use crate::pauli_plan::{PauliActionPlan, UnitAction};
-use crate::word::{Word, word_hash};
+use crate::word::Word;
 use quspin_types::{LinearOperator, QuSpinError};
 use rayon::prelude::*;
 
@@ -94,9 +94,7 @@ impl UnitCache {
                     for (row, word) in basis[first..first + length].iter().enumerate() {
                         plan.fill_units(word, active, actions);
                         actions.sort_unstable_by(|a, b| {
-                            word_hash(&a.word)
-                                .cmp(&word_hash(&b.word))
-                                .then_with(|| a.word.cmp(&b.word))
+                            a.hash.cmp(&b.hash).then_with(|| a.word.cmp(&b.word))
                         });
                         connections.clear();
                         let mut raw = 0.0;
@@ -106,7 +104,7 @@ impl UnitCache {
                             if action.unit == 0 {
                                 diagonal = action.value;
                             }
-                            if let Some(parent) = index.get(&action.word) {
+                            if let Some(parent) = index.get_hashed(&action.word, action.hash) {
                                 connections.push(Connection {
                                     parent,
                                     unit: action.unit,

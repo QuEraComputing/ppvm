@@ -398,8 +398,8 @@ impl<const C: usize> CandidateProposer<C> for ShortlistScoreProposer<C> {
             |scratch, (rate, word)| {
                 scratch.fill(model, word, true);
                 scratch.row.clear();
-                for &(parent, value) in &scratch.terms {
-                    if let Some(&index) = table.find(word_hash(&parent), |&index| {
+                for &(hash, parent, value) in &scratch.terms {
+                    if let Some(&index) = table.find(hash, |&index| {
                         (index as usize) < n && basis[index as usize] == parent
                     }) {
                         scratch.row.push((index, -value));

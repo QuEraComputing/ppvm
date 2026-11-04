@@ -19,7 +19,8 @@ pub(crate) struct ActionScratch<const C: usize> {
     candidates: Vec<u32>,
     local: FxHashMap<Word<C>, Complex<f64>>,
     active: Vec<u64>,
-    pub(crate) terms: Vec<(Word<C>, f64)>,
+    /// Output words with their [`crate::word::word_hash`] and generator values.
+    pub(crate) terms: Vec<(u64, Word<C>, f64)>,
     pub(crate) row: Vec<(u32, f64)>,
 }
 
@@ -36,22 +37,25 @@ impl<const C: usize> ActionScratch<C> {
     }
     pub(crate) fn fill(&mut self, spec: &LindbladSpec<C>, word: &Word<C>, canonical: bool) {
         if let Some(plan) = &spec.pauli_plan {
-            plan.fill(word, &mut self.active, &mut self.terms);
+            plan.fill_keyed(word, &mut self.active, &mut self.terms);
             if canonical {
-                self.terms.sort_unstable_by(|(a, _), (b, _)| {
-                    crate::word::word_hash(a)
-                        .cmp(&crate::word::word_hash(b))
-                        .then_with(|| a.cmp(b))
-                });
+                self.terms
+                    .sort_unstable_by(|(ha, a, _), (hb, b, _)| ha.cmp(hb).then_with(|| a.cmp(b)));
             }
             return;
         }
 
-        self.terms = spec.compute_action_terms(
+        let terms = spec.compute_action_terms(
             word,
             &mut self.support,
             &mut self.candidates,
             &mut self.local,
+        );
+        self.terms.clear();
+        self.terms.extend(
+            terms
+                .into_iter()
+                .map(|(word, value)| (crate::word::word_hash(&word), word, value)),
         );
     }
 }
@@ -68,12 +72,12 @@ impl<const C: usize> DirectOp<'_, C> {
         scratch.row.clear();
         let mut raw = 0.0;
         let mut diagonal = 0.0;
-        for &(parent, value) in &scratch.terms {
+        for &(hash, parent, value) in &scratch.terms {
             raw += value.abs();
             if parent == *word {
                 diagonal = value;
             }
-            if let Some(column) = self.index.get(&parent) {
+            if let Some(column) = self.index.get_hashed(&parent, hash) {
                 scratch
                     .row
                     .push((column, if parent == *word { value } else { -value }));

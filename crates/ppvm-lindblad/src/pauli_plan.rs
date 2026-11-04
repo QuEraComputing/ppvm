@@ -4,7 +4,7 @@
 //! Shared parity tables and local phase rules for Pauli Hamiltonian actions.
 
 use crate::algebra::comm_product;
-use crate::word::{CHUNK_BITS, Word, word_from_codes, word_support};
+use crate::word::{CHUNK_BITS, Word, word_from_codes, word_hash, word_support};
 use fxhash::FxHashSet;
 
 struct Term<const C: usize> {
@@ -15,6 +15,8 @@ struct Term<const C: usize> {
 
 pub(crate) struct UnitAction<const C: usize> {
     pub(crate) word: Word<C>,
+    /// [`word_hash`] of `word`, computed once when the action is produced.
+    pub(crate) hash: u64,
     pub(crate) value: f64,
     pub(crate) unit: i32,
 }
@@ -89,6 +91,7 @@ impl<const C: usize> PauliActionPlan<C> {
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn fill(
         &self,
         word: &Word<C>,
@@ -99,6 +102,19 @@ impl<const C: usize> PauliActionPlan<C> {
         self.visit(word, active, |word, value, _| output.push((word, value)));
     }
 
+    /// Like [`Self::fill`], with each output word's [`word_hash`] first.
+    pub(crate) fn fill_keyed(
+        &self,
+        word: &Word<C>,
+        active: &mut Vec<u64>,
+        output: &mut Vec<(u64, Word<C>, f64)>,
+    ) {
+        output.clear();
+        self.visit(word, active, |word, value, _| {
+            output.push((word_hash(&word), word, value))
+        });
+    }
+
     pub(crate) fn fill_units(
         &self,
         word: &Word<C>,
@@ -107,7 +123,12 @@ impl<const C: usize> PauliActionPlan<C> {
     ) {
         output.clear();
         self.visit(word, active, |word, value, unit| {
-            output.push(UnitAction { word, value, unit })
+            output.push(UnitAction {
+                hash: word_hash(&word),
+                word,
+                value,
+                unit,
+            })
         });
     }
 

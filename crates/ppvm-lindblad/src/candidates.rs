@@ -192,8 +192,7 @@ impl<const C: usize> CandidateProposer<C> for StreamingProposer<C> {
                             output.clear();
                             for &index in indices {
                                 scratch.fill(model, &basis[index], true);
-                                for &(word, value) in &scratch.terms {
-                                    let hash = word_hash(&word);
+                                for &(hash, word, value) in &scratch.terms {
                                     if !in_basis.contains_key(&hash)
                                         && !protected_set.contains_key(&hash)
                                     {

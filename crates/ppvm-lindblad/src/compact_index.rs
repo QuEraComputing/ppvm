@@ -33,6 +33,13 @@ impl<'a, const C: usize> CompactBasisIndex<'a, C> {
         Self { basis, table }
     }
 
+    /// [`Self::get`] for a word whose [`word_hash`] the caller already has.
+    pub(crate) fn get_hashed(&self, word: &Word<C>, hash: u64) -> Option<u32> {
+        self.table
+            .find(hash, |&index| self.basis[index as usize] == *word)
+            .copied()
+    }
+
     pub(crate) fn get(&self, word: &Word<C>) -> Option<u32> {
         // Control-byte fingerprints filter probes before loading full borrowed words.
         self.table

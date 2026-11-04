@@ -1,0 +1,11 @@
+[package]
+name = "ppvm-phased-pauli-word-2"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ppvm-traits-2 = { version = "0.1.0", path = "../ppvm-traits-2" }
+ppvm-pauli-word-2 = { version = "0.1.0", path = "../ppvm-pauli-word-2" }
+
+[dev-dependencies]
+ppvm-lossy-pauli-word-2 = { version = "0.1.0", path = "../ppvm-lossy-pauli-word-2" }

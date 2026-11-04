@@ -37,6 +37,11 @@ fn label<const C: usize>(word: &Word<C>, site: usize) -> usize {
 }
 
 impl<const C: usize> PauliActionPlan<C> {
+    /// Number of Hamiltonian terms; their row-action codes are `±1..=term_count`.
+    pub(crate) fn term_count(&self) -> usize {
+        self.terms.len()
+    }
+
     pub(crate) fn has_diagonal_noise(&self) -> bool {
         self.jumps.iter().any(|rate| *rate != 0.0)
     }

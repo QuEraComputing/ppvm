@@ -396,10 +396,10 @@
 <a href=#396 id=396 data-nosnippet>396</a>                <span class="kw">return </span><span class="prelude-val">Err</span>(<span class="macro">eyre!</span>(<span class="string">"{} is not supported on the {} backend"</span>, <span class="macro-nonterminal">$inst</span>, <span class="macro-nonterminal">$backend</span>));
 <a href=#397 id=397 data-nosnippet>397</a>            }
 <a href=#398 id=398 data-nosnippet>398</a>
-<a href=#399 id=399 data-nosnippet>399</a>            (T, Qubit(addr)) =&gt; <span class="macro-nonterminal">$self</span>.state.rz(<span class="kw-2">*</span>addr, std::f64::consts::PI / <span class="number">8.0</span>),
-<a href=#400 id=400 data-nosnippet>400</a>            (T, QubitBatch(addrs)) =&gt; <span class="macro-nonterminal">$self</span>.state.rz_many(addrs, std::f64::consts::PI / <span class="number">8.0</span>),
-<a href=#401 id=401 data-nosnippet>401</a>            (TAdj, Qubit(addr)) =&gt; <span class="macro-nonterminal">$self</span>.state.rz(<span class="kw-2">*</span>addr, -std::f64::consts::PI / <span class="number">8.0</span>),
-<a href=#402 id=402 data-nosnippet>402</a>            (TAdj, QubitBatch(addrs)) =&gt; <span class="macro-nonterminal">$self</span>.state.rz_many(addrs, -std::f64::consts::PI / <span class="number">8.0</span>),
+<a href=#399 id=399 data-nosnippet>399</a>            (T, Qubit(addr)) =&gt; <span class="macro-nonterminal">$self</span>.state.t(<span class="kw-2">*</span>addr),
+<a href=#400 id=400 data-nosnippet>400</a>            (T, QubitBatch(addrs)) =&gt; <span class="macro-nonterminal">$self</span>.state.t_many(addrs),
+<a href=#401 id=401 data-nosnippet>401</a>            (TAdj, Qubit(addr)) =&gt; <span class="macro-nonterminal">$self</span>.state.t_dag(<span class="kw-2">*</span>addr),
+<a href=#402 id=402 data-nosnippet>402</a>            (TAdj, QubitBatch(addrs)) =&gt; <span class="macro-nonterminal">$self</span>.state.t_dag_many(addrs),
 <a href=#403 id=403 data-nosnippet>403</a>
 <a href=#404 id=404 data-nosnippet>404</a>            <span class="comment">// U3(θ, φ, λ) = RZ(φ)·RY(θ)·RZ(λ), matching the tableau / Python
 <a href=#405 id=405 data-nosnippet>405</a>            // `u3` (which applies rz(λ); ry(θ); rz(φ)). PauliSum is the

@@ -188,11 +188,11 @@ macro_rules! single_qubit_execute {
     ($leaf:ident, $method:ident) => {
         impl<B: CircuitBackend> Execute<circuit::$leaf> for CircuitExecutor<B> {
             type Effect = ();
-            type Message = PopFromStack<usize>;
+            type Message = PopFromStack<(u64,)>;
             type Error = eyre::Report;
 
             fn execute(&mut self, _: &circuit::$leaf, msg: Self::Message) -> eyre::Result<()> {
-                self.backend.state().$method(msg.0);
+                self.backend.state().$method(msg.0.0 as usize);
                 Ok(())
             }
         }
@@ -203,11 +203,13 @@ macro_rules! two_qubit_execute {
     ($leaf:ident, $method:ident) => {
         impl<B: CircuitBackend> Execute<circuit::$leaf> for CircuitExecutor<B> {
             type Effect = ();
-            type Message = PopFromStack<(usize, usize)>;
+            type Message = PopFromStack<(u64, u64)>;
             type Error = eyre::Report;
 
             fn execute(&mut self, _: &circuit::$leaf, msg: Self::Message) -> eyre::Result<()> {
-                self.backend.state().$method(msg.0.0, msg.0.1);
+                self.backend
+                    .state()
+                    .$method(msg.0.0 as usize, msg.0.1 as usize);
                 Ok(())
             }
         }
@@ -218,11 +220,11 @@ macro_rules! single_qubit_rotation_execute {
     ($leaf:ident, $method:ident) => {
         impl<B: CircuitBackend> Execute<circuit::$leaf> for CircuitExecutor<B> {
             type Effect = ();
-            type Message = PopFromStack<(usize, f64)>;
+            type Message = PopFromStack<(u64, f64)>;
             type Error = eyre::Report;
 
             fn execute(&mut self, _: &circuit::$leaf, msg: Self::Message) -> eyre::Result<()> {
-                self.backend.state().$method(msg.0.0, msg.0.1);
+                self.backend.state().$method(msg.0.0 as usize, msg.0.1);
                 Ok(())
             }
         }
@@ -233,11 +235,13 @@ macro_rules! two_qubit_rotation_execute {
     ($leaf:ident, $method:ident) => {
         impl<B: CircuitBackend> Execute<circuit::$leaf> for CircuitExecutor<B> {
             type Effect = ();
-            type Message = PopFromStack<(usize, usize, f64)>;
+            type Message = PopFromStack<(u64, u64, f64)>;
             type Error = eyre::Report;
 
             fn execute(&mut self, _: &circuit::$leaf, msg: Self::Message) -> eyre::Result<()> {
-                self.backend.state().$method(msg.0.0, msg.0.1, msg.0.2);
+                self.backend
+                    .state()
+                    .$method(msg.0.0 as usize, msg.0.1 as usize, msg.0.2);
                 Ok(())
             }
         }
@@ -277,82 +281,85 @@ two_qubit_rotation_execute!(Depolarize2, depolarize2);
 
 impl<B: CircuitBackend> Execute<circuit::U3> for CircuitExecutor<B> {
     type Effect = ();
-    type Message = PopFromStack<(usize, f64, f64, f64)>;
+    type Message = PopFromStack<(u64, f64, f64, f64)>;
     type Error = eyre::Report;
 
     fn execute(&mut self, _: &circuit::U3, msg: Self::Message) -> eyre::Result<()> {
-        self.backend.state().u3(msg.0.0, msg.0.1, msg.0.2, msg.0.3);
+        self.backend
+            .state()
+            .u3(msg.0.0 as usize, msg.0.1, msg.0.2, msg.0.3);
         Ok(())
     }
 }
 
 impl<B: CircuitBackend> Execute<circuit::R> for CircuitExecutor<B> {
     type Effect = ();
-    type Message = PopFromStack<(usize, f64, f64)>;
+    type Message = PopFromStack<(u64, f64, f64)>;
     type Error = eyre::Report;
 
     fn execute(&mut self, _: &circuit::R, msg: Self::Message) -> eyre::Result<()> {
-        self.backend.state().r(msg.0.0, msg.0.1, msg.0.2);
+        self.backend.state().r(msg.0.0 as usize, msg.0.1, msg.0.2);
         Ok(())
     }
 }
 
 impl<B: CircuitBackend> Execute<circuit::Leakage> for CircuitExecutor<B> {
     type Effect = ();
-    type Message = PopFromStack<(usize, f64, f64)>;
+    type Message = PopFromStack<(u64, f64, f64)>;
     type Error = eyre::Report;
 
     fn execute(&mut self, _: &circuit::Leakage, msg: Self::Message) -> eyre::Result<()> {
-        self.backend.leakage(msg.0.0, msg.0.1, msg.0.2)?;
+        self.backend.leakage(msg.0.0 as usize, msg.0.1, msg.0.2)?;
         Ok(())
     }
 }
 
 impl<B: CircuitBackend> Execute<circuit::PauliError> for CircuitExecutor<B> {
     type Effect = ();
-    type Message = PopFromStack<(usize, [f64; 3])>;
+    type Message = PopFromStack<(u64, f64, f64, f64)>;
     type Error = eyre::Report;
 
     fn execute(&mut self, _: &circuit::PauliError, msg: Self::Message) -> eyre::Result<()> {
-        self.backend.state().pauli_error(msg.0.0, msg.0.1);
+        self.backend
+            .state()
+            .pauli_error(msg.0.0 as usize, [msg.0.1, msg.0.2, msg.0.3]);
         Ok(())
     }
 }
 
 impl<B: CircuitBackend> Execute<circuit::TwoQubitPauliError> for CircuitExecutor<B> {
     type Effect = ();
-    type Message = PopFromStack<(usize, usize, [f64; 15])>;
+    type Message = PopFromStack<(u64, u64, f64, f64)>;
     type Error = eyre::Report;
 
     fn execute(&mut self, _: &circuit::TwoQubitPauliError, msg: Self::Message) -> eyre::Result<()> {
         // TODO: probably needs a custom message since we can't pop float arrays
-        self.backend
-            .state()
-            .two_qubit_pauli_error(msg.0.0, msg.0.1, msg.0.2);
-        Ok(())
+        unimplemented!("TODO: needs a custom message")
     }
 }
 
 impl<B: CircuitBackend> Execute<circuit::CorrelatedLoss> for CircuitExecutor<B> {
     type Effect = ();
-    type Message = PopFromStack<(usize, usize, [f64; 3])>;
+    type Message = PopFromStack<(u64, u64, f64, f64, f64)>;
     type Error = eyre::Report;
 
     fn execute(&mut self, _: &circuit::CorrelatedLoss, msg: Self::Message) -> eyre::Result<()> {
-        self.backend
-            .state()
-            .correlated_loss_channel(msg.0.0, msg.0.1, msg.0.2);
+        self.backend.state().correlated_loss_channel(
+            msg.0.0 as usize,
+            msg.0.1 as usize,
+            [msg.0.2, msg.0.3, msg.0.4],
+        );
         Ok(())
     }
 }
 
 impl<B: CircuitBackend> Execute<circuit::Measure> for CircuitExecutor<B> {
     type Effect = Effects<CircuitOutcomeEffect>;
-    type Message = PopFromStack<usize>;
+    type Message = PopFromStack<(u64,)>;
     type Error = eyre::Report;
 
     fn execute(&mut self, _: &circuit::Measure, msg: Self::Message) -> eyre::Result<Self::Effect> {
-        let outcome = self.backend.measure(msg.0)?;
+        let outcome = self.backend.measure(msg.0.0 as usize)?;
         Ok(Effects::one(CircuitOutcomeEffect::Measurement(
             MeasurementEffect {
                 measurement_results: smallvec::smallvec![outcome],

@@ -17,11 +17,9 @@ impl<W: KeyProduct> Phased<W> {
     /// `(φ, v) · (ψ, w) = (φ · ψ · iᵏ, v·w)`, where `key_mul` emits `iᵏ`.
     #[inline]
     pub fn mul(&self, rhs: &Self) -> Self {
-        let (word, emitted) = self.word.key_mul(&rhs.word);
-        Self {
-            word,
-            phase: self.phase * rhs.phase * emitted,
-        }
+        let mut product = self.clone();
+        product *= rhs;
+        product
     }
 }
 
@@ -29,8 +27,9 @@ impl<W: KeyProduct> Mul for Phased<W> {
     type Output = Phased<W>;
 
     #[inline]
-    fn mul(self, rhs: Self) -> Self {
-        Phased::mul(&self, &rhs)
+    fn mul(mut self, rhs: Self) -> Self {
+        self *= &rhs;
+        self
     }
 }
 
@@ -46,14 +45,15 @@ impl<W: KeyProduct> Mul<&Phased<W>> for &Phased<W> {
 impl<W: KeyProduct> MulAssign<&Phased<W>> for Phased<W> {
     #[inline]
     fn mul_assign(&mut self, rhs: &Phased<W>) {
-        *self = Phased::mul(self, rhs);
+        let emitted = self.word.key_mul_assign(&rhs.word);
+        self.phase *= rhs.phase * emitted;
     }
 }
 
 impl<W: KeyProduct> MulAssign for Phased<W> {
     #[inline]
     fn mul_assign(&mut self, rhs: Phased<W>) {
-        *self = Phased::mul(self, &rhs);
+        *self *= &rhs;
     }
 }
 

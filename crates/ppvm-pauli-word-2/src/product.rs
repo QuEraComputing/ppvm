@@ -23,19 +23,24 @@ where
     /// Returns the XORed word and its residual phase for the coefficient to absorb.
     /// Both inputs must have equal width; zero unused bits stay zero.
     fn key_mul(&self, other: &Self) -> (Self, Phase) {
+        let mut product = self.clone();
+        let phase = product.key_mul_assign(other);
+        (product, phase)
+    }
+
+    /// Multiplies in place, returning the residual phase and refreshing the hash once.
+    #[inline(always)]
+    fn key_mul_assign(&mut self, other: &Self) -> Phase {
         debug_assert_eq!(
             self.nqubits, other.nqubits,
             "twisted product requires equal-width words",
         );
 
-        let lhs_x = self.xbits.data.as_raw_slice();
-        let lhs_z = self.zbits.data.as_raw_slice();
+        let lhs_x = self.xbits.data.as_raw_mut_slice();
+        let lhs_z = self.zbits.data.as_raw_mut_slice();
         let rhs_x = other.xbits.data.as_raw_slice();
         let rhs_z = other.zbits.data.as_raw_slice();
 
-        let mut product = Self::new(self.nqubits);
-        let product_x = product.xbits.data.as_raw_mut_slice();
-        let product_z = product.zbits.data.as_raw_mut_slice();
         let mut sign_count = 0u32;
         let mut imaginary_count = 0u32;
 
@@ -56,13 +61,13 @@ where
             imaginary_count += imaginary_mask.count_ones();
 
             // XOR gives the product's Pauli letters; the masks account for phase.
-            product_x[chunk] = left_x ^ right_x;
-            product_z[chunk] = left_z ^ right_z;
+            lhs_x[chunk] = left_x ^ right_x;
+            lhs_z[chunk] = left_z ^ right_z;
         }
 
-        product.refresh_hash();
+        self.refresh_hash();
         let phase_exponent = ((2 * sign_count + imaginary_count) % 4) as u8;
-        (product, Phase::from_exponent(phase_exponent))
+        Phase::from_exponent(phase_exponent)
     }
 }
 

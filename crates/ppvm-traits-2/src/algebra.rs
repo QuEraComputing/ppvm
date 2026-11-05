@@ -94,6 +94,7 @@ impl core::ops::MulAssign for Phase {
 pub trait KeyProduct: Eq + Clone {
     /// Product of two keys, with the phase it produces (folded onto the coeff).
     fn key_mul(&self, other: &Self) -> (Self, Phase);
+    fn key_mul_assign(&mut self, other: &Self) -> Phase;
 }
 
 /// A commutative coefficient ring with an imaginary unit.

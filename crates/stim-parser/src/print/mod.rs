@@ -369,6 +369,14 @@ impl StimPrint for ExtendedInstruction {
                 )?;
                 write_usize_targets(out, targets)?;
             }
+            ExtendedInstruction::ResetLoss { targets, .. } => {
+                write!(out, "I_ERROR[reset_loss]")?;
+                write_usize_targets(out, targets)?;
+            }
+            ExtendedInstruction::ResetLeakage { targets, .. } => {
+                write!(out, "I_ERROR[reset_leakage]")?;
+                write_usize_targets(out, targets)?;
+            }
             ExtendedInstruction::MPad {
                 tag, prob, bits, ..
             } => {
@@ -430,6 +438,12 @@ mod tests {
         let ast = parse_extended(src).unwrap();
         let expected = "S[T] 0\nI[R_X(theta=0.25*pi)] 1\nI_ERROR[loss](0.01) 2\n";
         assert_eq!(ast.to_stim(), expected);
+    }
+
+    #[test]
+    fn reset_loss_and_reset_leakage_print_canonically() {
+        let src = "I_ERROR[reset_loss] 0 1\nI_ERROR[reset_leakage] 2\n";
+        assert_eq!(parse_extended(src).unwrap().to_stim(), src);
     }
 
     #[test]

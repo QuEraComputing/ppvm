@@ -105,7 +105,9 @@ fn validate_slice(
             | ExtendedInstruction::Rotation { .. }
             | ExtendedInstruction::U3 { .. }
             | ExtendedInstruction::Loss { .. }
-            | ExtendedInstruction::CorrelatedLoss { .. } => {}
+            | ExtendedInstruction::CorrelatedLoss { .. }
+            | ExtendedInstruction::ResetLoss { .. }
+            | ExtendedInstruction::ResetLeakage { .. } => {}
             ExtendedInstruction::Leakage { p0, p1, span, .. } => {
                 let line = span.line(line_map);
                 check_probability(*p0, "I_ERROR[leakage]", line)?;

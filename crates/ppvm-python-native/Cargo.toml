@@ -23,7 +23,7 @@ num = "0.4.3"
 # numpy 0.29 pairs with pyo3 0.29 (used by the lindblad + symmetry array bindings).
 numpy = "0.29"
 paste = "1.0.15"
-ppvm-lindblad = { version = "0.1.0", path = "../ppvm-lindblad" }
+ppvm-lindblad = { path = "../ppvm-lindblad" }
 ppvm-pauli-sum = { version = "0.1.2", path = "../ppvm-pauli-sum" }
 ppvm-stim = { version = "0.1.2", path = "../ppvm-stim", features = ["rayon"] }
 ppvm-tableau = { version = "0.1.2", path = "../ppvm-tableau" }

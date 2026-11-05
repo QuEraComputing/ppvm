@@ -73,6 +73,7 @@ fn record_bit(record: &[Option<bool>], k: usize) -> bool {
 
 /// Measure qubit `q` in the Z basis, reset it to |0>, and return the reported
 /// (readout-noise-flipped) outcome — the building block for `MR`/`MRX`/`MRY`.
+/// Like `R`, the reset also clears loss and leakage.
 ///
 /// The reset must act on the *true* (pre-flip) outcome, so this cannot delegate
 /// to `measure_noisy`; instead it applies the same `flip_with_prob` draw and
@@ -108,9 +109,12 @@ where
     I: TableauIndex + Debug + Send + Sync,
 {
     let true_outcome = tab.measure(q);
+    // `x` is skipped on inactive qubits; the leakage reset re-zeroes those itself.
     if true_outcome == Some(true) {
         tab.x(q);
     }
+    tab.reset_loss_channel(q);
+    tab.reset_leakage_channel(q);
     let recorded = true_outcome.map(|b| tab.flip_with_prob(b, noise));
     tab.overwrite_last_measurement_record(recorded);
     recorded
@@ -542,22 +546,28 @@ pub fn execute_validated<T, I, C>(
         + Copy,
     I: TableauIndex + Debug + Send + Sync,
 {
+    // Stim resets re-initialise the qubit, so they also clear loss and leakage.
+    let reset_z = |tab: &mut GeneralizedTableau<T, I, C>, q: usize| {
+        tab.reset_loss_channel(q);
+        tab.reset_leakage_channel(q);
+        tab.reset(q);
+    };
     for instr in instructions {
         match instr {
             ExtendedInstruction::Gate(GateOp { name, targets, .. }) => match name {
                 GateName::Reset | GateName::ResetZ => {
-                    targets.iter().for_each(|&t| tab.reset(qubit(t)));
+                    targets.iter().for_each(|&t| reset_z(tab, qubit(t)));
                 }
                 // RX: reset to |+> (Z-basis reset, then rotate into the X basis).
                 GateName::ResetX => targets.iter().for_each(|&t| {
                     let q = qubit(t);
-                    tab.reset(q);
+                    reset_z(tab, q);
                     tab.h(q);
                 }),
                 // RY: reset to |i> (|0> -> |+> -> S|+> = |i>).
                 GateName::ResetY => targets.iter().for_each(|&t| {
                     let q = qubit(t);
-                    tab.reset(q);
+                    reset_z(tab, q);
                     tab.h(q);
                     tab.s(q);
                 }),

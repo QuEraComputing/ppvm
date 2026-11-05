@@ -131,6 +131,56 @@ fn leakage_channel_applies_to_all_targets() {
 }
 
 #[test]
+fn reset_recovers_lost_qubit() {
+    // The X after R must act, so the qubit is live again.
+    let (results, tab) = run("I_ERROR[loss](1.0) 0\nR 0\nX 0\nM 0", 1);
+    assert!(!tab.is_lost(0));
+    assert_eq!(results, vec![Some(true)]);
+}
+
+#[test]
+fn reset_recovers_leaked_qubit_to_zero() {
+    let (results, tab) = run("I_ERROR[leakage](0.0, 1.0) 0\nR 0\nM 0", 1);
+    assert!(!tab.is_leaked(0));
+    assert_eq!(results, vec![Some(false)]);
+}
+
+#[test]
+fn reset_x_recovers_lost_qubit_to_plus() {
+    let (results, tab) = run("I_ERROR[loss](1.0) 0\nRX 0\nMX 0", 1);
+    assert!(!tab.is_lost(0));
+    assert_eq!(results, vec![Some(false)]);
+}
+
+#[test]
+fn mr_on_lost_qubit_records_none_then_recovers() {
+    let (results, tab) = run("I_ERROR[loss](1.0) 0\nMR 0\nX 0\nM 0", 1);
+    assert!(!tab.is_lost(0));
+    assert_eq!(results, vec![None, Some(true)]);
+}
+
+#[test]
+fn mr_on_leaked_qubit_records_pinned_bit_then_recovers() {
+    let (results, tab) = run("I_ERROR[leakage](0.0, 1.0) 0\nMR 0\nM 0", 1);
+    assert!(!tab.is_leaked(0));
+    assert_eq!(results, vec![Some(true), Some(false)]);
+}
+
+#[test]
+fn mrx_on_lost_qubit_recovers_to_plus() {
+    let (results, tab) = run("I_ERROR[loss](1.0) 0\nMRX 0\nMX 0", 1);
+    assert!(!tab.is_lost(0));
+    assert_eq!(results, vec![None, Some(false)]);
+}
+
+#[test]
+fn reset_y_recovers_leaked_qubit_to_i() {
+    let (results, tab) = run("I_ERROR[leakage](0.0, 1.0) 0\nRY 0\nMY 0", 1);
+    assert!(!tab.is_leaked(0));
+    assert_eq!(results, vec![Some(false)]);
+}
+
+#[test]
 fn repeat_executes_body_n_times() {
     let (results, _) = run("REPEAT 2 { X 0 }\nM 0", 1);
     assert_eq!(results, vec![Some(false)]);

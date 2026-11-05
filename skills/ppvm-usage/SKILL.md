@@ -288,8 +288,9 @@ Important: the six off-diagonal two-qubit rotations (`rxy`, `rxz`, `ryx`, `ryz`,
 probabilities of leaking *into* a pinned `|0⟩`/`|1⟩` (sum is the leak rate).
 Do not confuse with `asymmetric_loss_channel(q, p0, p1)`, whose `p0`/`p1` are
 loss *from* `|0⟩`/`|1⟩` and whose total depends on `⟨Z⟩`. Stim:
-`I_ERROR[leakage](p0, p1)` (no Stim leakage-reset instruction). A leaked
-qubit measures the pinned `ZERO`/`ONE`, not `LOST`.
+`I_ERROR[leakage](p0, p1)`. In Stim programs, `R*` and `MR*` resets also clear
+loss and leakage (the qubit is re-initialised). A leaked qubit
+measures the pinned `ZERO`/`ONE`, not `LOST`.
 
 ### Naming traps
 

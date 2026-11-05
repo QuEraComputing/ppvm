@@ -131,6 +131,38 @@ fn leakage_channel_applies_to_all_targets() {
 }
 
 #[test]
+fn reset_loss_restores_lost_qubits() {
+    let (results, tab) = run(
+        "I_ERROR[loss](1.0) 0 1\nI_ERROR[reset_loss] 0 1\nX 0\nM 0 1",
+        2,
+    );
+    assert!(!tab.is_lost(0) && !tab.is_lost(1));
+    assert_eq!(results, vec![Some(true), Some(false)]);
+}
+
+#[test]
+fn reset_leakage_restores_leaked_qubits_to_zero() {
+    let (results, tab) = run(
+        "I_ERROR[leakage](0.0, 1.0) 0 1\nI_ERROR[reset_leakage] 0 1\nX 1\nM 0 1",
+        2,
+    );
+    assert!(!tab.is_leaked(0) && !tab.is_leaked(1));
+    assert_eq!(results, vec![Some(false), Some(true)]);
+}
+
+#[test]
+fn reset_leakage_does_not_restore_lost_qubit() {
+    let (_, tab) = run("I_ERROR[loss](1.0) 0\nI_ERROR[reset_leakage] 0", 1);
+    assert!(tab.is_lost(0));
+}
+
+#[test]
+fn reset_loss_does_not_restore_leaked_qubit() {
+    let (_, tab) = run("I_ERROR[leakage](0.0, 1.0) 0\nI_ERROR[reset_loss] 0", 1);
+    assert!(tab.is_leaked(0));
+}
+
+#[test]
 fn repeat_executes_body_n_times() {
     let (results, _) = run("REPEAT 2 { X 0 }\nM 0", 1);
     assert_eq!(results, vec![Some(false)]);

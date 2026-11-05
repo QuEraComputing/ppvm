@@ -78,7 +78,9 @@ fn required_qubits(program: &ExtendedProgram) -> usize {
                 | ExtendedInstruction::Rotation { targets, .. }
                 | ExtendedInstruction::U3 { targets, .. }
                 | ExtendedInstruction::Loss { targets, .. }
-                | ExtendedInstruction::Leakage { targets, .. } => {
+                | ExtendedInstruction::Leakage { targets, .. }
+                | ExtendedInstruction::ResetLoss { targets, .. }
+                | ExtendedInstruction::ResetLeakage { targets, .. } => {
                     for &q in targets {
                         bump(q);
                     }

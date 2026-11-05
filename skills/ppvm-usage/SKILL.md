@@ -150,7 +150,7 @@ shots = sample_stim(prog, shots=1000, n_qubits=5)
 
 `MeasurementResult` is an `IntEnum` (`ZERO`, `ONE`, `LOST`). Loss is first-class — a lost qubit measures `LOST`.
 
-Stim leakage is `I_ERROR[leakage](p0, p1)` — same `p0`/`p1` as `leakage_channel`. A leaked qubit measures the pinned `ZERO`/`ONE`, not `LOST`.
+Stim leakage is `I_ERROR[leakage](p0, p1)` — same `p0`/`p1` as `leakage_channel`. A leaked qubit measures the pinned `ZERO`/`ONE`, not `LOST`. `I_ERROR[reset_loss] q…` / `I_ERROR[reset_leakage] q…` (no args) map to `reset_loss_channel` / `reset_leakage_channel`.
 
 ## Rust API
 
@@ -288,7 +288,7 @@ Important: the six off-diagonal two-qubit rotations (`rxy`, `rxz`, `ryx`, `ryz`,
 probabilities of leaking *into* a pinned `|0⟩`/`|1⟩` (sum is the leak rate).
 Do not confuse with `asymmetric_loss_channel(q, p0, p1)`, whose `p0`/`p1` are
 loss *from* `|0⟩`/`|1⟩` and whose total depends on `⟨Z⟩`. Stim:
-`I_ERROR[leakage](p0, p1)` (no Stim leakage-reset instruction). A leaked
+`I_ERROR[leakage](p0, p1)`; reset with `I_ERROR[reset_leakage]`. A leaked
 qubit measures the pinned `ZERO`/`ONE`, not `LOST`.
 
 ### Naming traps

@@ -746,6 +746,16 @@ pub fn execute_validated<T, I, C>(
                     tab.leakage_channel(q, (*p0).into(), (*p1).into());
                 }
             }
+            ExtendedInstruction::ResetLoss { targets, .. } => {
+                for &q in targets {
+                    tab.reset_loss_channel(q);
+                }
+            }
+            ExtendedInstruction::ResetLeakage { targets, .. } => {
+                for &q in targets {
+                    tab.reset_leakage_channel(q);
+                }
+            }
             ExtendedInstruction::Measure(MeasureOp {
                 name,
                 args,

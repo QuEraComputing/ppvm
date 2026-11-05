@@ -43,6 +43,39 @@ pub struct PcStepConfig {
     pub num_threads: Option<usize>,
 }
 
+impl PcStepConfig {
+    /// Set the working-set cap to `ceil(ratio * max_basis)`.
+    ///
+    /// The ratio scales the total admission bound, including the retained
+    /// basis. For example, `max_basis = 1025` and `ratio = 1.5` admit at most
+    /// 1538 strings before truncation. Existing absolute caps are overwritten.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for nonfinite ratios, ratios below one, or caps that
+    /// cannot be represented as a `usize`.
+    pub fn with_admit_ratio(mut self, ratio: f64) -> Result<Self, crate::Error> {
+        if !ratio.is_finite() || ratio < 1.0 {
+            return Err(crate::Error::InvalidAdmissionRatio { ratio });
+        }
+        // Integer multipliers preserve exact counts even beyond f64's integer precision.
+        if ratio.fract() == 0.0 && ratio < usize::MAX as f64 {
+            self.admit_basis = Some(
+                self.max_basis
+                    .checked_mul(ratio as usize)
+                    .ok_or(crate::Error::AdmissionCapOverflow)?,
+            );
+            return Ok(self);
+        }
+        let cap = (self.max_basis as f64 * ratio).ceil();
+        if !cap.is_finite() || cap as u128 > usize::MAX as u128 {
+            return Err(crate::Error::AdmissionCapOverflow);
+        }
+        self.admit_basis = Some(cap as usize);
+        Ok(self)
+    }
+}
+
 impl Default for PcStepConfig {
     /// Uncapped, unfiltered, no pruning: the near-exact reference
     /// configuration. Production runs should set `max_basis` (and usually
@@ -55,5 +88,77 @@ impl Default for PcStepConfig {
             tau_add: None,
             num_threads: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PcStepConfig;
+
+    #[test]
+    fn fractional_admission_rounds_up() {
+        for (basis, ratio, expected) in [
+            (1025, 1.5, 1538),
+            (1025, 1.234, 1265),
+            (1024, 3.0, 3072),
+            (1024, 6.0, 6144),
+            (1024, 1.0, 1024),
+        ] {
+            let cfg = PcStepConfig {
+                max_basis: basis,
+                ..Default::default()
+            }
+            .with_admit_ratio(ratio)
+            .unwrap();
+            assert_eq!(cfg.admit_basis, Some(expected));
+            assert_eq!(cfg.max_basis, basis);
+        }
+    }
+
+    #[test]
+    fn invalid_admission_ratios_and_overflow_are_rejected() {
+        for ratio in [
+            f64::NAN,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            -1.0,
+            0.0,
+            0.5,
+            f64::MAX,
+        ] {
+            assert!(
+                PcStepConfig {
+                    max_basis: 1024,
+                    ..Default::default()
+                }
+                .with_admit_ratio(ratio)
+                .is_err()
+            );
+        }
+        assert!(PcStepConfig::default().with_admit_ratio(2.0).is_err());
+        assert_eq!(
+            PcStepConfig::default()
+                .with_admit_ratio(1.0)
+                .unwrap()
+                .admit_basis,
+            Some(usize::MAX)
+        );
+    }
+
+    #[test]
+    fn admission_ratio_preserves_other_policy_settings() {
+        let cfg = PcStepConfig {
+            max_basis: 10,
+            admit_basis: Some(40),
+            drop_tol: 0.1,
+            tau_add: Some(0.2),
+            num_threads: Some(2),
+        }
+        .with_admit_ratio(1.5)
+        .unwrap();
+        assert_eq!(cfg.admit_basis, Some(15));
+        assert_eq!(cfg.drop_tol, 0.1);
+        assert_eq!(cfg.tau_add, Some(0.2));
+        assert_eq!(cfg.num_threads, Some(2));
     }
 }

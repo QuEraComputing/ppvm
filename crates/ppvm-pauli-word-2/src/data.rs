@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 use bitvec::array::BitArray;
 use bitvec::view::BitView;
 use num::{One, Zero};
-use ppvm_traits_2::{LossState, Pauli, PauliBits, Word};
+use ppvm_traits_2::{Pauli, PauliBits, Word, loss::LossInfo};
 
 use crate::hash::structural_hash;
 use crate::{DefaultStorage, HashFinalize, PauliStorage};
@@ -226,23 +226,10 @@ impl<A: PauliStorage, H> Word for PauliWord<A, H> {
     }
 }
 
-/// Ordinary words report no loss. Setting loss is unsupported; clearing resets a site.
-impl<A, H> LossState for PauliWord<A, H>
-where
+/// Ordinary words report no loss. So, we just have NOOP LossInfo reporting.
+impl<A, H> LossInfo for PauliWord<A, H> where
     A: PauliStorage,
-    H: BuildHasher + Default + HashFinalize,
-{
-    /// Panics because ordinary Pauli words cannot represent lost sites.
-    fn set_lost(&mut self, _i: usize) {
-        panic!("PauliWord cannot represent loss; use LossyPauliWord instead");
-    }
-
-    /// Resets the site to identity and refreshes the structural hash if needed.
-    #[inline]
-    fn clear_lost(&mut self, i: usize) {
-        self.set_xz_bits(i, false, false);
-    }
-}
+    H: BuildHasher + Default + HashFinalize {}
 
 impl<A, H> PauliBits for PauliWord<A, H>
 where

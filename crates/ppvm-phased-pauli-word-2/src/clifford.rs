@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Phase-tracking Clifford conjugation. Gates touching lost sites are no-ops.
-//! The base word must implement both `PauliBits` and `LossState`.
+//! The base word must implement both `PauliBits` and `LossInfo`.
 
-use ppvm_traits_2::{Clifford, LossState, PauliBits, Phase};
+use ppvm_traits_2::{Clifford, PauliBits, Phase, loss::LossInfo};
 
 use crate::data::Phased;
 
-impl<W: PauliBits + LossState> Phased<W> {
+impl<W: PauliBits + LossInfo> Phased<W> {
     #[inline]
     fn flip_sign_if(&mut self, cond: bool) {
         if cond {
@@ -17,7 +17,7 @@ impl<W: PauliBits + LossState> Phased<W> {
     }
 }
 
-impl<W: PauliBits + LossState> Clifford for Phased<W> {
+impl<W: PauliBits + LossInfo> Clifford for Phased<W> {
     #[inline]
     fn x(&mut self, q: usize) {
         if self.word.is_lost(q) {
@@ -221,6 +221,7 @@ mod tests {
             }
         }
     }
+
     fn conj(input: &str, gate: impl Fn(&mut PhasedPauliWord)) -> String {
         let mut w = PhasedPauliWord::from(input);
         gate(&mut w);
@@ -228,30 +229,15 @@ mod tests {
     }
 
     #[test]
-    fn ordinary_word_loss_operations() {
+    fn ordinary_word_reports_no_loss() {
         use crate::PauliWord;
-        use ppvm_traits_2::{Indexable, LossState};
-        use std::panic::{AssertUnwindSafe, catch_unwind};
+        use ppvm_traits_2::loss::LossInfo;
 
-        let mut word: PauliWord = PauliWord::from("XYZ");
+        let word: PauliWord = PauliWord::from("XYZ");
         assert_eq!(word.loss_weight(), 0);
         for i in 0..3 {
             assert!(!word.is_lost(i));
         }
-        let original = word;
-        let original_hash = word.key_hash();
-        assert!(catch_unwind(AssertUnwindSafe(|| word.set_lost(1))).is_err());
-        assert_eq!(word, original);
-        assert_eq!(word.key_hash(), original_hash);
-
-        let cleared = word.loss_cleared(1);
-        assert_eq!(word, original);
-        let expected = PauliWord::from("XIZ");
-        assert_eq!(cleared, expected);
-        assert_eq!(cleared.key_hash(), expected.key_hash());
-        word.clear_lost(1);
-        assert_eq!(word, expected);
-        assert_eq!(word.key_hash(), expected.key_hash());
     }
 
     #[test]

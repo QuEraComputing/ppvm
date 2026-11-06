@@ -50,6 +50,20 @@ where
                 .or_insert(new_v);
         });
     }
+
+    fn map_flat_add_assign<F, I>(&self, dest: &mut Self, f: F)
+    where
+        F: Fn(&W, &V) -> I + Sync + Send,
+        I: IntoIterator<Item = (W, V)>,
+    {
+        self.par_iter().for_each(|entry| {
+            for (new_k, new_v) in f(entry.key(), entry.value()) {
+                dest.entry(new_k)
+                    .and_modify(|v| *v += new_v.clone())
+                    .or_insert(new_v);
+            }
+        });
+    }
 }
 
 impl<V, Hasher, W> ACMapMulAssign<V, Hasher> for DashMap<W, V, Hasher>

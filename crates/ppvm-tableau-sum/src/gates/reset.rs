@@ -11,7 +11,47 @@ use num::traits::{One, PrimInt, ToPrimitive, Zero};
 use ppvm_tableau::sparsevec::SparseVector;
 use ppvm_tableau::tableau_index::TableauIndex;
 use ppvm_traits::config::Config;
-use ppvm_traits::traits::{Clifford, Reset};
+use ppvm_traits::traits::{Clifford, Reset, ResetLossChannel, ResetState};
+
+impl<T, I, C, S> ResetState for GeneralizedTableauSum<T, I, C, S>
+where
+    T: Config,
+    <<T as Config>::Storage as BitView>::Store: PrimInt,
+    I: TableauIndex + Debug + Send + Sync,
+    C: SparseVector<Complex<T::Coeff>, I> + Debug,
+    T::Coeff: One
+        + Zero
+        + Clone
+        + num::Num
+        + ToPrimitive
+        + std::fmt::Debug
+        + std::ops::Mul<f64>
+        + PartialOrd<f64>
+        + PartialOrd
+        + Send
+        + Sync,
+    Complex<T::Coeff>: std::ops::Mul<Output = Complex<T::Coeff>>
+        + From<Complex64>
+        + std::ops::MulAssign
+        + std::ops::AddAssign
+        + One
+        + ComplexFloat
+        + Copy,
+    S: EntryStore<T, I, C>,
+{
+    fn reset_state(&mut self, addr0: usize) {
+        self.for_each_z_branch(addr0, |tab, outcome, _p| {
+            // Flip back to |0⟩ on the outcome-1 branch; the helper takes
+            // care of fingerprint hygiene and the branch / merge plumbing.
+            if outcome == Some(true) {
+                tab.x(addr0);
+                true
+            } else {
+                false
+            }
+        });
+    }
+}
 
 impl<T, I, C, S> Reset for GeneralizedTableauSum<T, I, C, S>
 where
@@ -40,15 +80,9 @@ where
     S: EntryStore<T, I, C>,
 {
     fn reset(&mut self, addr0: usize) {
-        self.for_each_z_branch(addr0, |tab, outcome, _p| {
-            // Flip back to |0⟩ on the outcome-1 branch; the helper takes
-            // care of fingerprint hygiene and the branch / merge plumbing.
-            if outcome == Some(true) {
-                tab.x(addr0);
-                true
-            } else {
-                false
-            }
-        });
+        // Un-lose first, otherwise `reset_state` skips the qubit. There is
+        // no leakage on this backend.
+        self.reset_loss_channel(addr0);
+        self.reset_state(addr0);
     }
 }

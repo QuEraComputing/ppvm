@@ -71,13 +71,13 @@ fn record_bit(record: &[Option<bool>], k: usize) -> bool {
         .unwrap_or(false)
 }
 
-/// Measure qubit `q` in the Z basis, reset it to |0>, and return the reported
-/// (readout-noise-flipped) outcome — the building block for `MR`/`MRX`/`MRY`.
+/// Measure qubit `q` in the Z basis, then fully reset it to |0>, and return
+/// the reported (readout-noise-flipped) outcome — the building block for
+/// `MR`/`MRX`/`MRY`.
 ///
-/// The reset must act on the *true* (pre-flip) outcome, so this cannot delegate
-/// to `measure_noisy`; instead it applies the same `flip_with_prob` draw and
-/// overwrites the record entry with the reported value, so the measurement
-/// record matches the returned result exactly (consistent with `M`).
+/// The readout comes first, so a lost or leaked qubit is reported as such
+/// before the reset (as for `R`) brings it back. The state reset reuses the
+/// true (pre-flip) outcome instead of measuring again.
 fn measure_reset_z<T, I, C>(
     tab: &mut GeneralizedTableau<T, I, C>,
     q: usize,
@@ -108,11 +108,14 @@ where
     I: TableauIndex + Debug + Send + Sync,
 {
     let true_outcome = tab.measure(q);
+    let recorded = true_outcome.map(|b| tab.flip_with_prob(b, noise));
+    tab.overwrite_last_measurement_record(recorded);
+    // `x` is skipped on inactive qubits; lost qubits already sit in |0⟩.
     if true_outcome == Some(true) {
         tab.x(q);
     }
-    let recorded = true_outcome.map(|b| tab.flip_with_prob(b, noise));
-    tab.overwrite_last_measurement_record(recorded);
+    tab.reset_loss_channel(q);
+    tab.reset_leakage_channel(q);
     recorded
 }
 
@@ -756,6 +759,11 @@ pub fn execute_validated<T, I, C>(
                     tab.reset_leakage_channel(q);
                 }
             }
+            ExtendedInstruction::ResetState { targets, .. } => {
+                for &q in targets {
+                    tab.reset_state(q);
+                }
+            }
             ExtendedInstruction::Measure(MeasureOp {
                 name,
                 args,
@@ -778,9 +786,6 @@ pub fn execute_validated<T, I, C>(
                             results.extend(tab.measure_many(targets));
                         }
                     }
-                    // MR cannot delegate to `measure_noisy` because the reset must use
-                    // the *true* outcome — but it shares the readout flip via
-                    // `flip_with_prob`, so the RNG-draw shape matches MZ exactly.
                     MeasureName::MR => {
                         for &q in targets {
                             results.push(measure_reset_z(tab, q, noise));
@@ -808,9 +813,7 @@ pub fn execute_validated<T, I, C>(
                         }
                     }
                     // MRX/MRY add a reset to the measured eigenstate
-                    // (`MRX = H M R H`, `MRY = S_DAG H M R H S`). The reset must
-                    // use the *true* outcome, so it mirrors the MR arm rather than
-                    // delegating to `measure_noisy`.
+                    // (`MRX = H M R H`, `MRY = S_DAG H M R H S`).
                     MeasureName::MRX => {
                         for &q in targets {
                             tab.h(q);

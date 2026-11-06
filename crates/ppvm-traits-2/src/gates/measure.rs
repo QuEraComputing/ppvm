@@ -17,9 +17,20 @@ pub trait Measure {
     }
 }
 
-// Reset one qubit to a computational/Pauli basis state.
-pub trait Reset: Clifford {
+/// Reset the state of a live qubit to `|0⟩`, leaving lost and leaked qubits
+/// untouched.
+pub trait ResetState {
+    /// Reset `qubit` to `|0⟩` if it is live; no-op otherwise.
+    fn reset_state(&mut self, qubit: usize);
+}
+
+/// Reset one qubit to a computational/Pauli basis state.
+pub trait Reset: ResetState + Clifford {
     /// Reset one qubit to `|0⟩` (stim `R`/`RZ`).
+    ///
+    /// This is a full reset: a lost or leaked qubit is first brought back
+    /// to the computational subspace, then its state is reset via
+    /// [`ResetState::reset_state`].
     fn reset(&mut self, qubit: usize);
 
     /// stim `RZ` alias — reset to `|0⟩`.

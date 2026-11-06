@@ -859,6 +859,14 @@ chore: restore lockfile consistency</code></pre>
       <li>In <code>release-plz.toml</code>, give it a <code>[[package]]</code> entry with <code>release = true</code> and <code>version_group = "workspace"</code> <em>and</em> add it to <code>ppvm-cli</code>'s <code>changelog_include</code>. None of these omissions fails loudly: release-plz would silently skip the crate (the workspace sets <code>release = false</code>), version it on its own, or leave its commits out of the release notes.</li>
       <li>Trusted publishing only works for crates that already exist, so a crate owner publishes the first version by hand (<code>cargo publish -p &lt;crate&gt;</code>) and then configures its trusted publisher.</li>
     </ol>
+    <p>
+      <strong>Depend on <code>publish = false</code> crates by <code>path</code> only.</strong>
+      Most of them inherit the workspace version, but release-plz doesn't
+      update dependency versions on crates it doesn't release. A pin like
+      <code>&#123; version = "0.1.0", path = "…" &#125;</code> therefore breaks the
+      release PR at the first minor bump. Unpublished crates still ship
+      to PyPI if <code>ppvm-python-native</code> depends on them.
+    </p>
 
     <h3>8.6 First release (one-time)</h3>
     <p>

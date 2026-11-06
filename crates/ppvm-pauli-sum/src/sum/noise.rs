@@ -48,57 +48,63 @@ fn one_minus_two_sum<C: Coefficient, const N: usize>(p: &[C; 15], indices: [usiz
 
 impl<T: Config> TwoQubitPauliError<T> for PauliSum<T> {
     fn two_qubit_pauli_error(&mut self, addr0: usize, addr1: usize, p: [<T as Config>::Coeff; 15]) {
-        self.scale(|k, v| match (k.get(addr0), k.get(addr1)) {
-            (Pauli::I, Pauli::I) => {}
-            (Pauli::I, Pauli::X) => {
-                *v *= one_minus_two_sum(&p, [1, 10, 13, 14, 2, 5, 6, 9]);
-            }
-            (Pauli::I, Pauli::Y) => {
-                *v *= one_minus_two_sum(&p, [0, 10, 12, 14, 2, 4, 6, 8]);
-            }
-            (Pauli::I, Pauli::Z) => {
-                *v *= one_minus_two_sum(&p, [0, 1, 12, 13, 4, 5, 8, 9]);
-            }
-            (Pauli::X, Pauli::I) => {
-                *v *= one_minus_two_sum(&p, [10, 11, 12, 13, 14, 7, 8, 9]);
-            }
-            (Pauli::X, Pauli::X) => {
-                *v *= one_minus_two_sum(&p, [1, 11, 12, 2, 5, 6, 7, 8]);
-            }
-            (Pauli::X, Pauli::Y) => {
-                *v *= one_minus_two_sum(&p, [0, 11, 13, 2, 4, 6, 7, 9]);
-            }
-            (Pauli::X, Pauli::Z) => {
-                *v *= one_minus_two_sum(&p, [0, 1, 10, 11, 14, 4, 5, 7]);
-            }
-            (Pauli::Y, Pauli::I) => {
-                *v *= one_minus_two_sum(&p, [11, 12, 13, 14, 3, 4, 5, 6]);
-            }
-            (Pauli::Y, Pauli::X) => {
-                *v *= one_minus_two_sum(&p, [1, 10, 11, 12, 2, 3, 4, 9]);
-            }
-            (Pauli::Y, Pauli::Y) => {
-                *v *= one_minus_two_sum(&p, [0, 10, 11, 13, 2, 3, 5, 8]);
-            }
-            (Pauli::Y, Pauli::Z) => {
-                *v *= one_minus_two_sum(&p, [0, 1, 11, 14, 3, 6, 8, 9]);
-            }
-            (Pauli::Z, Pauli::I) => {
-                *v *= one_minus_two_sum(&p, [10, 3, 4, 5, 6, 7, 8, 9]);
-            }
-            (Pauli::Z, Pauli::X) => {
-                *v *= one_minus_two_sum(&p, [1, 13, 14, 2, 3, 4, 7, 8]);
-            }
-            (Pauli::Z, Pauli::Y) => {
-                *v *= one_minus_two_sum(&p, [0, 12, 14, 2, 3, 5, 7, 9]);
-            }
-            (Pauli::Z, Pauli::Z) => {
-                *v *= one_minus_two_sum(&p, [0, 1, 10, 12, 13, 3, 6, 7]);
-            }
-            _ => {
-                // NOTE: if just one atom is lost, then there is no
-                // well-defined noise channel on the other atom
-                // so we don't apply any noise
+        self.scale(|k, v| {
+            // A lost qubit drops out: treating its slot as I applies the
+            // survivor's marginal channel.
+            let pair = match (k.get(addr0), k.get(addr1)) {
+                (Pauli::L, Pauli::L) => return,
+                (Pauli::L, p1) => (Pauli::I, p1),
+                (p0, Pauli::L) => (p0, Pauli::I),
+                pair => pair,
+            };
+            match pair {
+                (Pauli::I, Pauli::I) => {}
+                (Pauli::I, Pauli::X) => {
+                    *v *= one_minus_two_sum(&p, [1, 10, 13, 14, 2, 5, 6, 9]);
+                }
+                (Pauli::I, Pauli::Y) => {
+                    *v *= one_minus_two_sum(&p, [0, 10, 12, 14, 2, 4, 6, 8]);
+                }
+                (Pauli::I, Pauli::Z) => {
+                    *v *= one_minus_two_sum(&p, [0, 1, 12, 13, 4, 5, 8, 9]);
+                }
+                (Pauli::X, Pauli::I) => {
+                    *v *= one_minus_two_sum(&p, [10, 11, 12, 13, 14, 7, 8, 9]);
+                }
+                (Pauli::X, Pauli::X) => {
+                    *v *= one_minus_two_sum(&p, [1, 11, 12, 2, 5, 6, 7, 8]);
+                }
+                (Pauli::X, Pauli::Y) => {
+                    *v *= one_minus_two_sum(&p, [0, 11, 13, 2, 4, 6, 7, 9]);
+                }
+                (Pauli::X, Pauli::Z) => {
+                    *v *= one_minus_two_sum(&p, [0, 1, 10, 11, 14, 4, 5, 7]);
+                }
+                (Pauli::Y, Pauli::I) => {
+                    *v *= one_minus_two_sum(&p, [11, 12, 13, 14, 3, 4, 5, 6]);
+                }
+                (Pauli::Y, Pauli::X) => {
+                    *v *= one_minus_two_sum(&p, [1, 10, 11, 12, 2, 3, 4, 9]);
+                }
+                (Pauli::Y, Pauli::Y) => {
+                    *v *= one_minus_two_sum(&p, [0, 10, 11, 13, 2, 3, 5, 8]);
+                }
+                (Pauli::Y, Pauli::Z) => {
+                    *v *= one_minus_two_sum(&p, [0, 1, 11, 14, 3, 6, 8, 9]);
+                }
+                (Pauli::Z, Pauli::I) => {
+                    *v *= one_minus_two_sum(&p, [10, 3, 4, 5, 6, 7, 8, 9]);
+                }
+                (Pauli::Z, Pauli::X) => {
+                    *v *= one_minus_two_sum(&p, [1, 13, 14, 2, 3, 4, 7, 8]);
+                }
+                (Pauli::Z, Pauli::Y) => {
+                    *v *= one_minus_two_sum(&p, [0, 12, 14, 2, 3, 5, 7, 9]);
+                }
+                (Pauli::Z, Pauli::Z) => {
+                    *v *= one_minus_two_sum(&p, [0, 1, 10, 12, 13, 3, 6, 7]);
+                }
+                _ => unreachable!(),
             }
         })
     }
@@ -119,10 +125,10 @@ impl<T: Config> Depolarizing2<T> for PauliSum<T> {
     fn depolarize2(&mut self, addr0: usize, addr1: usize, p: T::Coeff) {
         let factor = T::Coeff::from(1.0) - p * (16.0 / 15.0);
         self.scale(move |k, v| {
-            if k.get_lbit(addr0) || k.get_lbit(addr1) {
-                return;
-            }
-            if pauli_code(k, addr0) != 0 || pauli_code(k, addr1) != 0 {
+            // A lone survivor sees depolarize1(4p/5), whose factor is also 1 - 16p/15.
+            let active0 = !k.get_lbit(addr0) && pauli_code(k, addr0) != 0;
+            let active1 = !k.get_lbit(addr1) && pauli_code(k, addr1) != 0;
+            if active0 || active1 {
                 *v *= factor.clone();
             }
         });

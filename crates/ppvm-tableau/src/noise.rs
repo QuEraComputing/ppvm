@@ -649,6 +649,24 @@ mod tests {
     }
 
     #[test]
+    fn two_qubit_pauli_error_saturated_marginal_on_lost_partner() {
+        // A normalized channel with X always on the survivor must flip it every
+        // shot, even though the summed marginal rounds to 1 + ε in f64.
+        let probs = [0.2, 0.4, 0.3, 0.1];
+        for dead in [0, 1] {
+            let mut p = [0.0; 15];
+            for (o, &v) in probs.iter().enumerate() {
+                // survivor = addr0: XI, XX, XY, XZ; survivor = addr1: IX, XX, YX, ZX
+                let k = if dead == 1 { 4 + o } else { 4 * o + 1 };
+                p[k - 1] = v;
+            }
+            for seed in 0..20 {
+                assert!(survivor_flipped(p, dead, Some(QubitStatus::Lost), seed));
+            }
+        }
+    }
+
+    #[test]
     fn depolarize2_lost_partner_survivor_flip_rate() {
         // 8 of the 15 two-qubit Paulis carry X or Y on a given qubit, so its Z
         // outcome flips with probability 8/15 whether or not the partner is there.

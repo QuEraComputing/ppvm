@@ -18,7 +18,8 @@ use ppvm_traits::traits::{Clifford, Coefficient};
 // `Zero` is used for `Self::Coeff::zero()` inside default method bodies; the
 // bound itself is redundant on `Self::Coeff` because `Coefficient: num::Zero`.
 
-/// `true` iff `p` lies in the closed unit interval `[0, 1]`.
+/// `true` iff `p` lies in the closed unit interval `[0, 1]`, up to a `1e-12`
+/// rounding slack above 1 (e.g. summed marginals of a normalized channel).
 ///
 /// Spelled out with two explicit comparisons rather than
 /// `(0.0..=1.0).contains(p)` because the coefficient types here only implement
@@ -30,7 +31,7 @@ fn is_probability<C: PartialOrd<f64>>(p: &C) -> bool {
     if *p < 0.0 {
         return false;
     }
-    *p <= 1.0
+    *p <= 1.0 + 1e-12
 }
 
 /// Marginal X/Y/Z probabilities on one qubit of a two-qubit Pauli channel.

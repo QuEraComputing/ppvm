@@ -23,7 +23,7 @@ pub trait LossInfo {
 }
 
 /// Loss state associated with word sites.
-pub trait LossState {
+pub trait LossState: LossInfo {
     /// Mark index `i` lost.
     fn set_lost(&mut self, i: usize);
 

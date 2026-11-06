@@ -131,6 +131,8 @@ class GeneralizedTableauSum(
     def reset(self, *targets: int | Iterable[int]) -> None:
         """Reset each target qubit to the |0> state.
 
+        Lost qubits are first returned to the computational subspace.
+
         Args:
             *targets: The indices of the target qubits.
         """

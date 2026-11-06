@@ -28,7 +28,7 @@ pub use noise::{
     LeakageChannel, LossChannel, PauliError, ResetLeakageChannel, ResetLossChannel,
     TwoQubitPauliError,
 };
-pub use reset::Reset;
+pub use reset::{Reset, ResetState, WordReset};
 pub use storage::PauliStorage;
 pub use strategy::{NoStrategy, Strategy};
 pub use trace::Trace;

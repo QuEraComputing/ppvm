@@ -345,8 +345,8 @@ where
                     // both lost — un-leak first so reset canonicalizes to |0⟩
                     self.qubit_status[addr0] = QubitStatus::Live;
                     self.qubit_status[addr1] = QubitStatus::Live;
-                    self.reset(addr0);
-                    self.reset(addr1);
+                    self.reset_state(addr0);
+                    self.reset_state(addr1);
                     self.qubit_status[addr0] = QubitStatus::Lost;
                     self.qubit_status[addr1] = QubitStatus::Lost;
                 } else {
@@ -354,11 +354,11 @@ where
                     let choice = self.tableau.rng.random::<bool>();
                     if choice {
                         self.qubit_status[addr1] = QubitStatus::Live;
-                        self.reset(addr1);
+                        self.reset_state(addr1);
                         self.qubit_status[addr1] = QubitStatus::Lost;
                     } else {
                         self.qubit_status[addr0] = QubitStatus::Live;
-                        self.reset(addr0);
+                        self.reset_state(addr0);
                         self.qubit_status[addr0] = QubitStatus::Lost;
                     }
                 }
@@ -471,7 +471,7 @@ where
         }
 
         self.qubit_status[addr0] = QubitStatus::Live;
-        self.reset(addr0);
+        self.reset_state(addr0);
     }
 }
 
@@ -1560,13 +1560,32 @@ mod tests {
     }
 
     #[test]
-    fn reset_skips_leaked_qubit() {
-        // reset must not re-zero a leaked qubit.
+    fn reset_state_skips_leaked_qubit() {
+        // reset_state must not re-zero a leaked qubit.
+        let mut t = tab(1);
+        t.leakage_channel(0, 0.0, 1.0); // leaked, |1⟩
+        t.reset_state(0);
+        assert!(t.is_leaked(0));
+        assert_eq!(t.measure(0), Some(true));
+    }
+
+    #[test]
+    fn reset_recovers_leaked_qubit_to_zero() {
         let mut t = tab(1);
         t.leakage_channel(0, 0.0, 1.0); // leaked, |1⟩
         t.reset(0);
-        assert!(t.is_leaked(0));
-        assert_eq!(t.measure(0), Some(true));
+        assert!(!t.is_leaked(0));
+        assert_eq!(t.measure(0), Some(false));
+    }
+
+    #[test]
+    fn reset_recovers_lost_qubit_to_zero() {
+        let mut t = tab(1);
+        t.x(0);
+        t.loss_channel(0, 1.0);
+        t.reset(0);
+        assert!(!t.is_lost(0));
+        assert_eq!(t.measure(0), Some(false));
     }
 
     // === ResetLeakageChannel ===

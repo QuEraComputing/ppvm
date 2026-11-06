@@ -50,6 +50,12 @@ pub trait ACMapAddAssign<
     fn map_add_assign<F>(&self, dest: &mut Self, f: F)
     where
         F: Fn(&W, &V) -> (W, V) + Sync + Send;
+    /// Like [`map_add_assign`](Self::map_add_assign), but each entry may
+    /// produce any number of results.
+    fn map_flat_add_assign<F, I>(&self, dest: &mut Self, f: F)
+    where
+        F: Fn(&W, &V) -> I + Sync + Send,
+        I: IntoIterator<Item = (W, V)>;
 }
 
 /// Scalar `*=` semantics for an `ACMap`: multiply every value by a

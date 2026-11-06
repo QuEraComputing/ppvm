@@ -1,9 +1,32 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
+/// Reset the state of a live qubit to `|0⟩`, leaving lost and leaked qubits
+/// untouched.
+pub trait ResetState {
+    /// Reset the qubit at `addr0` to `|0⟩` if it is live; no-op otherwise.
+    fn reset_state(&mut self, addr0: usize);
+}
+
+/// Full reset to `|0⟩` of a single Pauli word, in the Heisenberg picture.
+///
+/// Pauli-propagation backends build [`Reset`] from this: each term maps to
+/// the words returned here, each carrying the term's coefficient.
+pub trait WordReset: crate::traits::PauliWordTrait {
+    /// Words this word maps to under a full reset of qubit `addr0`.
+    ///
+    /// `I` and `Z` on `addr0` map to the identity on the full qubit space
+    /// (for lossy words, `I + L`); `X`, `Y` and `L` drop out.
+    fn full_reset(&self, addr0: usize) -> impl Iterator<Item = Self> + use<Self>;
+}
+
 /// Reset one qubit to a computational/Pauli basis state.
-pub trait Reset: crate::traits::Clifford + crate::traits::CliffordExtensions {
+pub trait Reset: ResetState + crate::traits::Clifford + crate::traits::CliffordExtensions {
     /// Reset one qubit to `|0⟩` (stim `R`/`RZ`).
+    ///
+    /// This is a full reset: a lost or leaked qubit is first brought back
+    /// to the computational subspace, then its state is reset via
+    /// [`ResetState::reset_state`].
     fn reset(&mut self, addr0: usize);
     /// stim `RZ` alias — reset to `|0⟩`.
     fn reset_z(&mut self, addr0: usize) {

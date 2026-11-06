@@ -22,8 +22,8 @@ pub use containers::{
 pub use gates::{
     AmplitudeDamping, AsymmetricLossChannel, CRx, Clifford, CliffordBatch, CorrelatedLossChannel,
     Depolarizing, Depolarizing2, LossChannel, Measure, PauliError, Projection, Reset,
-    ResetLossChannel, RotXY, RotationOne, RotationOneBatch, RotationTwo, RotationTwoBatch, TGate,
-    TwoQubitPauliError, U3Gate,
+    ResetLossChannel, ResetState, RotXY, RotationOne, RotationOneBatch, RotationTwo,
+    RotationTwoBatch, TGate, TwoQubitPauliError, U3Gate,
 };
 pub use loss::{LossState, LossySite};
 pub use pauli::{Pauli, PhaseTrack, SymplecticColumns};

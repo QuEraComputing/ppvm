@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["PauliKeyColumn","PauliWord","Phased"],"trait":["HashFinalize","PauliStorage"],"type":["DefaultStorage"]};
+window.SIDEBAR_ITEMS = {"struct":["PauliKeyColumn","PauliWord"],"trait":["HashFinalize","PauliStorage"],"type":["DefaultStorage"]};

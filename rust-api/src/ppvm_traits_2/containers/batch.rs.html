@@ -2,7 +2,7 @@
 <a href=#2 id=2 data-nosnippet>2</a>// SPDX-License-Identifier: Apache-2.0
 <a href=#3 id=3 data-nosnippet>3</a>
 <a href=#4 id=4 data-nosnippet>4</a></span><span class="kw">use </span><span class="kw">crate</span>::containers::Indexable;
-<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span><span class="kw">crate</span>::loss::LossState;
+<a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span><span class="kw">crate</span>::loss::LossInfo;
 <a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span><span class="kw">crate</span>::word::PauliBits;
 <a href=#7 id=7 data-nosnippet>7</a>
 <a href=#8 id=8 data-nosnippet>8</a><span class="doccomment">/// An [`Indexable`] key with a structure-of-arrays column representation.
@@ -86,12 +86,12 @@
 <a href=#86 id=86 data-nosnippet>86</a>    }
 <a href=#87 id=87 data-nosnippet>87</a>}
 <a href=#88 id=88 data-nosnippet>88</a>
-<a href=#89 id=89 data-nosnippet>89</a><span class="doccomment">/// Row-level loss access for columns whose keys implement [`LossState`].
+<a href=#89 id=89 data-nosnippet>89</a><span class="doccomment">/// Row-level loss access for columns whose keys implement [`LossInfo`].
 <a href=#90 id=90 data-nosnippet>90</a>/// Defaults materialize the row; packed columns override. No blanket impl, for
 <a href=#91 id=91 data-nosnippet>91</a>/// the same reason as [`PauliColumn`].
 <a href=#92 id=92 data-nosnippet>92</a></span><span class="kw">pub trait </span>LossColumn: KeyColumn
 <a href=#93 id=93 data-nosnippet>93</a><span class="kw">where
-<a href=#94 id=94 data-nosnippet>94</a>    </span><span class="self">Self</span>::Key: LossState,
+<a href=#94 id=94 data-nosnippet>94</a>    </span><span class="self">Self</span>::Key: LossInfo,
 <a href=#95 id=95 data-nosnippet>95</a>{
 <a href=#96 id=96 data-nosnippet>96</a>    <span class="doccomment">/// Read one row's loss bit.
 <a href=#97 id=97 data-nosnippet>97</a>    </span><span class="attr">#[inline]

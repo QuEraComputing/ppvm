@@ -10,7 +10,7 @@ use std::marker::PhantomData;
 use bitvec::array::BitArray;
 use bitvec::view::BitView;
 use num::{One, Zero};
-use ppvm_traits_2::{Pauli, PauliBits, Word};
+use ppvm_traits_2::{Pauli, PauliBits, Word, loss::LossInfo};
 
 use crate::hash::structural_hash;
 use crate::{DefaultStorage, HashFinalize, PauliStorage};
@@ -224,6 +224,14 @@ impl<A: PauliStorage, H> Word for PauliWord<A, H> {
     fn iter(&self) -> impl Iterator<Item = Pauli> {
         (0..self.nqubits).map(move |i| self.get(i))
     }
+}
+
+/// Ordinary words report no loss. So, we just have NOOP LossInfo reporting.
+impl<A, H> LossInfo for PauliWord<A, H>
+where
+    A: PauliStorage,
+    H: BuildHasher + Default + HashFinalize,
+{
 }
 
 impl<A, H> PauliBits for PauliWord<A, H>

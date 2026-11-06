@@ -8,12 +8,10 @@ mod column;
 mod data;
 mod hash;
 mod pauli_parser;
-mod phase;
 mod product;
 mod storage;
 
 pub use column::PauliKeyColumn;
 pub use data::PauliWord;
 pub use hash::HashFinalize;
-pub use phase::Phased;
 pub use storage::{DefaultStorage, PauliStorage};

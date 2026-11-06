@@ -76,8 +76,8 @@ fn record_bit(record: &[Option<bool>], k: usize) -> bool {
 /// `MR`/`MRX`/`MRY`.
 ///
 /// The readout comes first, so a lost or leaked qubit is reported as such
-/// before the reset (as for `R`) brings it back. `reset` leaves the
-/// measurement record untouched.
+/// before the reset (as for `R`) brings it back. The state reset reuses the
+/// true (pre-flip) outcome instead of measuring again.
 fn measure_reset_z<T, I, C>(
     tab: &mut GeneralizedTableau<T, I, C>,
     q: usize,
@@ -107,8 +107,15 @@ where
         + Copy,
     I: TableauIndex + Debug + Send + Sync,
 {
-    let recorded = tab.measure_noisy(q, noise);
-    tab.reset(q);
+    let true_outcome = tab.measure(q);
+    let recorded = true_outcome.map(|b| tab.flip_with_prob(b, noise));
+    tab.overwrite_last_measurement_record(recorded);
+    // `x` is skipped on inactive qubits; lost qubits already sit in |0⟩.
+    if true_outcome == Some(true) {
+        tab.x(q);
+    }
+    tab.reset_loss_channel(q);
+    tab.reset_leakage_channel(q);
     recorded
 }
 

@@ -150,7 +150,7 @@ shots = sample_stim(prog, shots=1000, n_qubits=5)
 
 `MeasurementResult` is an `IntEnum` (`ZERO`, `ONE`, `LOST`). Loss is first-class — a lost qubit measures `LOST`.
 
-Stim leakage is `I_ERROR[leakage](p0, p1)` — same `p0`/`p1` as `leakage_channel`. A leaked qubit measures the pinned `ZERO`/`ONE`, not `LOST`. `I_ERROR[reset_loss] q…` / `I_ERROR[reset_leakage] q…` (no args) map to `reset_loss_channel` / `reset_leakage_channel`.
+Stim leakage is `I_ERROR[leakage](p0, p1)` — same `p0`/`p1` as `leakage_channel`. A leaked qubit measures the pinned `ZERO`/`ONE`, not `LOST`. `I_ERROR[reset_loss] q…` / `I_ERROR[reset_leakage] q…` / `I_ERROR[reset_state] q…` (no args) map to `reset_loss_channel` / `reset_leakage_channel` / `reset_state`. `R`/`RX`/`RY` and the reset half of `MR`/`MRX`/`MRY` are full resets: lost and leaked qubits come back live (`MR` reports `LOST` / the pinned bit first).
 
 ## Rust API
 
@@ -269,7 +269,8 @@ Important: the six off-diagonal two-qubit rotations (`rxy`, `rxz`, `ryx`, `ryz`,
 | Method                                                                      | R | P-S | P-T |
 |-----------------------------------------------------------------------------|---|-----|-----|
 | `measure(q)` → `MeasurementResult` (`ZERO`/`ONE`/`LOST` on tableau)         | ✓ | —   | ✓   |
-| `reset(q)`                                                                  | ✓ | —   | ✓   |
+| `reset(q)` (also un-loses / un-leaks)                                       | ✓ | —   | ✓   |
+| `reset_state(q)` (live qubits only; lost / leaked untouched)                | ✓ | —   | —   |
 | `depolarize1(q, p=...)`                                                     | ✓ | ✓   | ✓   |
 | `depolarize2(q0, q1, p=...)`                                                | ✓ | —   | —   |
 | `pauli_error(q, [px,py,pz])`                                                | ✓ | ✓   | ✓   |

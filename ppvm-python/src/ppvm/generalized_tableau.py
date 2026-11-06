@@ -295,6 +295,16 @@ class GeneralizedTableau(
         """
         self._interface.reset(_normalize_targets(targets))
 
+    def reset_state(self, *targets: int | Iterable[int]) -> None:
+        """Reset the state of each live target qubit to the |0> state.
+
+        Lost and leaked qubits are left untouched. Use `reset` for a full reset.
+
+        Args:
+            *targets: The indices of the target qubits.
+        """
+        self._interface.reset_state(_normalize_targets(targets))
+
     def reset_x(self, *targets: int | Iterable[int]) -> None:
         """Reset each target qubit to the |+> state.
 

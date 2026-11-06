@@ -168,6 +168,27 @@ fn reset_restores_lost_and_leaked_qubits_to_zero() {
 }
 
 #[test]
+fn measure_reset_reports_loss_and_leakage_then_resets() {
+    // MR reads out first (lost -> None, leaked -> pinned bit), then fully resets.
+    let (results, tab) = run(
+        "I_ERROR[loss](1.0) 0\nI_ERROR[leakage](0.0, 1.0) 1\nMR 0 1\nM 0 1",
+        2,
+    );
+    assert!(!tab.is_lost(0) && !tab.is_leaked(1));
+    assert_eq!(results, vec![None, Some(true), Some(false), Some(false)]);
+}
+
+#[test]
+fn reset_state_leaves_lost_and_leaked_qubits_alone() {
+    let (results, tab) = run(
+        "X 2\nI_ERROR[loss](1.0) 0\nI_ERROR[leakage](0.0, 1.0) 1\nI_ERROR[reset_state] 0 1 2\nM 0 1 2",
+        3,
+    );
+    assert!(tab.is_lost(0) && tab.is_leaked(1));
+    assert_eq!(results, vec![None, Some(true), Some(false)]);
+}
+
+#[test]
 fn reset_loss_does_not_restore_leaked_qubit() {
     let (_, tab) = run("I_ERROR[leakage](0.0, 1.0) 0\nI_ERROR[reset_loss] 0", 1);
     assert!(tab.is_leaked(0));

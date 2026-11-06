@@ -393,7 +393,7 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize, const REH
     for PauliWord<A, S, REHASH>
 {
     // No loss representable: a full reset is a state reset.
-    fn full_reset(&self, addr0: usize) -> impl Iterator<Item = Self> + use<A, S, REHASH> {
+    fn word_reset(&self, addr0: usize) -> impl Iterator<Item = Self> + use<A, S, REHASH> {
         matches!(self.get(addr0), Pauli::I | Pauli::Z)
             .then(|| self.set_new(addr0, Pauli::I))
             .into_iter()

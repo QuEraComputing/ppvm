@@ -17,7 +17,7 @@ pub trait WordReset: crate::traits::PauliWordTrait {
     ///
     /// `I` and `Z` on `addr0` map to the identity on the full qubit space
     /// (for lossy words, `I + L`); `X`, `Y` and `L` drop out.
-    fn full_reset(&self, addr0: usize) -> impl Iterator<Item = Self> + use<Self>;
+    fn word_reset(&self, addr0: usize) -> impl Iterator<Item = Self> + use<Self>;
 }
 
 /// Reset one qubit to a computational/Pauli basis state.

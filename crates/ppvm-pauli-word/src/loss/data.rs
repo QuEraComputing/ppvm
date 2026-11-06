@@ -422,7 +422,7 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize> WordReset
     for LossyPauliWord<A, S>
 {
     // The identity on the full qubit space is `I + L`.
-    fn full_reset(&self, addr0: usize) -> impl Iterator<Item = Self> + use<A, S> {
+    fn word_reset(&self, addr0: usize) -> impl Iterator<Item = Self> + use<A, S> {
         matches!(self.get(addr0), Pauli::I | Pauli::Z)
             .then(|| [self.set_new(addr0, Pauli::I), self.set_new(addr0, Pauli::L)])
             .into_iter()

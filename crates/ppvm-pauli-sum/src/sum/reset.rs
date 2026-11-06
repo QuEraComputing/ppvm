@@ -38,7 +38,7 @@ where
         aux.clear();
         data.map_flat_add_assign(aux, |k, v| {
             let v = v.clone();
-            k.full_reset(addr0).map(move |w| (w, v.clone()))
+            k.word_reset(addr0).map(move |w| (w, v.clone()))
         });
         self.swap();
     }

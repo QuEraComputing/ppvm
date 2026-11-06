@@ -9,7 +9,7 @@ pub enum LossySite<S> {
     Lost,
 }
 
-/// Read only loss gathering information 
+/// Read only loss gathering information
 pub trait LossInfo {
     /// Whether site `i` is lost. Lossy words override this.
     fn is_lost(&self, _i: usize) -> bool {

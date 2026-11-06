@@ -227,9 +227,12 @@ impl<A: PauliStorage, H> Word for PauliWord<A, H> {
 }
 
 /// Ordinary words report no loss. So, we just have NOOP LossInfo reporting.
-impl<A, H> LossInfo for PauliWord<A, H> where
+impl<A, H> LossInfo for PauliWord<A, H>
+where
     A: PauliStorage,
-    H: BuildHasher + Default + HashFinalize {}
+    H: BuildHasher + Default + HashFinalize,
+{
+}
 
 impl<A, H> PauliBits for PauliWord<A, H>
 where

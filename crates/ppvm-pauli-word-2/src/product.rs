@@ -23,7 +23,7 @@ where
     /// Returns the XORed word and its residual phase for the coefficient to absorb.
     /// Both inputs must have equal width; zero unused bits stay zero.
     fn key_mul(&self, other: &Self) -> (Self, Phase) {
-        let mut product = self.clone();
+        let mut product = *self;
         let phase = product.key_mul_assign(other);
         (product, phase)
     }

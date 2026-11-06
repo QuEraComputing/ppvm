@@ -9,7 +9,7 @@ use std::{
 
 use bitvec::array::BitArray;
 use ppvm_pauli_word_2::{DefaultStorage, PauliStorage};
-use ppvm_traits_2::{LossState, LossySite, Pauli, PauliBits, Word};
+use ppvm_traits_2::{LossState, LossySite, Pauli, PauliBits, Word, loss::LossInfo};
 
 pub struct LossyPauliWord<A: PauliStorage = DefaultStorage, H = fxhash::FxBuildHasher> {
     pub(crate) xbits: BitArray<A>,
@@ -426,12 +426,19 @@ impl<A: PauliStorage, H> PauliBits for LossyPauliWord<A, H> {
     }
 }
 
-impl<A: PauliStorage, H> LossState for LossyPauliWord<A, H> {
+impl<A: PauliStorage, H> LossInfo for LossyPauliWord<A, H> {
     #[inline]
     fn is_lost(&self, i: usize) -> bool {
         LossyPauliWord::is_lost(self, i)
     }
 
+    #[inline]
+    fn loss_weight(&self) -> usize {
+        LossyPauliWord::loss_weight(self)
+    }
+}
+
+impl<A: PauliStorage, H> LossState for LossyPauliWord<A, H> {
     #[inline]
     fn set_lost(&mut self, i: usize) {
         LossyPauliWord::set_lost(self, i);
@@ -440,11 +447,6 @@ impl<A: PauliStorage, H> LossState for LossyPauliWord<A, H> {
     #[inline]
     fn clear_lost(&mut self, i: usize) {
         LossyPauliWord::clear_loss(self, i);
-    }
-
-    #[inline]
-    fn loss_weight(&self) -> usize {
-        LossyPauliWord::loss_weight(self)
     }
 }
 

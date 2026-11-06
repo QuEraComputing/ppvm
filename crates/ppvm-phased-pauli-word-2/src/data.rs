@@ -6,7 +6,7 @@
 use std::fmt;
 use std::hash::BuildHasher;
 
-use crate::{HashFinalize, PauliStorage, PauliWord};
+use ppvm_pauli_word_2::{HashFinalize, PauliStorage, PauliWord};
 use ppvm_traits_2::{Phase, Word};
 
 /// A base word with a phase in `{+1, +i, -1, -i}`, representing `i^φ · g(w)`.
@@ -147,6 +147,80 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ppvm_traits_2::Pauli;
+
+    type Pw = Phased<PauliWord>;
+
+    #[test]
+    fn parsing_enforces_storage_capacity() {
+        for input in ["IIIIIIIII", "XXXXXXXXI", "IIIIIIIIX", "I_I_I_I_I_I_I_I_I"] {
+            let phased = format!("+i{input}");
+            assert!(
+                std::panic::catch_unwind(|| { Phased::<PauliWord<u8>>::from(phased.as_str()) })
+                    .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn parse_sign_and_body() {
+        let cases = [
+            ("+XYZI", Phase::Pos1),
+            ("-XYZI", Phase::Neg1),
+            ("+iXYZI", Phase::PosI),
+            ("-iXYZI", Phase::NegI),
+        ];
+        for (s, want) in cases {
+            let pw: Pw = s.into();
+            assert_eq!(pw.phase(), want, "{s} phase");
+            assert_eq!(pw.n_sites(), 4, "{s} width");
+            assert_eq!(pw.get(0), Pauli::X);
+            assert_eq!(pw.get(1), Pauli::Y);
+            assert_eq!(pw.get(2), Pauli::Z);
+            assert_eq!(pw.get(3), Pauli::I);
+        }
+    }
+
+    #[test]
+    fn display_roundtrips_prefix() {
+        for s in ["+XYZI", "-XYZI", "+iXYZI", "-iXYZI"] {
+            let pw: Pw = s.into();
+            assert_eq!(pw.to_string(), s);
+        }
+    }
+
+    #[test]
+    fn is_positive_reads_sign() {
+        let pos: Pw = "+XY".into();
+        let posi: Pw = "+iXY".into();
+        let neg: Pw = "-XY".into();
+        let negi: Pw = "-iXY".into();
+        assert!(pos.is_positive() && posi.is_positive());
+        assert!(!neg.is_positive() && !negi.is_positive());
+    }
+
+    #[test]
+    fn phase_participates_in_equality() {
+        let a: Pw = "+XY".into();
+        let b: Pw = "-XY".into();
+        let c: Pw = "+XY".into();
+        assert_ne!(a, b, "different phase ⇒ distinct");
+        assert_eq!(a, c);
+    }
+
+    #[test]
+    fn weight_iter_delegate_to_word() {
+        let pw: Pw = "-iXIYZ".into();
+        assert_eq!(pw.weight(), 3);
+        let via_iter: Vec<Pauli> = pw.iter().collect();
+        assert_eq!(via_iter, vec![Pauli::X, Pauli::I, Pauli::Y, Pauli::Z]);
+    }
+
+    #[test]
+    fn send_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<Pw>();
+    }
 
     #[test]
     fn phase_prefixes_roundtrip() {

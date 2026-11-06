@@ -8,8 +8,9 @@ pub enum LossySite<S> {
     /// A lost site - the qubit no longer participates
     Lost,
 }
-/// Loss state associated with word sites.
-pub trait LossState {
+
+/// Read only loss gathering information
+pub trait LossInfo {
     /// Whether site `i` is lost. Lossy words override this.
     fn is_lost(&self, _i: usize) -> bool {
         false
@@ -19,7 +20,10 @@ pub trait LossState {
     fn loss_weight(&self) -> usize {
         0
     }
+}
 
+/// Loss state associated with word sites.
+pub trait LossState: LossInfo {
     /// Mark index `i` lost.
     fn set_lost(&mut self, i: usize);
 

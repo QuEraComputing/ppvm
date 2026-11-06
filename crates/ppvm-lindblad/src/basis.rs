@@ -24,6 +24,7 @@ const CHUNK_SIZE: usize = 4096;
 /// the main state array's tail; streaming fallback retains its generation buffers.
 #[derive(Default)]
 pub struct PcStepWorkspace<const C: usize = { crate::W_CHUNKS }> {
+    // The shortlist strategy also owns the streaming scratch used by the default path.
     pub(crate) proposer: ShortlistScoreProposer<C>,
     pub(crate) generator: Option<crate::mf_expm::RealCache>,
     pub(crate) taylor: Vec<f64>,

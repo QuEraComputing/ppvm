@@ -396,6 +396,10 @@ class LindbladSpec:
         num_threads: int | None = None,
         admit_basis: int | None = None,
         tau_add: float | None = None,
+        *,
+        proposer: str = "streaming",
+        forward_looking: bool = False,
+        lookahead_dt: float = 0.1,
     ) -> tuple[np.ndarray, np.ndarray]: ...
     def pc_step_timed(
         self,
@@ -408,6 +412,10 @@ class LindbladSpec:
         num_threads: int | None = None,
         admit_basis: int | None = None,
         tau_add: float | None = None,
+        *,
+        proposer: str = "streaming",
+        forward_looking: bool = False,
+        lookahead_dt: float = 0.1,
     ) -> tuple[tuple[np.ndarray, np.ndarray], dict[str, int]]: ...
     def pc_step_orbit_rep(
         self,

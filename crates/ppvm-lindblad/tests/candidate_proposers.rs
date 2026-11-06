@@ -4,13 +4,13 @@
 //! Public strategy integration and borrowed-tail lifetime checks.
 
 use ppvm_lindblad::{
-    CandidateBuffer, CandidateProposer, Error, LindbladSpec, PcStepConfig, PcStepWorkspace,
-    ShortlistScoreProposer, Word, word_from_codes,
+    CandidateBuffer, CandidateProposer, CandidateStrategy, Error, LindbladSpec, PcStepConfig,
+    PcStepWorkspace, StreamingProposer, Word, word_from_codes,
 };
 
 #[derive(Default)]
 struct DelegatingProposer {
-    shortlist: ShortlistScoreProposer,
+    strategy: StreamingProposer,
     calls: usize,
     selections: Vec<usize>,
 }
@@ -26,11 +26,11 @@ impl CandidateProposer for DelegatingProposer {
         self.calls += 1;
         assert_eq!(buffer.basis().len(), buffer.coefficients().len());
         assert!(buffer.candidates().is_empty());
-        self.shortlist.propose(model, buffer, protected, maximum)
+        self.strategy.propose(model, buffer, protected, maximum)
     }
 
     fn select(&mut self, buffer: &mut CandidateBuffer<'_>, threshold: f64) -> usize {
-        let count = self.shortlist.select(buffer, threshold);
+        let count = self.strategy.select(buffer, threshold);
         self.selections.push(count);
         count
     }
@@ -219,4 +219,84 @@ fn proposal_error_discards_temporary_tail_and_allows_default_step_to_resume() {
         .unwrap();
     assert_eq!(words, expected_words);
     assert_eq!(coefficients, expected_coefficients);
+}
+
+#[test]
+fn forward_retention_preserves_values_and_selects_the_predicted_top_terms() {
+    let model: LindbladSpec = LindbladSpec::new(
+        4,
+        &[
+            ("XXII".into(), 0.7),
+            ("IYYI".into(), 0.8),
+            ("IIXX".into(), 0.9),
+        ],
+        &[],
+    )
+    .unwrap();
+    let seed = word_from_codes(&[2, 0, 0, 0]).unwrap();
+    let cfg = PcStepConfig {
+        max_basis: 3,
+        admit_basis: Some(12),
+        ..Default::default()
+    };
+    let mut basis = vec![seed];
+    let mut coeffs = vec![1.0];
+    model
+        .pc_step(&mut basis, &mut coeffs, 0.1, &[seed], &cfg)
+        .unwrap();
+    for proposer in [CandidateStrategy::Streaming, CandidateStrategy::Shortlist] {
+        for dt in [0.025, 0.1, 0.15] {
+            let working = PcStepConfig {
+                proposer,
+                max_basis: 12,
+                ..cfg
+            };
+            let forward = PcStepConfig {
+                proposer,
+                forward_looking: Some(0.1),
+                ..cfg
+            };
+            let (mut full, mut evolved) = (basis.clone(), coeffs.clone());
+            let (mut selected, mut values) = (basis.clone(), coeffs.clone());
+            model
+                .pc_step(&mut full, &mut evolved, dt, &[seed], &working)
+                .unwrap();
+            model
+                .pc_step(&mut selected, &mut values, dt, &[seed], &forward)
+                .unwrap();
+            let score = |i: usize| {
+                let before = basis
+                    .iter()
+                    .position(|w| *w == full[i])
+                    .map_or(0.0, |j| coeffs[j]);
+                if dt == 0.1 {
+                    evolved[i].abs()
+                } else {
+                    (before + 0.1 / dt * (evolved[i] - before)).abs()
+                }
+            };
+            let mut top: Vec<_> = (0..full.len()).filter(|&i| full[i] != seed).collect();
+            top.sort_by(|&i, &j| score(j).total_cmp(&score(i)));
+            top.truncate(2);
+            let expected: Vec<_> = full
+                .iter()
+                .enumerate()
+                .filter(|(i, w)| **w == seed || top.contains(i))
+                .map(|(i, w)| (*w, evolved[i]))
+                .collect();
+            assert_eq!(
+                selected.iter().copied().zip(values).collect::<Vec<_>>(),
+                expected
+            );
+        }
+    }
+    let invalid = PcStepConfig {
+        forward_looking: Some(f64::NAN),
+        ..cfg
+    };
+    assert!(
+        model
+            .pc_step(&mut basis, &mut coeffs, 0.025, &[seed], &invalid)
+            .is_err()
+    );
 }

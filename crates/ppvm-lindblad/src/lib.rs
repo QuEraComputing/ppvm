@@ -38,10 +38,11 @@
 //! product loops bypass the higher-level word API and operate directly on
 //! the raw chunks for speed.
 //!
-//! Real predictor-corrector steps use [`ShortlistScoreProposer`]: shortlist
-//! external words by individual Hamiltonian contributions, then rank their
-//! complete signed leakage. [`StreamingProposer`] remains available through
-//! [`LindbladSpec::pc_step_with_proposer`] and handles general dissipators.
+//! Real predictor-corrector steps use [`StreamingProposer`] by default.
+//! [`CandidateStrategy::Shortlist`] selects [`ShortlistScoreProposer`], which
+//! shortlists individual contributions and scores their complete signed leakage.
+//! [`PcStepConfig::forward_looking`] controls retention ranking independently
+//! of candidate generation.
 
 mod algebra;
 mod basis;
@@ -70,7 +71,7 @@ pub(crate) mod mf_expm;
 
 pub use basis::{PcStepWorkspace, build_basis_index};
 pub use candidates::{CandidateBuffer, CandidateProposer, StreamingProposer};
-pub use config::PcStepConfig;
+pub use config::{CandidateStrategy, PcStepConfig};
 pub use error::Error;
 pub use sector::{Sector, canonicalize_basis_to_rep};
 pub use shortlist::ShortlistScoreProposer;

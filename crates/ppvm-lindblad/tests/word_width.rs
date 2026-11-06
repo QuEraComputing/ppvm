@@ -92,6 +92,7 @@ fn evolve<const C: usize>(n_total: usize, n_active: usize, steps: usize, koss: b
         drop_tol: 0.0,
         tau_add: None,
         num_threads: Some(1),
+        ..Default::default()
     };
     for _ in 0..steps {
         spec.pc_step(&mut basis, &mut coeffs, 0.05, &[], &cfg)
@@ -159,6 +160,7 @@ fn evolve_orbit<const C: usize>(n: usize, k: i32, steps: usize) -> Vec<(Vec<u8>,
         drop_tol: 0.0,
         tau_add: None,
         num_threads: Some(1),
+        ..Default::default()
     };
     for _ in 0..steps {
         spec.pc_step_orbit_rep(&mut basis, &mut coeffs, 0.1, &[], &sector, &cfg)

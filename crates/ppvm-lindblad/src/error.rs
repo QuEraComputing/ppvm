@@ -52,6 +52,8 @@ pub enum Error {
     },
     /// The rounded admission cap exceeds the representable allocation size.
     AdmissionCapOverflow,
+    /// Ranking horizon and timestep must be positive, finite and have a finite ratio.
+    InvalidRankingHorizon,
     Internal(String),
 }
 
@@ -98,6 +100,10 @@ impl fmt::Display for Error {
                 )
             }
             Error::AdmissionCapOverflow => write!(f, "admission cap overflow"),
+            Error::InvalidRankingHorizon => write!(
+                f,
+                "ranking horizon and timestep must be positive and finite with a finite ratio"
+            ),
             Error::Internal(msg) => write!(f, "internal error: {msg}"),
         }
     }

@@ -92,6 +92,7 @@ fn evolve<const C: usize>(n_total: usize, n_active: usize, steps: usize, koss: b
         drop_tol: 0.0,
         tau_add: None,
         num_threads: Some(1),
+        ..Default::default()
     };
     for _ in 0..steps {
         spec.pc_step(&mut basis, &mut coeffs, 0.05, &[], &cfg)
@@ -133,7 +134,7 @@ fn evolve_orbit<const C: usize>(n: usize, k: i32, steps: usize) -> Vec<(Vec<u8>,
     let group = TranslationGroup::chain_1d(n);
     let k_modes = [k];
 
-    let mut basis: Vec<Word<C>> = (0..n)
+    let basis: Vec<Word<C>> = (0..n)
         .map(|q| {
             let mut codes = vec![0u8; n];
             codes[q] = 1; // X
@@ -148,7 +149,9 @@ fn evolve_orbit<const C: usize>(n: usize, k: i32, steps: usize) -> Vec<(Vec<u8>,
             )
         })
         .collect();
-    canonicalize_pauli_sum_complex(&mut basis, &mut coeffs, &group, &k_modes);
+    let mut words: Vec<_> = basis.iter().map(|w| w.to_pauli_word(n)).collect();
+    canonicalize_pauli_sum_complex(&mut words, &mut coeffs, &group, &k_modes);
+    let mut basis: Vec<Word<C>> = words.iter().map(Word::from_pauli_word).collect();
 
     let sector = Sector::new(&group, &k_modes);
     let cfg = PcStepConfig {
@@ -157,6 +160,7 @@ fn evolve_orbit<const C: usize>(n: usize, k: i32, steps: usize) -> Vec<(Vec<u8>,
         drop_tol: 0.0,
         tau_add: None,
         num_threads: Some(1),
+        ..Default::default()
     };
     for _ in 0..steps {
         spec.pc_step_orbit_rep(&mut basis, &mut coeffs, 0.1, &[], &sector, &cfg)

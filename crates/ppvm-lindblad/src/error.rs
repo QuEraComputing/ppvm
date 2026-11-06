@@ -46,6 +46,14 @@ pub enum Error {
         n: usize,
         m: usize,
     },
+    /// The admission ratio must be finite and at least one.
+    InvalidAdmissionRatio {
+        ratio: f64,
+    },
+    /// The rounded admission cap exceeds the representable allocation size.
+    AdmissionCapOverflow,
+    /// Ranking horizon and timestep must be positive, finite and have a finite ratio.
+    InvalidRankingHorizon,
     Internal(String),
 }
 
@@ -84,6 +92,17 @@ impl fmt::Display for Error {
             Error::KMatrixNotHermitian { n, m } => write!(
                 f,
                 "kossakowski K must be Hermitian; K[{n}][{m}] ≠ conj(K[{m}][{n}])"
+            ),
+            Error::InvalidAdmissionRatio { ratio } => {
+                write!(
+                    f,
+                    "admission ratio must be finite and at least 1; got {ratio}"
+                )
+            }
+            Error::AdmissionCapOverflow => write!(f, "admission cap overflow"),
+            Error::InvalidRankingHorizon => write!(
+                f,
+                "ranking horizon and timestep must be positive and finite with a finite ratio"
             ),
             Error::Internal(msg) => write!(f, "internal error: {msg}"),
         }

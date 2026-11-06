@@ -8,7 +8,10 @@ publish = false
 description = "Direct Heisenberg-picture Lindbladian evolution on an adaptive Pauli-string basis."
 
 [dependencies]
+bitvec = "1.0.1"
+bytemuck = { version = "1", features = ["min_const_generics"] }
 fxhash = "0.2.1"
+hashbrown = { version = "0.17.1", default-features = false }
 ndarray = "0.17"
 num = "0.4.3"
 ppvm-traits     = { version = "0.2.0", path = "../ppvm-traits" }

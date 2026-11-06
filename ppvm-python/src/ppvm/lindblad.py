@@ -305,13 +305,18 @@ class Lindbladian:
         num_threads: int | None = None,
         admit_basis: int | None = None,
         tau_add: float | None = None,
+        *,
+        proposer: str = "streaming",
+        forward_looking: bool = False,
+        lookahead_dt: float = 0.1,
     ) -> tuple[np.ndarray, np.ndarray]:
         """One predictor-corrector adaptive step.
 
         All work — leakage expansion, matrix-exponential step, second-hop
         re-expansion, corrector — runs in Rust; SciPy is not required.
-        The matrix-exponential action is computed matrix-free via the
-        external ``quspin-expm`` crate.
+        The matrix-exponential action uses sparse generator rows and the
+        external ``quspin-expm`` crate. Repeated calls on this model reuse
+        temporary buffers automatically. Couplings may have arbitrary strengths.
 
         Truncation. ``max_basis`` is a hard rank cap on the live basis:
         enrichment adds at most ``max_basis - len(basis)`` of the largest
@@ -339,6 +344,17 @@ class Lindbladian:
         turnover. With the default ``None``, admission is bounded by
         ``max_basis`` and turnover requires ``drop_tol > 0``.
 
+        ``proposer`` chooses ``"streaming"`` (default) or ``"shortlist"``
+        candidate generation. ``forward_looking=True`` independently ranks
+        retention by a linear coefficient prediction over ``lookahead_dt``
+        (default 0.1). Actual evolved coefficients are preserved.
+        The score is ``abs(c_before + lookahead_dt / dt * (c_after - c_before))``;
+        the interval starts at the beginning of this step. Only this call's
+        coefficient change is used, with no history carried between calls.
+        Each call uses a fixed generator. For piecewise-constant driving,
+        select the appropriate model for each segment and split steps at
+        switches; the prediction does not anticipate future generator changes.
+
         Returns ``(new_basis_arr, new_coeffs)``; the basis may have grown
         (or shrunk, if ``max_basis`` / ``drop_tol`` pruned entries).
         """
@@ -355,6 +371,9 @@ class Lindbladian:
             None if num_threads is None else int(num_threads),
             None if admit_basis is None else int(admit_basis),
             None if tau_add is None else float(tau_add),
+            proposer=proposer,
+            forward_looking=forward_looking,
+            lookahead_dt=lookahead_dt,
         )
 
     def pc_step_orbit_rep(
@@ -438,6 +457,10 @@ class Lindbladian:
         num_threads: int | None = None,
         admit_basis: int | None = None,
         tau_add: float | None = None,
+        *,
+        proposer: str = "streaming",
+        forward_looking: bool = False,
+        lookahead_dt: float = 0.1,
     ) -> tuple[list[str], np.ndarray]:
         """String-keyed variant of `pc_step_arr`."""
         n = self.n_qubits
@@ -455,6 +478,9 @@ class Lindbladian:
             num_threads,
             admit_basis,
             tau_add,
+            proposer=proposer,
+            forward_looking=forward_looking,
+            lookahead_dt=lookahead_dt,
         )
         return _codes_to_basis(new_basis_arr), new_coeffs
 

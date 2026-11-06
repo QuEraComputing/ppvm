@@ -53,6 +53,8 @@ fn candidate_terms(p_support: &[u32], index: &[Vec<u32>], scratch: &mut Vec<u32>
 /// costs more than the recompute (hash lookup ≳ recompute) and its several
 /// KB per cached word dominate memory at large basis sizes.
 pub struct LindbladSpec<const C: usize = W_CHUNKS> {
+    pub(crate) workspaces: std::sync::Mutex<Vec<crate::PcStepWorkspace<C>>>,
+    pub(crate) pauli_plan: Option<crate::pauli_plan::PauliActionPlan<C>>,
     n_qubits: usize,
     h_terms: Vec<HTerm<C>>,
     j_kinds: Vec<JumpKind<C>>,
@@ -145,13 +147,42 @@ impl<const C: usize> LindbladSpec<C> {
             });
         }
 
+        let pauli_plan = if j_kinds
+            .iter()
+            .all(|j| matches!(j, JumpKind::HermitianPauli { .. }))
+        {
+            let h: Vec<_> = h_parsed.iter().map(|h| (h.word, h.coeff)).collect();
+            let jumps: Vec<_> = j_kinds
+                .iter()
+                .map(|j| match j {
+                    JumpKind::HermitianPauli { word, rate } => (*word, *rate),
+                    _ => unreachable!(),
+                })
+                .collect();
+            crate::pauli_plan::PauliActionPlan::new(n_qubits, &h, &jumps)
+        } else {
+            None
+        };
         Ok(Self {
+            workspaces: std::sync::Mutex::new(Vec::new()),
+            pauli_plan,
             n_qubits,
             h_terms: h_parsed,
             j_kinds,
             h_support: h_support_idx,
             j_support: j_support_idx,
         })
+    }
+
+    /// Whether the off-diagonal action is purely Hamiltonian and skew symmetric.
+    pub(crate) fn supports_row_gather(&self) -> bool {
+        self.j_kinds
+            .iter()
+            .all(|jump| matches!(jump, JumpKind::HermitianPauli { .. }))
+    }
+
+    pub(crate) fn hamiltonian_terms(&self) -> impl Iterator<Item = (Word<C>, f64)> + '_ {
+        self.h_terms.iter().map(|term| (term.word, term.coeff))
     }
 
     /// Add a Kossakowski-form dissipator
@@ -166,6 +197,7 @@ impl<const C: usize> LindbladSpec<C> {
         ops: &[Vec<(String, Complex<f64>)>],
         k: &[Vec<Complex<f64>>],
     ) -> Result<(), Error> {
+        self.pauli_plan = None;
         for (pair, support) in kossakowski::compile(ops, k, self.n_qubits)? {
             let idx = self.j_kinds.len() as u32;
             self.j_kinds.push(JumpKind::Kossakowski(pair));

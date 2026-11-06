@@ -412,3 +412,45 @@ fn test_correlated_loss_ghz() {
     // XX should be affected by correlated loss
     assert!((x_exp - 0.9).abs() < 1e-8);
 }
+
+/// Coefficient of the single term `word` after applying `channel`.
+fn scaled_coeff(word: &str, channel: impl FnOnce(&mut LossyPauliSum)) -> f64 {
+    let mut state = LossyPauliSum::builder().n_qubits(2).build();
+    state += (word, 1.0);
+    channel(&mut state);
+    assert_eq!(state.data().iter().count(), 1, "{word} must not branch");
+    state.data().iter().map(|(_, v)| *v).sum()
+}
+
+#[test]
+fn test_two_qubit_pauli_error_lost_slot_acts_as_identity() {
+    // Paulis act trivially on the lost level, so E†(|L⟩⟨L| ⊗ P) scales like
+    // E†(I ⊗ P): the survivor sees the marginal channel and nothing branches.
+    let p: [f64; 15] = std::array::from_fn(|k| 0.002 * (k + 1) as f64);
+    for pauli in ["X", "Y", "Z"] {
+        for (lost, ident) in [
+            (format!("L{pauli}"), format!("I{pauli}")),
+            (format!("{pauli}L"), format!("{pauli}I")),
+        ] {
+            let c_lost = scaled_coeff(&lost, |s| s.two_qubit_pauli_error(0, 1, p));
+            let c_ident = scaled_coeff(&ident, |s| s.two_qubit_pauli_error(0, 1, p));
+            assert!(c_lost < 1.0, "{lost} must be damped");
+            assert!(
+                (c_lost - c_ident).abs() < 1e-12,
+                "{lost}: {c_lost} vs {ident}: {c_ident}"
+            );
+
+            let d_lost = scaled_coeff(&lost, |s| s.depolarize2(0, 1, 0.1));
+            let d_ident = scaled_coeff(&ident, |s| s.depolarize2(0, 1, 0.1));
+            assert!(
+                (d_lost - d_ident).abs() < 1e-12,
+                "{lost}: {d_lost} vs {ident}: {d_ident}"
+            );
+        }
+    }
+    assert_eq!(
+        scaled_coeff("LL", |s| s.two_qubit_pauli_error(0, 1, p)),
+        1.0
+    );
+    assert_eq!(scaled_coeff("LL", |s| s.depolarize2(0, 1, 0.1)), 1.0);
+}

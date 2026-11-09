@@ -4,7 +4,7 @@
 <a href=#4 id=4 data-nosnippet>4</a></span><span class="kw">use </span>bitvec::array::BitArray;
 <a href=#5 id=5 data-nosnippet>5</a><span class="kw">use </span>core::panic;
 <a href=#6 id=6 data-nosnippet>6</a><span class="kw">use </span>ppvm_traits::char::Pauli;
-<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>ppvm_traits::traits::{HashFinalize, PauliIter, PauliStorage, PauliWordTrait};
+<a href=#7 id=7 data-nosnippet>7</a><span class="kw">use </span>ppvm_traits::traits::{HashFinalize, PauliIter, PauliStorage, PauliWordTrait, WordReset};
 <a href=#8 id=8 data-nosnippet>8</a><span class="kw">use </span>std::hash::{BuildHasher, Hash};
 <a href=#9 id=9 data-nosnippet>9</a><span class="kw">use </span>std::ops::Index;
 <a href=#10 id=10 data-nosnippet>10</a>
@@ -389,90 +389,101 @@
 <a href=#389 id=389 data-nosnippet>389</a>    }
 <a href=#390 id=390 data-nosnippet>390</a>}
 <a href=#391 id=391 data-nosnippet>391</a>
-<a href=#392 id=392 data-nosnippet>392</a><span class="attr">#[cfg(test)]
-<a href=#393 id=393 data-nosnippet>393</a></span><span class="kw">mod </span>tests {
-<a href=#394 id=394 data-nosnippet>394</a>    <span class="kw">use super</span>::<span class="kw-2">*</span>;
-<a href=#395 id=395 data-nosnippet>395</a>
-<a href=#396 id=396 data-nosnippet>396</a>    <span class="attr">#[test]
-<a href=#397 id=397 data-nosnippet>397</a>    </span><span class="kw">fn </span>identity_map_lookup_is_independent_of_construction() {
-<a href=#398 id=398 data-nosnippet>398</a>        <span class="kw">type </span>Word = PauliWord&lt;[u64; <span class="number">4</span>]&gt;;
-<a href=#399 id=399 data-nosnippet>399</a>        <span class="kw">let </span>identity = Word::new(<span class="number">4</span>);
-<a href=#400 id=400 data-nosnippet>400</a>        <span class="kw">let </span>parsed: Word = <span class="string">"IIII"</span>.into();
-<a href=#401 id=401 data-nosnippet>401</a>        <span class="kw">let </span>mutated = Word::new(<span class="number">4</span>).set_new(<span class="number">0</span>, Pauli::X).set_new(<span class="number">0</span>, Pauli::I);
-<a href=#402 id=402 data-nosnippet>402</a>        <span class="macro">assert_eq!</span>(identity, parsed);
-<a href=#403 id=403 data-nosnippet>403</a>        <span class="macro">assert_eq!</span>(identity, mutated);
-<a href=#404 id=404 data-nosnippet>404</a>
-<a href=#405 id=405 data-nosnippet>405</a>        <span class="kw">let </span><span class="kw-2">mut </span>map = fxhash::FxHashMap::default();
-<a href=#406 id=406 data-nosnippet>406</a>        map.insert(identity, <span class="number">1</span>);
-<a href=#407 id=407 data-nosnippet>407</a>        <span class="macro">assert_eq!</span>(map.get(<span class="kw-2">&amp;</span>parsed), <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="number">1</span>));
-<a href=#408 id=408 data-nosnippet>408</a>        <span class="macro">assert_eq!</span>(map.get(<span class="kw-2">&amp;</span>mutated), <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="number">1</span>));
-<a href=#409 id=409 data-nosnippet>409</a>    }
-<a href=#410 id=410 data-nosnippet>410</a>
-<a href=#411 id=411 data-nosnippet>411</a>    <span class="attr">#[test]
-<a href=#412 id=412 data-nosnippet>412</a>    </span><span class="kw">fn </span>test_pauli_string_creation() {
-<a href=#413 id=413 data-nosnippet>413</a>        <span class="kw">let </span>ps = PauliWord::&lt;[u64; <span class="number">4</span>]&gt;::new(<span class="number">4</span>);
-<a href=#414 id=414 data-nosnippet>414</a>        <span class="macro">assert_eq!</span>(ps.nqubits, <span class="number">4</span>);
-<a href=#415 id=415 data-nosnippet>415</a>    }
-<a href=#416 id=416 data-nosnippet>416</a>    <span class="attr">#[test]
-<a href=#417 id=417 data-nosnippet>417</a>    </span><span class="kw">fn </span>test_pauli_string_set_get() {
-<a href=#418 id=418 data-nosnippet>418</a>        <span class="kw">let </span>ps = PauliWord::&lt;[u64; <span class="number">4</span>]&gt;::new(<span class="number">4</span>);
-<a href=#419 id=419 data-nosnippet>419</a>        <span class="kw">let </span>ps = ps.set_new(<span class="number">0</span>, Pauli::X);
-<a href=#420 id=420 data-nosnippet>420</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">0</span>), Pauli::X);
-<a href=#421 id=421 data-nosnippet>421</a>        <span class="kw">let </span>ps = ps.set_new(<span class="number">1</span>, Pauli::Y);
-<a href=#422 id=422 data-nosnippet>422</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">1</span>), Pauli::Y);
-<a href=#423 id=423 data-nosnippet>423</a>        <span class="kw">let </span>ps = ps.set_new(<span class="number">2</span>, Pauli::Z);
-<a href=#424 id=424 data-nosnippet>424</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">2</span>), Pauli::Z);
-<a href=#425 id=425 data-nosnippet>425</a>        <span class="kw">let </span>ps = ps.set_new(<span class="number">3</span>, Pauli::I);
-<a href=#426 id=426 data-nosnippet>426</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">3</span>), Pauli::I);
-<a href=#427 id=427 data-nosnippet>427</a>    }
-<a href=#428 id=428 data-nosnippet>428</a>    <span class="attr">#[test]
-<a href=#429 id=429 data-nosnippet>429</a>    </span><span class="kw">fn </span>test_pauli_string_display() {
-<a href=#430 id=430 data-nosnippet>430</a>        <span class="kw">let </span>ps = PauliWord::&lt;[u64; <span class="number">4</span>]&gt;::new(<span class="number">4</span>);
-<a href=#431 id=431 data-nosnippet>431</a>        <span class="kw">let </span>ps = ps
-<a href=#432 id=432 data-nosnippet>432</a>            .set_new(<span class="number">0</span>, Pauli::X)
-<a href=#433 id=433 data-nosnippet>433</a>            .set_new(<span class="number">1</span>, Pauli::Y)
-<a href=#434 id=434 data-nosnippet>434</a>            .set_new(<span class="number">2</span>, Pauli::Z)
-<a href=#435 id=435 data-nosnippet>435</a>            .set_new(<span class="number">3</span>, Pauli::I);
-<a href=#436 id=436 data-nosnippet>436</a>        <span class="macro">assert_eq!</span>(ps.to_string(), <span class="string">"XYZI"</span>);
-<a href=#437 id=437 data-nosnippet>437</a>    }
-<a href=#438 id=438 data-nosnippet>438</a>    <span class="attr">#[test]
-<a href=#439 id=439 data-nosnippet>439</a>    </span><span class="kw">fn </span>test_pauli_string_from_string() {
-<a href=#440 id=440 data-nosnippet>440</a>        <span class="kw">let </span>ps: PauliWord&lt;[u64; <span class="number">4</span>]&gt; = <span class="string">"XZYI"</span>.to_string().into();
-<a href=#441 id=441 data-nosnippet>441</a>        <span class="macro">assert_eq!</span>(ps.nqubits, <span class="number">4</span>);
-<a href=#442 id=442 data-nosnippet>442</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">0</span>), Pauli::X);
-<a href=#443 id=443 data-nosnippet>443</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">1</span>), Pauli::Z);
-<a href=#444 id=444 data-nosnippet>444</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">2</span>), Pauli::Y);
-<a href=#445 id=445 data-nosnippet>445</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">3</span>), Pauli::I);
-<a href=#446 id=446 data-nosnippet>446</a>    }
-<a href=#447 id=447 data-nosnippet>447</a>    <span class="attr">#[test]
-<a href=#448 id=448 data-nosnippet>448</a>    </span><span class="kw">fn </span>test_pauli_string_phase() {
-<a href=#449 id=449 data-nosnippet>449</a>        <span class="kw">let </span>ps: PauliWord&lt;[u64; <span class="number">4</span>]&gt; = <span class="string">"XYZI"</span>.to_string().into();
-<a href=#450 id=450 data-nosnippet>450</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">0</span>), Pauli::X);
-<a href=#451 id=451 data-nosnippet>451</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">1</span>), Pauli::Y);
-<a href=#452 id=452 data-nosnippet>452</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">2</span>), Pauli::Z);
-<a href=#453 id=453 data-nosnippet>453</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">3</span>), Pauli::I);
-<a href=#454 id=454 data-nosnippet>454</a>        <span class="kw">let </span>ps: PauliWord&lt;[u64; <span class="number">4</span>]&gt; = <span class="string">"XYZI"</span>.to_string().into();
-<a href=#455 id=455 data-nosnippet>455</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">0</span>), Pauli::X);
-<a href=#456 id=456 data-nosnippet>456</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">1</span>), Pauli::Y);
-<a href=#457 id=457 data-nosnippet>457</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">2</span>), Pauli::Z);
-<a href=#458 id=458 data-nosnippet>458</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">3</span>), Pauli::I);
-<a href=#459 id=459 data-nosnippet>459</a>        <span class="kw">let </span>ps: PauliWord&lt;[u64; <span class="number">4</span>]&gt; = <span class="string">"XYZI"</span>.to_string().into();
-<a href=#460 id=460 data-nosnippet>460</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">0</span>), Pauli::X);
-<a href=#461 id=461 data-nosnippet>461</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">1</span>), Pauli::Y);
-<a href=#462 id=462 data-nosnippet>462</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">2</span>), Pauli::Z);
-<a href=#463 id=463 data-nosnippet>463</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">3</span>), Pauli::I);
-<a href=#464 id=464 data-nosnippet>464</a>        <span class="kw">let </span>ps: PauliWord&lt;[u64; <span class="number">4</span>]&gt; = <span class="string">"XYZI"</span>.to_string().into();
-<a href=#465 id=465 data-nosnippet>465</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">0</span>), Pauli::X);
-<a href=#466 id=466 data-nosnippet>466</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">1</span>), Pauli::Y);
-<a href=#467 id=467 data-nosnippet>467</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">2</span>), Pauli::Z);
-<a href=#468 id=468 data-nosnippet>468</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">3</span>), Pauli::I);
-<a href=#469 id=469 data-nosnippet>469</a>    }
-<a href=#470 id=470 data-nosnippet>470</a>
-<a href=#471 id=471 data-nosnippet>471</a>    <span class="attr">#[test]
-<a href=#472 id=472 data-nosnippet>472</a>    </span><span class="kw">fn </span>test_pauli_string_as_usize() {
-<a href=#473 id=473 data-nosnippet>473</a>        <span class="kw">let </span>ps: PauliWord&lt;[u64; <span class="number">4</span>]&gt; = <span class="string">"XZYY"</span>.to_string().into();
-<a href=#474 id=474 data-nosnippet>474</a>        <span class="kw">let </span>value: usize = ps.into();
-<a href=#475 id=475 data-nosnippet>475</a>        <span class="macro">assert_eq!</span>(value, <span class="number">0b11110110</span>); <span class="comment">// X=01, Z=10, Y=11
-<a href=#476 id=476 data-nosnippet>476</a>    </span>}
-<a href=#477 id=477 data-nosnippet>477</a>}
+<a href=#392 id=392 data-nosnippet>392</a><span class="kw">impl</span>&lt;A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize, <span class="kw">const </span>REHASH: bool&gt; WordReset
+<a href=#393 id=393 data-nosnippet>393</a>    <span class="kw">for </span>PauliWord&lt;A, S, REHASH&gt;
+<a href=#394 id=394 data-nosnippet>394</a>{
+<a href=#395 id=395 data-nosnippet>395</a>    <span class="comment">// No loss representable: a full reset is a state reset.
+<a href=#396 id=396 data-nosnippet>396</a>    </span><span class="kw">fn </span>word_reset(<span class="kw-2">&amp;</span><span class="self">self</span>, addr0: usize) -&gt; <span class="kw">impl </span>Iterator&lt;Item = <span class="self">Self</span>&gt; + <span class="kw">use</span>&lt;A, S, REHASH&gt; {
+<a href=#397 id=397 data-nosnippet>397</a>        <span class="macro">matches!</span>(<span class="self">self</span>.get(addr0), Pauli::I | Pauli::Z)
+<a href=#398 id=398 data-nosnippet>398</a>            .then(|| <span class="self">self</span>.set_new(addr0, Pauli::I))
+<a href=#399 id=399 data-nosnippet>399</a>            .into_iter()
+<a href=#400 id=400 data-nosnippet>400</a>    }
+<a href=#401 id=401 data-nosnippet>401</a>}
+<a href=#402 id=402 data-nosnippet>402</a>
+<a href=#403 id=403 data-nosnippet>403</a><span class="attr">#[cfg(test)]
+<a href=#404 id=404 data-nosnippet>404</a></span><span class="kw">mod </span>tests {
+<a href=#405 id=405 data-nosnippet>405</a>    <span class="kw">use super</span>::<span class="kw-2">*</span>;
+<a href=#406 id=406 data-nosnippet>406</a>
+<a href=#407 id=407 data-nosnippet>407</a>    <span class="attr">#[test]
+<a href=#408 id=408 data-nosnippet>408</a>    </span><span class="kw">fn </span>identity_map_lookup_is_independent_of_construction() {
+<a href=#409 id=409 data-nosnippet>409</a>        <span class="kw">type </span>Word = PauliWord&lt;[u64; <span class="number">4</span>]&gt;;
+<a href=#410 id=410 data-nosnippet>410</a>        <span class="kw">let </span>identity = Word::new(<span class="number">4</span>);
+<a href=#411 id=411 data-nosnippet>411</a>        <span class="kw">let </span>parsed: Word = <span class="string">"IIII"</span>.into();
+<a href=#412 id=412 data-nosnippet>412</a>        <span class="kw">let </span>mutated = Word::new(<span class="number">4</span>).set_new(<span class="number">0</span>, Pauli::X).set_new(<span class="number">0</span>, Pauli::I);
+<a href=#413 id=413 data-nosnippet>413</a>        <span class="macro">assert_eq!</span>(identity, parsed);
+<a href=#414 id=414 data-nosnippet>414</a>        <span class="macro">assert_eq!</span>(identity, mutated);
+<a href=#415 id=415 data-nosnippet>415</a>
+<a href=#416 id=416 data-nosnippet>416</a>        <span class="kw">let </span><span class="kw-2">mut </span>map = fxhash::FxHashMap::default();
+<a href=#417 id=417 data-nosnippet>417</a>        map.insert(identity, <span class="number">1</span>);
+<a href=#418 id=418 data-nosnippet>418</a>        <span class="macro">assert_eq!</span>(map.get(<span class="kw-2">&amp;</span>parsed), <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="number">1</span>));
+<a href=#419 id=419 data-nosnippet>419</a>        <span class="macro">assert_eq!</span>(map.get(<span class="kw-2">&amp;</span>mutated), <span class="prelude-val">Some</span>(<span class="kw-2">&amp;</span><span class="number">1</span>));
+<a href=#420 id=420 data-nosnippet>420</a>    }
+<a href=#421 id=421 data-nosnippet>421</a>
+<a href=#422 id=422 data-nosnippet>422</a>    <span class="attr">#[test]
+<a href=#423 id=423 data-nosnippet>423</a>    </span><span class="kw">fn </span>test_pauli_string_creation() {
+<a href=#424 id=424 data-nosnippet>424</a>        <span class="kw">let </span>ps = PauliWord::&lt;[u64; <span class="number">4</span>]&gt;::new(<span class="number">4</span>);
+<a href=#425 id=425 data-nosnippet>425</a>        <span class="macro">assert_eq!</span>(ps.nqubits, <span class="number">4</span>);
+<a href=#426 id=426 data-nosnippet>426</a>    }
+<a href=#427 id=427 data-nosnippet>427</a>    <span class="attr">#[test]
+<a href=#428 id=428 data-nosnippet>428</a>    </span><span class="kw">fn </span>test_pauli_string_set_get() {
+<a href=#429 id=429 data-nosnippet>429</a>        <span class="kw">let </span>ps = PauliWord::&lt;[u64; <span class="number">4</span>]&gt;::new(<span class="number">4</span>);
+<a href=#430 id=430 data-nosnippet>430</a>        <span class="kw">let </span>ps = ps.set_new(<span class="number">0</span>, Pauli::X);
+<a href=#431 id=431 data-nosnippet>431</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">0</span>), Pauli::X);
+<a href=#432 id=432 data-nosnippet>432</a>        <span class="kw">let </span>ps = ps.set_new(<span class="number">1</span>, Pauli::Y);
+<a href=#433 id=433 data-nosnippet>433</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">1</span>), Pauli::Y);
+<a href=#434 id=434 data-nosnippet>434</a>        <span class="kw">let </span>ps = ps.set_new(<span class="number">2</span>, Pauli::Z);
+<a href=#435 id=435 data-nosnippet>435</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">2</span>), Pauli::Z);
+<a href=#436 id=436 data-nosnippet>436</a>        <span class="kw">let </span>ps = ps.set_new(<span class="number">3</span>, Pauli::I);
+<a href=#437 id=437 data-nosnippet>437</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">3</span>), Pauli::I);
+<a href=#438 id=438 data-nosnippet>438</a>    }
+<a href=#439 id=439 data-nosnippet>439</a>    <span class="attr">#[test]
+<a href=#440 id=440 data-nosnippet>440</a>    </span><span class="kw">fn </span>test_pauli_string_display() {
+<a href=#441 id=441 data-nosnippet>441</a>        <span class="kw">let </span>ps = PauliWord::&lt;[u64; <span class="number">4</span>]&gt;::new(<span class="number">4</span>);
+<a href=#442 id=442 data-nosnippet>442</a>        <span class="kw">let </span>ps = ps
+<a href=#443 id=443 data-nosnippet>443</a>            .set_new(<span class="number">0</span>, Pauli::X)
+<a href=#444 id=444 data-nosnippet>444</a>            .set_new(<span class="number">1</span>, Pauli::Y)
+<a href=#445 id=445 data-nosnippet>445</a>            .set_new(<span class="number">2</span>, Pauli::Z)
+<a href=#446 id=446 data-nosnippet>446</a>            .set_new(<span class="number">3</span>, Pauli::I);
+<a href=#447 id=447 data-nosnippet>447</a>        <span class="macro">assert_eq!</span>(ps.to_string(), <span class="string">"XYZI"</span>);
+<a href=#448 id=448 data-nosnippet>448</a>    }
+<a href=#449 id=449 data-nosnippet>449</a>    <span class="attr">#[test]
+<a href=#450 id=450 data-nosnippet>450</a>    </span><span class="kw">fn </span>test_pauli_string_from_string() {
+<a href=#451 id=451 data-nosnippet>451</a>        <span class="kw">let </span>ps: PauliWord&lt;[u64; <span class="number">4</span>]&gt; = <span class="string">"XZYI"</span>.to_string().into();
+<a href=#452 id=452 data-nosnippet>452</a>        <span class="macro">assert_eq!</span>(ps.nqubits, <span class="number">4</span>);
+<a href=#453 id=453 data-nosnippet>453</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">0</span>), Pauli::X);
+<a href=#454 id=454 data-nosnippet>454</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">1</span>), Pauli::Z);
+<a href=#455 id=455 data-nosnippet>455</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">2</span>), Pauli::Y);
+<a href=#456 id=456 data-nosnippet>456</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">3</span>), Pauli::I);
+<a href=#457 id=457 data-nosnippet>457</a>    }
+<a href=#458 id=458 data-nosnippet>458</a>    <span class="attr">#[test]
+<a href=#459 id=459 data-nosnippet>459</a>    </span><span class="kw">fn </span>test_pauli_string_phase() {
+<a href=#460 id=460 data-nosnippet>460</a>        <span class="kw">let </span>ps: PauliWord&lt;[u64; <span class="number">4</span>]&gt; = <span class="string">"XYZI"</span>.to_string().into();
+<a href=#461 id=461 data-nosnippet>461</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">0</span>), Pauli::X);
+<a href=#462 id=462 data-nosnippet>462</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">1</span>), Pauli::Y);
+<a href=#463 id=463 data-nosnippet>463</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">2</span>), Pauli::Z);
+<a href=#464 id=464 data-nosnippet>464</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">3</span>), Pauli::I);
+<a href=#465 id=465 data-nosnippet>465</a>        <span class="kw">let </span>ps: PauliWord&lt;[u64; <span class="number">4</span>]&gt; = <span class="string">"XYZI"</span>.to_string().into();
+<a href=#466 id=466 data-nosnippet>466</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">0</span>), Pauli::X);
+<a href=#467 id=467 data-nosnippet>467</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">1</span>), Pauli::Y);
+<a href=#468 id=468 data-nosnippet>468</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">2</span>), Pauli::Z);
+<a href=#469 id=469 data-nosnippet>469</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">3</span>), Pauli::I);
+<a href=#470 id=470 data-nosnippet>470</a>        <span class="kw">let </span>ps: PauliWord&lt;[u64; <span class="number">4</span>]&gt; = <span class="string">"XYZI"</span>.to_string().into();
+<a href=#471 id=471 data-nosnippet>471</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">0</span>), Pauli::X);
+<a href=#472 id=472 data-nosnippet>472</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">1</span>), Pauli::Y);
+<a href=#473 id=473 data-nosnippet>473</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">2</span>), Pauli::Z);
+<a href=#474 id=474 data-nosnippet>474</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">3</span>), Pauli::I);
+<a href=#475 id=475 data-nosnippet>475</a>        <span class="kw">let </span>ps: PauliWord&lt;[u64; <span class="number">4</span>]&gt; = <span class="string">"XYZI"</span>.to_string().into();
+<a href=#476 id=476 data-nosnippet>476</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">0</span>), Pauli::X);
+<a href=#477 id=477 data-nosnippet>477</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">1</span>), Pauli::Y);
+<a href=#478 id=478 data-nosnippet>478</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">2</span>), Pauli::Z);
+<a href=#479 id=479 data-nosnippet>479</a>        <span class="macro">assert_eq!</span>(ps.get(<span class="number">3</span>), Pauli::I);
+<a href=#480 id=480 data-nosnippet>480</a>    }
+<a href=#481 id=481 data-nosnippet>481</a>
+<a href=#482 id=482 data-nosnippet>482</a>    <span class="attr">#[test]
+<a href=#483 id=483 data-nosnippet>483</a>    </span><span class="kw">fn </span>test_pauli_string_as_usize() {
+<a href=#484 id=484 data-nosnippet>484</a>        <span class="kw">let </span>ps: PauliWord&lt;[u64; <span class="number">4</span>]&gt; = <span class="string">"XZYY"</span>.to_string().into();
+<a href=#485 id=485 data-nosnippet>485</a>        <span class="kw">let </span>value: usize = ps.into();
+<a href=#486 id=486 data-nosnippet>486</a>        <span class="macro">assert_eq!</span>(value, <span class="number">0b11110110</span>); <span class="comment">// X=01, Z=10, Y=11
+<a href=#487 id=487 data-nosnippet>487</a>    </span>}
+<a href=#488 id=488 data-nosnippet>488</a>}
 </code></pre></div></section></main></body></html>

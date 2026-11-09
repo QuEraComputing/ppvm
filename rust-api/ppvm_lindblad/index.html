@@ -22,7 +22,7 @@ to <code>f64</code> at the boundary (with a debug-only check that <code>|Im|</co
 FP noise).</p>
 </li>
 </ul>
-<p>Pauli strings are stored as <a href="../ppvm_pauli_word/word/data/struct.PauliWord.html" title="struct ppvm_pauli_word::word::data::PauliWord"><code>ppvm_pauli_word::word::PauliWord</code></a> backed by
+<p>Pauli strings are stored as [<code>ppvm_pauli_word::word::PauliWord</code>] backed by
 a fixed array of <code>C</code> chunks (64-bit, or 32-bit on 32-bit targets) with
 cached hashes for fast HashMap lookup. The crate is const-generic in <code>C</code>
 (<a href="type.Word.html" title="type ppvm_lindblad::Word"><code>Word</code></a>, <a href="struct.LindbladSpec.html" title="struct ppvm_lindblad::LindbladSpec"><code>LindbladSpec</code></a>); the default is the 128-qubit width,

@@ -11,9 +11,9 @@
 <a href=#11 id=11 data-nosnippet>11</a><span class="kw">use </span>ppvm_tableau::sparsevec::SparseVector;
 <a href=#12 id=12 data-nosnippet>12</a><span class="kw">use </span>ppvm_tableau::tableau_index::TableauIndex;
 <a href=#13 id=13 data-nosnippet>13</a><span class="kw">use </span>ppvm_traits::config::Config;
-<a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span>ppvm_traits::traits::{Clifford, Reset};
+<a href=#14 id=14 data-nosnippet>14</a><span class="kw">use </span>ppvm_traits::traits::{Clifford, Reset, ResetLossChannel, ResetState};
 <a href=#15 id=15 data-nosnippet>15</a>
-<a href=#16 id=16 data-nosnippet>16</a><span class="kw">impl</span>&lt;T, I, C, S&gt; Reset <span class="kw">for </span>GeneralizedTableauSum&lt;T, I, C, S&gt;
+<a href=#16 id=16 data-nosnippet>16</a><span class="kw">impl</span>&lt;T, I, C, S&gt; ResetState <span class="kw">for </span>GeneralizedTableauSum&lt;T, I, C, S&gt;
 <a href=#17 id=17 data-nosnippet>17</a><span class="kw">where
 <a href=#18 id=18 data-nosnippet>18</a>    </span>T: Config,
 <a href=#19 id=19 data-nosnippet>19</a>    &lt;&lt;T <span class="kw">as </span>Config&gt;::Storage <span class="kw">as </span>BitView&gt;::Store: PrimInt,
@@ -39,7 +39,7 @@
 <a href=#39 id=39 data-nosnippet>39</a>        + Copy,
 <a href=#40 id=40 data-nosnippet>40</a>    S: EntryStore&lt;T, I, C&gt;,
 <a href=#41 id=41 data-nosnippet>41</a>{
-<a href=#42 id=42 data-nosnippet>42</a>    <span class="kw">fn </span>reset(<span class="kw-2">&amp;mut </span><span class="self">self</span>, addr0: usize) {
+<a href=#42 id=42 data-nosnippet>42</a>    <span class="kw">fn </span>reset_state(<span class="kw-2">&amp;mut </span><span class="self">self</span>, addr0: usize) {
 <a href=#43 id=43 data-nosnippet>43</a>        <span class="self">self</span>.for_each_z_branch(addr0, |tab, outcome, _p| {
 <a href=#44 id=44 data-nosnippet>44</a>            <span class="comment">// Flip back to |0⟩ on the outcome-1 branch; the helper takes
 <a href=#45 id=45 data-nosnippet>45</a>            // care of fingerprint hygiene and the branch / merge plumbing.
@@ -52,4 +52,38 @@
 <a href=#52 id=52 data-nosnippet>52</a>        });
 <a href=#53 id=53 data-nosnippet>53</a>    }
 <a href=#54 id=54 data-nosnippet>54</a>}
+<a href=#55 id=55 data-nosnippet>55</a>
+<a href=#56 id=56 data-nosnippet>56</a><span class="kw">impl</span>&lt;T, I, C, S&gt; Reset <span class="kw">for </span>GeneralizedTableauSum&lt;T, I, C, S&gt;
+<a href=#57 id=57 data-nosnippet>57</a><span class="kw">where
+<a href=#58 id=58 data-nosnippet>58</a>    </span>T: Config,
+<a href=#59 id=59 data-nosnippet>59</a>    &lt;&lt;T <span class="kw">as </span>Config&gt;::Storage <span class="kw">as </span>BitView&gt;::Store: PrimInt,
+<a href=#60 id=60 data-nosnippet>60</a>    I: TableauIndex + Debug + Send + Sync,
+<a href=#61 id=61 data-nosnippet>61</a>    C: SparseVector&lt;Complex&lt;T::Coeff&gt;, I&gt; + Debug,
+<a href=#62 id=62 data-nosnippet>62</a>    T::Coeff: One
+<a href=#63 id=63 data-nosnippet>63</a>        + Zero
+<a href=#64 id=64 data-nosnippet>64</a>        + Clone
+<a href=#65 id=65 data-nosnippet>65</a>        + num::Num
+<a href=#66 id=66 data-nosnippet>66</a>        + ToPrimitive
+<a href=#67 id=67 data-nosnippet>67</a>        + std::fmt::Debug
+<a href=#68 id=68 data-nosnippet>68</a>        + std::ops::Mul&lt;f64&gt;
+<a href=#69 id=69 data-nosnippet>69</a>        + PartialOrd&lt;f64&gt;
+<a href=#70 id=70 data-nosnippet>70</a>        + PartialOrd
+<a href=#71 id=71 data-nosnippet>71</a>        + Send
+<a href=#72 id=72 data-nosnippet>72</a>        + Sync,
+<a href=#73 id=73 data-nosnippet>73</a>    Complex&lt;T::Coeff&gt;: std::ops::Mul&lt;Output = Complex&lt;T::Coeff&gt;&gt;
+<a href=#74 id=74 data-nosnippet>74</a>        + From&lt;Complex64&gt;
+<a href=#75 id=75 data-nosnippet>75</a>        + std::ops::MulAssign
+<a href=#76 id=76 data-nosnippet>76</a>        + std::ops::AddAssign
+<a href=#77 id=77 data-nosnippet>77</a>        + One
+<a href=#78 id=78 data-nosnippet>78</a>        + ComplexFloat
+<a href=#79 id=79 data-nosnippet>79</a>        + Copy,
+<a href=#80 id=80 data-nosnippet>80</a>    S: EntryStore&lt;T, I, C&gt;,
+<a href=#81 id=81 data-nosnippet>81</a>{
+<a href=#82 id=82 data-nosnippet>82</a>    <span class="kw">fn </span>reset(<span class="kw-2">&amp;mut </span><span class="self">self</span>, addr0: usize) {
+<a href=#83 id=83 data-nosnippet>83</a>        <span class="comment">// Un-lose first, otherwise `reset_state` skips the qubit. There is
+<a href=#84 id=84 data-nosnippet>84</a>        // no leakage on this backend.
+<a href=#85 id=85 data-nosnippet>85</a>        </span><span class="self">self</span>.reset_loss_channel(addr0);
+<a href=#86 id=86 data-nosnippet>86</a>        <span class="self">self</span>.reset_state(addr0);
+<a href=#87 id=87 data-nosnippet>87</a>    }
+<a href=#88 id=88 data-nosnippet>88</a>}
 </code></pre></div></section></main></body></html>

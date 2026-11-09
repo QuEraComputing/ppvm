@@ -140,27 +140,28 @@ pub fn parse(file: &str, format: Format) -> Result<()> {
     Ok(())
 }
 
-pub fn dump(file: &str, output: Option<&str>, force: bool) -> Result<()> {
-    let output_file = match output {
-        Some(output_file_name) => output_file_name.to_string(),
-        None => Path::new(file)
-            .with_extension("ssb")
-            .to_string_lossy()
-            .into_owned(),
-    };
-
-    // Don't clobber an existing file unless asked to.
-    if !force && Path::new(&output_file).exists() {
-        return Err(eyre::eyre!(
-            "{output_file} already exists; pass --force to overwrite"
-        ));
-    }
-
-    ppvm_vihaco::dump_file(file, &output_file)
-        .wrap_err_with(|| format!("failed to dump {file}"))?;
-    eprintln!("Bytecode written to {output_file}");
-    Ok(())
-}
+// TODO: bytecode (.ssb) is disabled until vihaco ships codecs for its own dialects.
+// pub fn dump(file: &str, output: Option<&str>, force: bool) -> Result<()> {
+//     let output_file = match output {
+//         Some(output_file_name) => output_file_name.to_string(),
+//         None => Path::new(file)
+//             .with_extension("ssb")
+//             .to_string_lossy()
+//             .into_owned(),
+//     };
+//
+//     // Don't clobber an existing file unless asked to.
+//     if !force && Path::new(&output_file).exists() {
+//         return Err(eyre::eyre!(
+//             "{output_file} already exists; pass --force to overwrite"
+//         ));
+//     }
+//
+//     ppvm_vihaco::dump_file(file, &output_file)
+//         .wrap_err_with(|| format!("failed to dump {file}"))?;
+//     eprintln!("Bytecode written to {output_file}");
+//     Ok(())
+// }
 
 /// A command entered at the debugger prompt.
 enum DebugCommand {
@@ -453,62 +454,63 @@ mod tests {
         assert!(err.to_string().contains("failed to read"), "got: {err}");
     }
 
-    // ─── dump ──────────────────────────────────────────────────────────
-
-    #[test]
-    fn dump_writes_default_ssb_path_when_output_omitted() {
-        let src = temp_file("ppvm_cli_dump_default.sst", PROGRAM);
-        let expected = Path::new(&src).with_extension("ssb");
-        let _ = fs::remove_file(&expected); // clear any leftover from a prior run
-
-        dump(&src, None, false).unwrap();
-        assert!(expected.exists(), "default .ssb should have been written");
-
-        let _ = fs::remove_file(&src);
-        let _ = fs::remove_file(&expected);
-    }
-
-    #[test]
-    fn dump_writes_explicit_output_path() {
-        let src = temp_file("ppvm_cli_dump_explicit.sst", PROGRAM);
-        let out = std::env::temp_dir().join("ppvm_cli_dump_explicit_out.ssb");
-        let _ = fs::remove_file(&out);
-
-        dump(&src, Some(out.to_str().unwrap()), false).unwrap();
-        assert!(out.exists());
-
-        let _ = fs::remove_file(&src);
-        let _ = fs::remove_file(&out);
-    }
-
-    #[test]
-    fn dump_refuses_to_clobber_without_force() {
-        let src = temp_file("ppvm_cli_dump_clobber.sst", PROGRAM);
-        let out = std::env::temp_dir().join("ppvm_cli_dump_clobber_out.ssb");
-        fs::write(&out, b"existing").unwrap();
-
-        let err = dump(&src, Some(out.to_str().unwrap()), false).unwrap_err();
-        assert!(err.to_string().contains("already exists"), "got: {err}");
-        // The existing file must be left untouched.
-        assert_eq!(fs::read(&out).unwrap(), b"existing");
-
-        let _ = fs::remove_file(&src);
-        let _ = fs::remove_file(&out);
-    }
-
-    #[test]
-    fn dump_overwrites_existing_with_force() {
-        let src = temp_file("ppvm_cli_dump_force.sst", PROGRAM);
-        let out = std::env::temp_dir().join("ppvm_cli_dump_force_out.ssb");
-        fs::write(&out, b"existing").unwrap();
-
-        dump(&src, Some(out.to_str().unwrap()), true).unwrap();
-        // Replaced with real bytecode, not the placeholder.
-        assert_ne!(fs::read(&out).unwrap(), b"existing");
-
-        let _ = fs::remove_file(&src);
-        let _ = fs::remove_file(&out);
-    }
+    // TODO: bytecode (.ssb) is disabled until vihaco ships codecs for its own dialects.
+    // // ─── dump ──────────────────────────────────────────────────────────
+    //
+    // #[test]
+    // fn dump_writes_default_ssb_path_when_output_omitted() {
+    //     let src = temp_file("ppvm_cli_dump_default.sst", PROGRAM);
+    //     let expected = Path::new(&src).with_extension("ssb");
+    //     let _ = fs::remove_file(&expected); // clear any leftover from a prior run
+    //
+    //     dump(&src, None, false).unwrap();
+    //     assert!(expected.exists(), "default .ssb should have been written");
+    //
+    //     let _ = fs::remove_file(&src);
+    //     let _ = fs::remove_file(&expected);
+    // }
+    //
+    // #[test]
+    // fn dump_writes_explicit_output_path() {
+    //     let src = temp_file("ppvm_cli_dump_explicit.sst", PROGRAM);
+    //     let out = std::env::temp_dir().join("ppvm_cli_dump_explicit_out.ssb");
+    //     let _ = fs::remove_file(&out);
+    //
+    //     dump(&src, Some(out.to_str().unwrap()), false).unwrap();
+    //     assert!(out.exists());
+    //
+    //     let _ = fs::remove_file(&src);
+    //     let _ = fs::remove_file(&out);
+    // }
+    //
+    // #[test]
+    // fn dump_refuses_to_clobber_without_force() {
+    //     let src = temp_file("ppvm_cli_dump_clobber.sst", PROGRAM);
+    //     let out = std::env::temp_dir().join("ppvm_cli_dump_clobber_out.ssb");
+    //     fs::write(&out, b"existing").unwrap();
+    //
+    //     let err = dump(&src, Some(out.to_str().unwrap()), false).unwrap_err();
+    //     assert!(err.to_string().contains("already exists"), "got: {err}");
+    //     // The existing file must be left untouched.
+    //     assert_eq!(fs::read(&out).unwrap(), b"existing");
+    //
+    //     let _ = fs::remove_file(&src);
+    //     let _ = fs::remove_file(&out);
+    // }
+    //
+    // #[test]
+    // fn dump_overwrites_existing_with_force() {
+    //     let src = temp_file("ppvm_cli_dump_force.sst", PROGRAM);
+    //     let out = std::env::temp_dir().join("ppvm_cli_dump_force_out.ssb");
+    //     fs::write(&out, b"existing").unwrap();
+    //
+    //     dump(&src, Some(out.to_str().unwrap()), true).unwrap();
+    //     // Replaced with real bytecode, not the placeholder.
+    //     assert_ne!(fs::read(&out).unwrap(), b"existing");
+    //
+    //     let _ = fs::remove_file(&src);
+    //     let _ = fs::remove_file(&out);
+    // }
 
     // ─── debug ─────────────────────────────────────────────────────────
 

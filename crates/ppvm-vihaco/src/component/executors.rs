@@ -4,8 +4,8 @@
 use super::backend::CircuitBackend;
 use super::buckets::{CircuitKind, LossyPauliSumBuckets, PauliSumBuckets, TableauBuckets};
 use super::ops::CircuitOp;
-use crate::device_info::PPVMDeviceInfo;
-use eyre::Result;
+use crate::device_info::{BackendKind, PPVMDeviceInfo};
+use eyre::{Result, eyre};
 use vihaco::{Execute, component};
 use vihaco_circuit_isa::circuit;
 
@@ -92,6 +92,17 @@ impl vihaco::Reset for TableauCircuit {
 }
 
 impl Circuit {
+    /// Build the backend selected by `info.backend`. `seed` makes tableau runs
+    /// reproducible; the PauliSum backends are deterministic and ignore it.
+    pub fn new(info: &PPVMDeviceInfo, seed: Option<u64>) -> Result<Self> {
+        match (info.backend, seed) {
+            (BackendKind::Tableau, None) => Self::tableau(info),
+            (BackendKind::Tableau, Some(seed)) => Self::tableau_with_seed(info, seed),
+            (BackendKind::PauliSum, _) => Self::paulisum(info, &observable_terms(info)?),
+            (BackendKind::LossyPauliSum, _) => Self::lossy_paulisum(info, &observable_terms(info)?),
+        }
+    }
+
     /// Build a Tableau-backed circuit. Tableau init only needs `n_qubits` and
     /// `coefficient_threshold` from `info`; no observable required.
     pub fn tableau(info: &PPVMDeviceInfo) -> Result<Self> {
@@ -159,4 +170,15 @@ impl Default for TableauCircuit {
     fn default() -> Self {
         Self::new(&PPVMDeviceInfo::default()).expect("0-qubit tableau is always constructible")
     }
+}
+
+/// The PauliSum backends' initial observable, parsed from `circuit.observable`.
+fn observable_terms(info: &PPVMDeviceInfo) -> Result<Vec<(String, f64)>> {
+    let observable = info.observable.as_deref().ok_or_else(|| {
+        eyre!(
+            "the {:?} backend requires `circuit.observable` to be set",
+            info.backend
+        )
+    })?;
+    crate::observable::parse_pauli_sum_terms(observable, info.n_qubits)
 }

@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::component::Circuit;
-use crate::measurements::{CircuitOutcomeEffect, MeasurementObserver, TraceObserver};
+use crate::measurements::{
+    CircuitOutcomeEffect, MeasurementObserver, MeasurementResult, TraceObserver,
+};
 use eyre;
 use vihaco::{
     BuildMessage, Effects, Execute, ExecutionState, HasInstructionSet, Step, Type, Value,
@@ -14,7 +16,7 @@ use vihaco::{
 // existing `crate::composite::{…}` paths keep resolving.
 pub use crate::device_info::{BackendKind, PPVM_MAGIC, PPVMDeviceInfo};
 
-// #[derive(Default)]
+#[derive(Default)]
 #[composite]
 pub struct PPVM {
     #[device(0)]
@@ -35,7 +37,39 @@ pub struct PPVM {
 
 type Instruction = <PPVM as HasInstructionSet>::Runtime;
 
-type Program = LocalModule<Instruction, Value, Type>;
+/// A lowered PPVM program; `extra` carries the header's device configuration.
+pub type PPVMModule = LocalModule<Instruction, Value, Type, PPVMDeviceInfo>;
+
+type Program = PPVMModule;
+
+impl PPVM {
+    /// A fresh machine for the device described by `info`, ready to execute.
+    pub fn new(info: &PPVMDeviceInfo, seed: Option<u64>) -> eyre::Result<Self> {
+        if info.n_qubits == 0 {
+            eyre::bail!("circuit.n_qubits must be declared");
+        }
+        Ok(Self {
+            execution: ExecutionState::new(),
+            cpu: vihaco_cpu::CPU::default(),
+            circuit: Circuit::new(info, seed)?,
+            measurement_record: MeasurementObserver::default(),
+            trace_record: TraceObserver::default(),
+        })
+    }
+
+    pub fn measurement_record(&self) -> &[MeasurementResult] {
+        &self.measurement_record.record
+    }
+
+    pub fn trace_record(&self) -> &[f64] {
+        &self.trace_record.record
+    }
+
+    /// Consume the machine, returning its measurement and trace records.
+    pub fn into_records(self) -> (Vec<MeasurementResult>, Vec<f64>) {
+        (self.measurement_record.record, self.trace_record.record)
+    }
+}
 
 // Batched circuit instructions pop their operands through custom messages.
 // TODO: per-composite builders conflict with vihaco's blanket `BuildMessage` (E0119)

@@ -451,6 +451,17 @@ impl TableauBuckets {
             Self::Bits2048(c) => op.apply(&mut c.backend, msg),
         }
     }
+
+    fn reset(&mut self) {
+        match self {
+            Self::Bits64(c) => vihaco::Reset::reset(c),
+            Self::Bits128(c) => vihaco::Reset::reset(c),
+            Self::Bits256(c) => vihaco::Reset::reset(c),
+            Self::Bits512(c) => vihaco::Reset::reset(c),
+            Self::Bits1024(c) => vihaco::Reset::reset(c),
+            Self::Bits2048(c) => vihaco::Reset::reset(c),
+        }
+    }
 }
 
 pub(crate) enum PauliSumBuckets {
@@ -471,6 +482,17 @@ impl PauliSumBuckets {
             Self::Bits512(c) => op.apply(&mut c.backend, msg),
             Self::Bits1024(c) => op.apply(&mut c.backend, msg),
             Self::Bits2048(c) => op.apply(&mut c.backend, msg),
+        }
+    }
+
+    fn reset(&mut self) {
+        match self {
+            Self::Bits64(c) => vihaco::Reset::reset(c),
+            Self::Bits128(c) => vihaco::Reset::reset(c),
+            Self::Bits256(c) => vihaco::Reset::reset(c),
+            Self::Bits512(c) => vihaco::Reset::reset(c),
+            Self::Bits1024(c) => vihaco::Reset::reset(c),
+            Self::Bits2048(c) => vihaco::Reset::reset(c),
         }
     }
 }
@@ -495,12 +517,33 @@ impl LossyPauliSumBuckets {
             Self::Bits2048(c) => op.apply(&mut c.backend, msg),
         }
     }
+
+    fn reset(&mut self) {
+        match self {
+            Self::Bits64(c) => vihaco::Reset::reset(c),
+            Self::Bits128(c) => vihaco::Reset::reset(c),
+            Self::Bits256(c) => vihaco::Reset::reset(c),
+            Self::Bits512(c) => vihaco::Reset::reset(c),
+            Self::Bits1024(c) => vihaco::Reset::reset(c),
+            Self::Bits2048(c) => vihaco::Reset::reset(c),
+        }
+    }
 }
 
 pub(crate) enum CircuitKind {
     Tableau(TableauBuckets),
     PauliSum(PauliSumBuckets),
     LossyPauliSum(LossyPauliSumBuckets),
+}
+
+impl CircuitKind {
+    fn reset(&mut self) {
+        match self {
+            Self::Tableau(b) => b.reset(),
+            Self::PauliSum(b) => b.reset(),
+            Self::LossyPauliSum(b) => b.reset(),
+        }
+    }
 }
 
 #[component]
@@ -541,5 +584,17 @@ impl<I: CircuitOp> Execute<I> for TableauCircuit {
         message: Self::Message,
     ) -> Result<Self::Effect, Self::Error> {
         self.inner.apply(instruction, message)
+    }
+}
+
+impl vihaco::Reset for Circuit {
+    fn reset(&mut self) {
+        self.inner.reset()
+    }
+}
+
+impl vihaco::Reset for TableauCircuit {
+    fn reset(&mut self) {
+        self.inner.reset()
     }
 }

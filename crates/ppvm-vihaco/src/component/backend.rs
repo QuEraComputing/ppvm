@@ -75,6 +75,9 @@ pub trait CircuitBackend {
 
     fn truncate(&mut self);
 
+    /// `Σ_{P matches pattern} ⟨P⟩` on the current state.
+    fn trace(&self, pattern: &PauliPattern) -> eyre::Result<f64>;
+
     fn reset(&mut self);
 }
 
@@ -109,6 +112,10 @@ where
 
     fn truncate(&mut self) {}
 
+    fn trace(&self, pattern: &PauliPattern) -> eyre::Result<f64> {
+        Ok(GeneralizedTableau::trace(self, pattern))
+    }
+
     fn reset(&mut self) {
         self.reset_all();
     }
@@ -137,6 +144,7 @@ impl<T: Config<Coeff = f64>> PauliSumBackend<T> {
 impl<T> CircuitBackend for PauliSumBackend<T>
 where
     T: Config<Coeff = f64>,
+    for<'a> PauliSum<T>: Trace<'a, PauliPattern, Output = f64>,
 {
     type Config = T;
     type State = PauliSum<T>;
@@ -151,5 +159,9 @@ where
 
     fn truncate(&mut self) {
         self.state.truncate();
+    }
+
+    fn trace(&self, pattern: &PauliPattern) -> eyre::Result<f64> {
+        Ok(Trace::trace(&self.state, pattern))
     }
 }

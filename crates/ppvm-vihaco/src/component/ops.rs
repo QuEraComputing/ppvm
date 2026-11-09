@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::backend::CircuitBackend;
-use crate::measurements::{CircuitOutcomeEffect, MeasurementEffect, MeasurementResult};
+use crate::measurements::{
+    CircuitOutcomeEffect, MeasurementEffect, MeasurementResult, TraceEffect,
+};
 use ppvm_tableau::prelude::*;
 use vihaco::{Effects, PopFromStack};
 use vihaco_circuit_isa::circuit;
-use vihaco_circuit_isa::messages::{QubitBatch, QubitPairBatch};
+use vihaco_circuit_isa::messages::{QubitBatch, QubitPairBatch, TraceMessage};
 
 macro_rules! batch_for {
     ($tab:expr, $method:ident, $addrs:expr) => {
@@ -408,10 +410,20 @@ impl CircuitOp for circuit::Truncate {
 }
 
 impl CircuitOp for circuit::Trace {
-    type Effect = ();
-    type Message = vihaco::NoMessage;
+    type Effect = Effects<CircuitOutcomeEffect>;
+    type Message = TraceMessage;
 
-    fn apply<B: CircuitBackend>(&self, backend: &mut B, _: Self::Message) -> eyre::Result<()> {
-        unimplemented!("TODO: needs a custom message");
+    fn apply<B: CircuitBackend>(
+        &self,
+        backend: &mut B,
+        msg: Self::Message,
+    ) -> eyre::Result<Self::Effect> {
+        // Parsed per execution, as before; patterns are short.
+        let pattern = PauliPattern::parse(&msg.pauli_pattern)
+            .map_err(|e| eyre::eyre!("invalid Pauli pattern `{}`: {e:?}", msg.pauli_pattern))?;
+        let value = backend.trace(&pattern)?;
+        Ok(Effects::one(CircuitOutcomeEffect::Trace(TraceEffect {
+            value,
+        })))
     }
 }

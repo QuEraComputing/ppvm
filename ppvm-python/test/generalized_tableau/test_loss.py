@@ -1,5 +1,6 @@
 from ppvm import GeneralizedTableau, LossyPauliSum
 from ppvm.generalized_tableau import MeasurementResult
+from ppvm.generalized_tableau_sum import GeneralizedTableauSum
 
 
 def test_is_lost_initially_false():
@@ -374,3 +375,43 @@ def test_loss_of_leaked_qubit_clears_leakage():
     assert not tab.is_leaked(0)
     assert tab.leakage_values() == [False]
     assert tab.loss_values() == [True]
+
+
+def test_reset_recovers_lost_and_leaked_qubits():
+    tab = GeneralizedTableau(n_qubits=2, seed=0)
+    tab.x(0)
+    tab.loss_channel(0, 1.0)
+    tab.leakage_channel(1, 0.0, 1.0)
+    tab.reset(0, 1)
+    assert not tab.is_lost(0) and not tab.is_leaked(1)
+    assert tab.measure(0) == MeasurementResult.ZERO
+    assert tab.measure(1) == MeasurementResult.ZERO
+
+
+def test_reset_state_leaves_lost_and_leaked_qubits():
+    tab = GeneralizedTableau(n_qubits=3, seed=0)
+    tab.loss_channel(0, 1.0)
+    tab.leakage_channel(1, 0.0, 1.0)
+    tab.x(2)
+    tab.reset_state(0, 1, 2)
+    assert tab.is_lost(0) and tab.is_leaked(1)
+    assert tab.measure(0) == MeasurementResult.LOST
+    assert tab.measure(1) == MeasurementResult.ONE
+    assert tab.measure(2) == MeasurementResult.ZERO
+
+
+def test_tableau_sum_reset_reloads_lost_qubit():
+    tab = GeneralizedTableauSum(n_qubits=1, seed=0)
+    tab.h(0)
+    tab.loss_channel(0, 0.5)
+    tab.reset(0)
+    probs = tab.measure(0)
+    assert abs(probs.get(MeasurementResult.ZERO, 0.0) - 1.0) < 1e-12
+
+
+def test_tableau_sum_reset_state_leaves_lost_qubit():
+    tab = GeneralizedTableauSum(n_qubits=1, seed=0)
+    tab.loss_channel(0, 1.0)
+    tab.reset_state(0)
+    probs = tab.measure(0)
+    assert abs(probs.get(MeasurementResult.LOST, 0.0) - 1.0) < 1e-12

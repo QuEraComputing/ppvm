@@ -353,7 +353,7 @@ fn lower_noise(
                 span,
             }))
         }
-        (IError, tag @ ("reset_loss" | "reset_leakage")) => {
+        (IError, tag @ ("reset_loss" | "reset_leakage" | "reset_state")) => {
             if !args.is_empty() {
                 return invalid_tag(
                     tag,
@@ -363,25 +363,26 @@ fn lower_noise(
                     sink,
                 );
             }
-            Ok(Some(if tag == "reset_loss" {
-                ExtendedInstruction::ResetLoss { targets, span }
-            } else {
-                ExtendedInstruction::ResetLeakage { targets, span }
+            Ok(Some(match tag {
+                "reset_loss" => ExtendedInstruction::ResetLoss { targets, span },
+                "reset_leakage" => ExtendedInstruction::ResetLeakage { targets, span },
+                _ => ExtendedInstruction::ResetState { targets, span },
             }))
         }
         (IError, "") => invalid_tag(
             "<missing>",
             name.canonical_name(),
             span,
-            "I_ERROR requires a [loss], [correlated_loss], [leakage], [reset_loss], or \
-             [reset_leakage] tag",
+            "I_ERROR requires a [loss], [correlated_loss], [leakage], [reset_loss], \
+             [reset_leakage], or [reset_state] tag",
             sink,
         ),
         (IError, other) => invalid_tag(
             other,
             name.canonical_name(),
             span,
-            "expected [loss], [correlated_loss], [leakage], [reset_loss], or [reset_leakage]",
+            "expected [loss], [correlated_loss], [leakage], [reset_loss], [reset_leakage], \
+             or [reset_state]",
             sink,
         ),
         _ => Ok(Some(ExtendedInstruction::Noise(NoiseOp {
@@ -784,6 +785,16 @@ mod tests {
     fn i_error_reset_loss_rejects_args() {
         assert!(lower_extended("I_ERROR[reset_loss](0.1) 0").is_err());
         assert!(lower_extended("I_ERROR[reset_leakage](0.1) 0").is_err());
+        assert!(lower_extended("I_ERROR[reset_state](0.1) 0").is_err());
+    }
+
+    #[test]
+    fn i_error_reset_state_lowers() {
+        let prog = lower_extended("I_ERROR[reset_state] 0 2").expect("lower");
+        match &prog.instructions[0] {
+            ExtendedInstruction::ResetState { targets, .. } => assert_eq!(targets, &vec![0, 2]),
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]

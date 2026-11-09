@@ -4,7 +4,7 @@
 use bitvec::array::BitArray;
 use core::panic;
 use ppvm_traits::char::Pauli;
-use ppvm_traits::traits::{HashFinalize, PauliIter, PauliStorage, PauliWordTrait};
+use ppvm_traits::traits::{HashFinalize, PauliIter, PauliStorage, PauliWordTrait, WordReset};
 use std::hash::{BuildHasher, Hash};
 use std::ops::Index;
 
@@ -386,6 +386,17 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize, const REH
             write!(f, "{}", pauli)?;
         }
         Ok(())
+    }
+}
+
+impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize, const REHASH: bool> WordReset
+    for PauliWord<A, S, REHASH>
+{
+    // No loss representable: a full reset is a state reset.
+    fn word_reset(&self, addr0: usize) -> impl Iterator<Item = Self> + use<A, S, REHASH> {
+        matches!(self.get(addr0), Pauli::I | Pauli::Z)
+            .then(|| self.set_new(addr0, Pauli::I))
+            .into_iter()
     }
 }
 

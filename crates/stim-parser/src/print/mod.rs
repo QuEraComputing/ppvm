@@ -377,6 +377,10 @@ impl StimPrint for ExtendedInstruction {
                 write!(out, "I_ERROR[reset_leakage]")?;
                 write_usize_targets(out, targets)?;
             }
+            ExtendedInstruction::ResetState { targets, .. } => {
+                write!(out, "I_ERROR[reset_state]")?;
+                write_usize_targets(out, targets)?;
+            }
             ExtendedInstruction::MPad {
                 tag, prob, bits, ..
             } => {
@@ -442,7 +446,7 @@ mod tests {
 
     #[test]
     fn reset_loss_and_reset_leakage_print_canonically() {
-        let src = "I_ERROR[reset_loss] 0 1\nI_ERROR[reset_leakage] 2\n";
+        let src = "I_ERROR[reset_loss] 0 1\nI_ERROR[reset_leakage] 2\nI_ERROR[reset_state] 3\n";
         assert_eq!(parse_extended(src).unwrap().to_stim(), src);
     }
 

@@ -107,6 +107,7 @@ fn validate_slice(
             | ExtendedInstruction::Loss { .. }
             | ExtendedInstruction::CorrelatedLoss { .. }
             | ExtendedInstruction::ResetLoss { .. }
+            | ExtendedInstruction::ResetState { .. }
             | ExtendedInstruction::ResetLeakage { .. } => {}
             ExtendedInstruction::Leakage { p0, p1, span, .. } => {
                 let line = span.line(line_map);

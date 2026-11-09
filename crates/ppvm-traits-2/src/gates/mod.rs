@@ -13,7 +13,7 @@ pub use channel::{
     LossChannel, PauliError, ResetLossChannel, TwoQubitPauliError,
 };
 pub use clifford::{Clifford, CliffordBatch};
-pub use measure::{Measure, Projection, Reset};
+pub use measure::{Measure, Projection, Reset, ResetState};
 pub use rot::{
     CRx, RotXY, RotationOne, RotationOneBatch, RotationTwo, RotationTwoBatch, TGate, U3Gate,
 };

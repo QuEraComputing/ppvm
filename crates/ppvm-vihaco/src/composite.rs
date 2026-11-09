@@ -7,8 +7,8 @@ use crate::measurements::{
 };
 use eyre;
 use vihaco::{
-    BuildMessage, Effects, Execute, ExecutionState, HasInstructionSet, Step, Type, Value,
-    composite, field, module::LocalModule,
+    Apply, BuildMessage, Effects, Execute, ExecutionState, HasInstructionSet, PushToStack, Step,
+    Type, Value, composite, field, module::LocalModule,
 };
 
 // Device configuration lives in `device_info` (shipped with the circuit
@@ -133,9 +133,15 @@ impl vihaco::Apply<Effects<CircuitOutcomeEffect>> for PPVM {
         for effect in effects {
             match effect {
                 CircuitOutcomeEffect::Measurement(m) => {
+                    // Programs branch on outcomes: push each as u32 (0/1/2, 2 = Lost).
+                    for &outcome in &m.measurement_results {
+                        self.execution.apply(PushToStack((outcome as u32,)));
+                    }
                     self.measurement_record.record.push(m.measurement_results)
                 }
                 CircuitOutcomeEffect::Trace(t) => {
+                    // Programs can consume the expectation value, as with outcomes.
+                    self.execution.apply(PushToStack((t.value,)));
                     self.trace_record.record.push(t.value);
                 }
             }

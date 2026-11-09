@@ -4,8 +4,9 @@
 //! Custom circuit messages that don't fit vihaco's standard stack protocols.
 
 use smallvec::SmallVec;
-use vihaco::PopStack;
+use vihaco::runtime::{AutomaticMessage, PrepareMessage};
 use vihaco::word::Word;
+use vihaco::{Composite, Execute, Field, HasOperandStack, PopStack};
 
 /// Qubit batch plus a fixed parameter block; `P = ()` for plain batches.
 pub struct QubitBatch<P = ()> {
@@ -96,3 +97,26 @@ where
     pairs.reverse();
     Ok(QubitPairBatch { pairs, params })
 }
+
+// TODO: these use vihaco's `#[doc(hidden)]` message traits so the batches build in
+// any composite; switch to a public extension point once QuEraComputing/vihaco#169 lands.
+macro_rules! automatic_batch_message {
+    ($msg:ident, $pop:ident) => {
+        impl<P> AutomaticMessage for $msg<P> {}
+
+        impl<C, F, I, Ctx: ?Sized, P> PrepareMessage<C, F, I, Ctx> for $msg<P>
+        where
+            C: Composite + Field<F> + HasOperandStack<I>,
+            C::Child: Execute<I, Message = $msg<P>>,
+            C::Source: PopStack<Word> + PopStack<f64>,
+            P: PopParams,
+        {
+            fn prepare(parent: &mut C, _: &I, _: &Ctx) -> eyre::Result<Self> {
+                $pop(parent.operand_stack(1))
+            }
+        }
+    };
+}
+
+automatic_batch_message!(QubitBatch, pop_qubit_batch);
+automatic_batch_message!(QubitPairBatch, pop_qubit_pair_batch);

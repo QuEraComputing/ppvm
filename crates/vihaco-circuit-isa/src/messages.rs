@@ -13,6 +13,12 @@ pub struct QubitBatch<P = ()> {
     pub params: P,
 }
 
+/// Batch of qubit pairs plus a fixed parameter block; `P = ()` for plain batches.
+pub struct QubitPairBatch<P = ()> {
+    pub pairs: SmallVec<[(usize, usize); 4]>,
+    pub params: P,
+}
+
 pub struct TwoQubitPauliErrorMsg {
     pub q0: u64,
     pub q1: u64,
@@ -68,4 +74,25 @@ where
     }
     qubits.reverse();
     Ok(QubitBatch { qubits, params })
+}
+
+/// Pop a [`QubitPairBatch`] pushed as `a0 b0 .. a(n-1) b(n-1)`, then the pair
+/// count `n`, then the params.
+///
+/// Call this from a composite's `BuildMessage` impl for batched instructions.
+pub fn pop_qubit_pair_batch<S, P>(stack: &mut S) -> eyre::Result<QubitPairBatch<P>>
+where
+    S: PopStack<Word> + PopStack<f64>,
+    P: PopParams,
+{
+    let params = P::pop_params(stack)?;
+    let n = usize::try_from(PopStack::<Word>::pop(stack)?)?;
+    let mut pairs = SmallVec::with_capacity(n);
+    for _ in 0..n {
+        let b = usize::try_from(PopStack::<Word>::pop(stack)?)?;
+        let a = usize::try_from(PopStack::<Word>::pop(stack)?)?;
+        pairs.push((a, b));
+    }
+    pairs.reverse();
+    Ok(QubitPairBatch { pairs, params })
 }

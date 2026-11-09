@@ -292,9 +292,7 @@ macro_rules! create_interface {
             }
 
             pub fn reset_state(&mut self, targets: Vec<usize>) {
-                for q in targets {
-                    self.inner.reset_state(q);
-                }
+                self.inner.reset_state_many(targets.as_slice());
             }
 
             pub fn reset_x(&mut self, targets: Vec<usize>) {

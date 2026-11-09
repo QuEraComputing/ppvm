@@ -6,6 +6,13 @@
 pub trait ResetState {
     /// Reset the qubit at `addr0` to `|0⟩` if it is live; no-op otherwise.
     fn reset_state(&mut self, addr0: usize);
+
+    /// Batched [`ResetState::reset_state`].
+    fn reset_state_many(&mut self, targets: &[usize]) {
+        for &q in targets {
+            self.reset_state(q);
+        }
+    }
 }
 
 /// Full reset to `|0⟩` of a single Pauli word, in the Heisenberg picture.

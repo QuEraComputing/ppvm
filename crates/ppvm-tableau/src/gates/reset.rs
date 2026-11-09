@@ -96,8 +96,12 @@ where
 {
     fn reset(&mut self, addr0: usize) {
         // Un-lose / un-leak first, otherwise `reset_state` skips the qubit.
-        self.reset_loss_channel(addr0);
-        self.reset_leakage_channel(addr0);
-        self.reset_state(addr0);
+        // `reset_leakage_channel` already re-zeroes the qubit.
+        if self.qubit_status[addr0] == QubitStatus::Leaked {
+            self.reset_leakage_channel(addr0);
+        } else {
+            self.reset_loss_channel(addr0);
+            self.reset_state(addr0);
+        }
     }
 }

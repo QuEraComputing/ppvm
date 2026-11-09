@@ -308,6 +308,8 @@ class GeneralizedTableau(
     def reset_x(self, *targets: int | Iterable[int]) -> None:
         """Reset each target qubit to the |+> state.
 
+        Lost and leaked qubits are first returned to the computational subspace.
+
         Args:
             *targets: The indices of the target qubits.
         """
@@ -316,6 +318,8 @@ class GeneralizedTableau(
     def reset_y(self, *targets: int | Iterable[int]) -> None:
         """Reset each target qubit to the |+i> state.
 
+        Lost and leaked qubits are first returned to the computational subspace.
+
         Args:
             *targets: The indices of the target qubits.
         """
@@ -323,6 +327,8 @@ class GeneralizedTableau(
 
     def reset_z(self, *targets: int | Iterable[int]) -> None:
         """Reset each target qubit to the |0> state.
+
+        Lost and leaked qubits are first returned to the computational subspace.
 
         Args:
             *targets: The indices of the target qubits.

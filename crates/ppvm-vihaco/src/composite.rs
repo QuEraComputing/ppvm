@@ -39,16 +39,12 @@ pub struct PPVM<B: CircuitBackend> {
     #[device(2)]
     circuit: crate::component::CircuitExecutor<B>,
 
-    stdout: StdoutObserver,
-
     measurement_record: MeasurementObserver,
 
     trace_record: TraceObserver,
 }
 
 type Instruction<B> = <PPVM<B> as HasInstructionSet>::Runtime;
-
-type SourceInstruction<B> = <PPVM<B> as HasInstructionSet>::Syntax;
 
 type Program<B> = LocalModule<Instruction<B>, Value, Type>;
 

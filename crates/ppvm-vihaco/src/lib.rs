@@ -78,11 +78,11 @@ use vihaco::{Type, Value, module::LocalModule};
 //     dump_program(&program, output_path)
 // }
 
-// pub mod prelude {
-//     // pub use crate::component::Circuit;
-//     pub use crate::composite::PPVM;
-//     pub use crate::syntax::{PPVMHeader, PPVMResolver};
-// }
+pub mod prelude {
+    pub use crate::component::Circuit;
+    pub use crate::composite::PPVM;
+    // pub use crate::syntax::{PPVMHeader, PPVMResolver};
+}
 
 // #[cfg(test)]
 // mod tests {

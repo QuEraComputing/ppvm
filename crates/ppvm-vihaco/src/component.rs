@@ -178,6 +178,7 @@ where
     }
 }
 
+/// Generic backend component - use this if you need one concrete variant in your machine
 #[component]
 #[instructions { circuit }]
 pub struct CircuitExecutor<B: CircuitBackend> {
@@ -679,6 +680,7 @@ impl CircuitKind {
     }
 }
 
+/// circuit component that selects qubit size from a runtime value and can do all backends
 #[component]
 #[instructions { circuit }]
 pub struct Circuit {
@@ -699,7 +701,7 @@ impl<I: CircuitOp> Execute<I> for Circuit {
     }
 }
 
-// Tableau-only component
+/// Tableau-only component with runtime configured size
 #[component]
 #[instructions { circuit }]
 pub struct TableauCircuit {

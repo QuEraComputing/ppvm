@@ -1,26 +1,12 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use eyre::{Result, eyre};
-use ppvm_pauli_sum::config::fx64hash::Byte8F64;
-use ppvm_tableau::data::GeneralizedTableau;
-use vihaco::PushToStack;
-use vihaco::frame::Frame;
-use vihaco::machine::StackFrame;
-use vihaco::observer::stdio::{StdoutEffect, StdoutObserver};
-use vihaco::traits::{GetProgramInfo, ProgramCounter, StackMemory};
-use vihaco::{
-    BuildMessage, Effects, Execute, ExecutionState, HasInstructionSet, NoContext, Observe,
-    ProgramImage, Step, Type, Value, composite, field, module::LocalModule, observe, program,
-};
-use vihaco_cpu::CPU;
-
-use crate::component::{Circuit, CircuitBackend, CircuitExecutor, CircuitOp};
+use crate::component::Circuit;
 use crate::measurements::{CircuitOutcomeEffect, MeasurementObserver, TraceObserver};
-
-use vihaco_circuit_isa::circuit;
-use vihaco_circuit_isa::messages::{
-    PopParams, QubitBatch, QubitPairBatch, pop_qubit_batch, pop_qubit_pair_batch,
+use eyre;
+use vihaco::{
+    BuildMessage, Effects, Execute, ExecutionState, HasInstructionSet, Step, Type, Value,
+    composite, field, module::LocalModule,
 };
 
 // Device configuration lives in `device_info` (shipped with the circuit

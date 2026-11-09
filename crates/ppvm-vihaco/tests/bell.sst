@@ -1,18 +1,44 @@
-device circuit.n_qubits 2;
+sst v1
+.section(root):
+    .section(ppvm):
+    .header(ppvm):
+        circuit.n_qubits 2;
+        metadata {
+            strings: ["main", "bell.sst"],
+            functions: [
+                {
+                    name: 0, // main
+                    signature: { params: [], ret: [] },
+                    local_count: 0,
+                    start_address: 0,
+                    end_address: 10,
+                    file: 1,
+                },
+            ],
+            labels: [],
+            constants: [],
+            main_function: 0, // main
+            source_symbols: [],
+            extra: {},
+        };
+    .header(ppvm).
+    .text(ppvm):
+        fn @main() {
+            execution::program::const_u64 0
+            circuit::circuit::h
 
-fn @main() {
-    cpu::cpu.const u64, 0
-    circuit::circuit.h
+            execution::program::const_u64 0
+            execution::program::const_u64 1
+            circuit::circuit::cnot
 
-    cpu::cpu.const u64, 0
-    cpu::cpu.const u64, 1
-    circuit::circuit.cnot
+            execution::program::const_u64 0
+            circuit::circuit::measure
 
-    cpu::cpu.const u64, 0
-    circuit::circuit.measure
+            execution::program::const_u64 1
+            circuit::circuit::measure
 
-    cpu::cpu.const u64, 1
-    circuit::circuit.measure
-
-    cpu::cpu.ret 0
-}
+            execution::program::ret 0
+        }
+    .text(ppvm).
+    .section(ppvm).
+.section(root).

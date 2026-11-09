@@ -1,19 +1,53 @@
-device circuit.n_qubits 2;
+sst v1
+.section(root):
+    .section(ppvm):
+    .header(ppvm):
+        circuit.n_qubits 2;
+        metadata {
+            strings: ["main", "run_circuit", "function_call.sst"],
+            functions: [
+                {
+                    name: 0, // main
+                    signature: { params: [], ret: [] },
+                    local_count: 0,
+                    start_address: 0,
+                    end_address: 2,
+                    file: 2,
+                },
+                {
+                    name: 1, // run_circuit
+                    signature: { params: [], ret: [] },
+                    local_count: 0,
+                    start_address: 2,
+                    end_address: 7,
+                    file: 2,
+                },
+            ],
+            labels: [],
+            constants: [],
+            main_function: 0, // main
+            source_symbols: [],
+            extra: {},
+        };
+    .header(ppvm).
+    .text(ppvm):
+        fn @main() {
+            // Jump into the helper, which finishes the program with `halt`.
+            // Using `halt` instead of `ret` from the callee avoids depending on
+            // vihaco-cpu restoring a return PC, which it doesn't track today.
+            execution::program::call 0, @run_circuit
+            execution::program::ret 0
+        }
 
-fn @main() {
-    // Jump into the helper, which finishes the program with `halt`.
-    // Using `halt` instead of `ret` from the callee avoids depending on
-    // vihaco-cpu restoring a return PC, which it doesn't track today.
-    cpu::cpu.call 0, run_circuit
-    cpu::cpu.ret 0
-}
+        fn @run_circuit() {
+            execution::program::const_u64 1
+            circuit::circuit::h
 
-fn @run_circuit() {
-    cpu::cpu.const u64, 1
-    circuit::circuit.h
+            execution::program::const_u64 1
+            circuit::circuit::measure
 
-    cpu::cpu.const u64, 1
-    circuit::circuit.measure
-
-    cpu::cpu.ret 1
-}
+            execution::program::ret 1
+        }
+    .text(ppvm).
+    .section(ppvm).
+.section(root).

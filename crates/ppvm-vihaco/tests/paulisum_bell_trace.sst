@@ -1,18 +1,44 @@
-device circuit.n_qubits 2;
-device circuit.backend paulisum;
-device circuit.observable ZZ;
+sst v1
+.section(root):
+    .section(ppvm):
+    .header(ppvm):
+        circuit.n_qubits 2;
+        circuit.backend paulisum;
+        circuit.observable ZZ;
+        metadata {
+            strings: ["main", "paulisum_bell_trace.sst", "Z?*"],
+            functions: [
+                {
+                    name: 0, // main
+                    signature: { params: [], ret: [] },
+                    local_count: 0,
+                    start_address: 0,
+                    end_address: 8,
+                    file: 1,
+                },
+            ],
+            labels: [],
+            constants: [],
+            main_function: 0, // main
+            source_symbols: [],
+            extra: {},
+        };
+    .header(ppvm).
+    .text(ppvm):
+        fn @main() {
+            // Textbook H(0); CNOT(0,1) — emit reversed for Heisenberg propagation.
+            execution::program::const_u64 0
+            execution::program::const_u64 1
+            circuit::circuit::cnot
 
-fn @main() {
-    // Textbook H(0); CNOT(0,1) — emit reversed for Heisenberg propagation.
-    cpu::cpu.const u64, 0
-    cpu::cpu.const u64, 1
-    circuit::circuit.cnot
+            execution::program::const_u64 0
+            circuit::circuit::h
 
-    cpu::cpu.const u64, 0
-    circuit::circuit.h
-
-    // Trace against |00>: match Z-or-identity on every qubit.
-    cpu::cpu.const str, "Z?*"
-    circuit::circuit.trace
-    cpu::cpu.ret 0
-}
+            // Trace against |00>: match Z-or-identity on every qubit.
+            execution::program::const_string "Z?*"
+            circuit::circuit::trace
+            execution::program::ret 0
+        }
+    .text(ppvm).
+    .section(ppvm).
+.section(root).

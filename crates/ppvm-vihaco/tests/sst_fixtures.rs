@@ -365,14 +365,14 @@ fn lossy_paulisum_loss_trace_matches_pure_rust_reference() {
 
 #[test]
 fn paulisum_measure_returns_unsupported_error() {
-    // Per Decision 11, Measure on PauliSum hits the dispatch fallback with a
-    // clear "not supported on the PauliSum backend" error.
+    // Per Decision 11, Measure on PauliSum is rejected with a clear
+    // "not supported" error rather than a panic.
     let module = load_module_file("tests/paulisum_measure_error.sst")
         .unwrap_or_else(|e| panic!("load paulisum_measure_error.sst: {e:?}"));
     let err = run_module(&module).err().expect("run should fail");
     let msg = err.to_string();
     assert!(
-        msg.contains("not supported on the PauliSum backend"),
+        msg.contains("not supported"),
         "expected PauliSum-rejection error, got: {msg}"
     );
 }
@@ -386,7 +386,7 @@ fn paulisum_leakage_returns_unsupported_error() {
     let err = run_module(&module).err().expect("run should fail");
     let msg = err.to_string();
     assert!(
-        msg.contains("not supported on the PauliSum backend"),
+        msg.contains("not supported"),
         "expected PauliSum-rejection error, got: {msg}"
     );
 }

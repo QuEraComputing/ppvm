@@ -2409,6 +2409,7 @@ dependencies = [
  "vihaco",
  "vihaco-circuit-isa",
  "vihaco-cpu",
+ "vihaco-parser",
  "vihaco-stdlib",
 ]
 

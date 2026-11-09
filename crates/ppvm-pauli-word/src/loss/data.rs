@@ -3,7 +3,7 @@
 
 use bitvec::prelude::BitArray;
 use ppvm_traits::char::Pauli;
-use ppvm_traits::traits::{HashFinalize, PauliIter, PauliStorage, PauliWordTrait};
+use ppvm_traits::traits::{HashFinalize, PauliIter, PauliStorage, PauliWordTrait, WordReset};
 use std::hash::{BuildHasher, Hash};
 use std::ops::Index;
 
@@ -415,6 +415,18 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize> std::fmt:
             write!(f, "{}", pauli)?;
         }
         Ok(())
+    }
+}
+
+impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize> WordReset
+    for LossyPauliWord<A, S>
+{
+    // The identity on the full qubit space is `I + L`.
+    fn word_reset(&self, addr0: usize) -> impl Iterator<Item = Self> + use<A, S> {
+        matches!(self.get(addr0), Pauli::I | Pauli::Z)
+            .then(|| [self.set_new(addr0, Pauli::I), self.set_new(addr0, Pauli::L)])
+            .into_iter()
+            .flatten()
     }
 }
 

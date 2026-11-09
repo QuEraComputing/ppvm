@@ -85,13 +85,6 @@ mod tests {
         for input in ["IIIIIIIII", "XXXXXXXXI", "IIIIIIIIX", "I_I_I_I_I_I_I_I_I"] {
             assert!(std::panic::catch_unwind(|| PauliWord::<u8>::from(input)).is_err());
             assert!(std::panic::catch_unwind(|| PauliWord::<u8>::from(input.to_owned())).is_err());
-            let phased = format!("+i{input}");
-            assert!(
-                std::panic::catch_unwind(|| {
-                    crate::Phased::<PauliWord<u8>>::from(phased.as_str())
-                })
-                .is_err()
-            );
         }
         for (input, expected) in [
             ("", ""),

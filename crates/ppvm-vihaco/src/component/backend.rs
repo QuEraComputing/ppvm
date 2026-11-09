@@ -144,6 +144,7 @@ impl<T: Config<Coeff = f64>> PauliSumBackend<T> {
 impl<T> CircuitBackend for PauliSumBackend<T>
 where
     T: Config<Coeff = f64>,
+    T::PauliWordType: WordReset,
     for<'a> PauliSum<T>: Trace<'a, PauliPattern, Output = f64>,
 {
     type Config = T;

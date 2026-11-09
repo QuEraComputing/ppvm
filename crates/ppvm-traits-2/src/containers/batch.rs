@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::containers::Indexable;
-use crate::loss::LossState;
+use crate::loss::LossInfo;
 use crate::word::PauliBits;
 
 /// An [`Indexable`] key with a structure-of-arrays column representation.
@@ -86,12 +86,12 @@ where
     }
 }
 
-/// Row-level loss access for columns whose keys implement [`LossState`].
+/// Row-level loss access for columns whose keys implement [`LossInfo`].
 /// Defaults materialize the row; packed columns override. No blanket impl, for
 /// the same reason as [`PauliColumn`].
 pub trait LossColumn: KeyColumn
 where
-    Self::Key: LossState,
+    Self::Key: LossInfo,
 {
     /// Read one row's loss bit.
     #[inline]

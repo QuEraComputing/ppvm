@@ -8,7 +8,7 @@
 //! Depolarizing2, TwoQubitPauliError). New tableau backends only need to
 //! provide [`TableauLike::rng_mut`](crate::tableau_like::TableauLike::rng_mut) and (optionally) override
 //! [`TableauLike::is_qubit_lost`](crate::tableau_like::TableauLike::is_qubit_lost)
-//! (which reports lost *or* leaked qubits, both skipped by the noise channels).
+//! (which reports lost *or* leaked qubits; two-qubit channels marginalize them out).
 
 use num::Zero;
 use rand::{Rng, RngExt};
@@ -18,7 +18,8 @@ use ppvm_traits::traits::{Clifford, Coefficient};
 // `Zero` is used for `Self::Coeff::zero()` inside default method bodies; the
 // bound itself is redundant on `Self::Coeff` because `Coefficient: num::Zero`.
 
-/// `true` iff `p` lies in the closed unit interval `[0, 1]`.
+/// `true` iff `p` lies in the closed unit interval `[0, 1]`, up to a `1e-12`
+/// rounding slack above 1 (e.g. summed marginals of a normalized channel).
 ///
 /// Spelled out with two explicit comparisons rather than
 /// `(0.0..=1.0).contains(p)` because the coefficient types here only implement
@@ -30,7 +31,22 @@ fn is_probability<C: PartialOrd<f64>>(p: &C) -> bool {
     if *p < 0.0 {
         return false;
     }
-    *p <= 1.0
+    *p <= 1.0 + 1e-12
+}
+
+/// Marginal X/Y/Z probabilities on one qubit of a two-qubit Pauli channel.
+///
+/// `p` uses the [`TableauLike::two_qubit_pauli_error_impl`] layout, where
+/// `p[4a + b - 1]` is the probability of `P_a ⊗ P_b` (0 = I, 1 = X, 2 = Y,
+/// 3 = Z). Sums out the other qubit's Pauli: `q_s = Σ_o p(s, o)` when keeping
+/// the first qubit, `q_s = Σ_o p(o, s)` when keeping the second.
+fn marginal_pauli_probs<C: Coefficient>(p: &[C; 15], keep_first: bool) -> [C; 3] {
+    core::array::from_fn(|i| {
+        let s = i + 1;
+        (0..4)
+            .map(|o| if keep_first { 4 * s + o } else { 4 * o + s })
+            .fold(C::zero(), |acc, k| acc + p[k - 1].clone())
+    })
 }
 
 /// A stabilizer-tableau-like backend that supports Clifford gates and an RNG.
@@ -50,7 +66,7 @@ pub trait TableauLike: Clifford {
     fn rng_mut(&mut self) -> &mut Self::Rng;
 
     /// Whether the qubit at `addr` is inactive (lost or leaked), so the
-    /// Pauli noise channels skip it. Default: never inactive.
+    /// two-qubit Pauli channels act only on the surviving qubit. Default: never inactive.
     #[inline]
     fn is_qubit_lost(&self, _addr: usize) -> bool {
         false
@@ -104,12 +120,27 @@ pub trait TableauLike: Clifford {
     }
 
     /// Two-qubit Pauli-error channel (15 non-identity Pauli combinations).
+    ///
+    /// If exactly one qubit is lost or leaked, the survivor gets the marginal
+    /// single-qubit channel (the dead qubit's Pauli is summed out). If both
+    /// are, nothing is applied.
     #[inline]
     fn two_qubit_pauli_error_impl(&mut self, addr0: usize, addr1: usize, p: [Self::Coeff; 15]) {
-        if self.is_qubit_lost(addr0) || self.is_qubit_lost(addr1) {
+        debug_assert!(p.iter().all(is_probability));
+
+        let is_lost0 = self.is_qubit_lost(addr0);
+        let is_lost1 = self.is_qubit_lost(addr1);
+        if is_lost0 && is_lost1 {
             return;
         }
-        debug_assert!(p.iter().all(is_probability));
+
+        if is_lost0 || is_lost1 {
+            let addr = if is_lost0 { addr1 } else { addr0 };
+            let marginal_probs = marginal_pauli_probs(&p, !is_lost0);
+            self.pauli_error_impl(addr, marginal_probs);
+            return;
+        }
+
         let r = self.rng_mut().random::<f64>();
         let sum = Self::Coeff::zero();
         let idx = p
@@ -154,12 +185,9 @@ pub trait TableauLike: Clifford {
     }
 
     /// Two-qubit depolarizing channel: spreads `p` over the 15 non-identity
-    /// two-qubit Pauli errors.
+    /// two-qubit Pauli errors. A lone surviving qubit is depolarized with `4p/5`.
     #[inline]
     fn depolarize2_impl(&mut self, addr0: usize, addr1: usize, p: Self::Coeff) {
-        if self.is_qubit_lost(addr0) || self.is_qubit_lost(addr1) {
-            return;
-        }
         debug_assert!(is_probability(&p));
         let p_arr: [Self::Coeff; 15] = core::array::from_fn(|_| p.clone() * (1.0 / 15.0));
         self.two_qubit_pauli_error_impl(addr0, addr1, p_arr);

@@ -74,7 +74,9 @@ pub enum NoiseName {
     ZError,
     /// `I_ERROR` — accepted at the raw-parse layer regardless of tag (its
     /// arg count is [`ArgCount::Deferred`]). The lowering pass then promotes
-    /// `I_ERROR[loss]` / `I_ERROR[correlated_loss]` to typed loss instructions
+    /// `I_ERROR[loss]` / `[correlated_loss]` / `[leakage]` / `[reset_loss]` /
+    /// `[reset_leakage]` / `[reset_state]` to typed loss, leakage and reset
+    /// instructions
     /// and rejects every other tag combination (including untagged) by emitting
     /// an `"invalid-tag"` diagnostic.
     IError,

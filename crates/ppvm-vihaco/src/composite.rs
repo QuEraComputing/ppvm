@@ -7,8 +7,8 @@ use crate::measurements::{
 };
 use eyre;
 use vihaco::{
-    Apply, BuildMessage, Effects, Execute, ExecutionState, HasInstructionSet, PushToStack, Step,
-    Type, Value, composite, field, module::LocalModule,
+    BuildMessage, Effects, Execute, ExecutionState, HasInstructionSet, PushToStack, Step, Type,
+    Value, composite, field, module::LocalModule,
 };
 
 // Device configuration lives in `device_info` (shipped with the circuit

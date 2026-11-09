@@ -345,8 +345,8 @@ where
                     // both lost — un-leak first so reset canonicalizes to |0⟩
                     self.qubit_status[addr0] = QubitStatus::Live;
                     self.qubit_status[addr1] = QubitStatus::Live;
-                    self.reset(addr0);
-                    self.reset(addr1);
+                    self.reset_state(addr0);
+                    self.reset_state(addr1);
                     self.qubit_status[addr0] = QubitStatus::Lost;
                     self.qubit_status[addr1] = QubitStatus::Lost;
                 } else {
@@ -354,11 +354,11 @@ where
                     let choice = self.tableau.rng.random::<bool>();
                     if choice {
                         self.qubit_status[addr1] = QubitStatus::Live;
-                        self.reset(addr1);
+                        self.reset_state(addr1);
                         self.qubit_status[addr1] = QubitStatus::Lost;
                     } else {
                         self.qubit_status[addr0] = QubitStatus::Live;
-                        self.reset(addr0);
+                        self.reset_state(addr0);
                         self.qubit_status[addr0] = QubitStatus::Lost;
                     }
                 }
@@ -471,7 +471,7 @@ where
         }
 
         self.qubit_status[addr0] = QubitStatus::Live;
-        self.reset(addr0);
+        self.reset_state(addr0);
     }
 }
 
@@ -608,15 +608,83 @@ mod tests {
         assert!(t.is_lost(1));
     }
 
-    #[test]
-    fn two_qubit_pauli_error_first_lost_no_apply() {
-        // addr0 lost; p[0] = 1.0 (IX) → marginal p_x for addr1 = 1.0
-        let mut t = tab(2);
-        t.qubit_status[0] = QubitStatus::Lost;
-        let mut p = [0.0f64; 15];
-        p[0] = 1.0; // IX
+    /// Survivor's Z outcome for channel `p` with `dead` set to `status`
+    /// (or both live when `status` is `None`).
+    fn survivor_flipped(p: [f64; 15], dead: usize, status: Option<QubitStatus>, seed: u64) -> bool {
+        let mut t = TestTab::new_with_seed(2, 1e-12, seed);
+        if let Some(s) = status {
+            t.qubit_status[dead] = s;
+        }
         t.two_qubit_pauli_error(0, 1, p);
-        assert!(!t.measure(1).unwrap()); // nothing applied to addr1
+        t.measure(1 - dead).unwrap()
+    }
+
+    #[test]
+    fn two_qubit_pauli_error_survivor_independent_of_partner() {
+        // The survivor's reduced channel can't depend on whether its partner is
+        // present. Each `p` flips each qubit in Z deterministically, so one shot
+        // decides. Index of P_a ⊗ P_b is 4a + b - 1 (I=0, X=1, Y=2, Z=3).
+        let channels: [&[(usize, f64)]; 4] = [
+            &[(0, 0.4), (12, 0.6)],          // IX, ZX
+            &[(6, 0.5), (7, 0.5)],           // XZ, YI
+            &[(3, 1.0)],                     // XI
+            &[(9, 0.2), (4, 0.3), (8, 0.5)], // YY, XX, YX
+        ];
+        for entries in channels {
+            let mut p = [0.0; 15];
+            for &(k, v) in entries {
+                p[k] = v;
+            }
+            for dead in [0, 1] {
+                let live = survivor_flipped(p, dead, None, 0);
+                for status in [QubitStatus::Lost, QubitStatus::Leaked] {
+                    assert_eq!(
+                        survivor_flipped(p, dead, Some(status), 0),
+                        live,
+                        "p = {entries:?}, dead = {dead}, {status:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn two_qubit_pauli_error_saturated_marginal_on_lost_partner() {
+        // A normalized channel with X always on the survivor must flip it every
+        // shot, even though the summed marginal rounds to 1 + ε in f64.
+        let probs = [0.2, 0.4, 0.3, 0.1];
+        for dead in [0, 1] {
+            let mut p = [0.0; 15];
+            for (o, &v) in probs.iter().enumerate() {
+                // survivor = addr0: XI, XX, XY, XZ; survivor = addr1: IX, XX, YX, ZX
+                let k = if dead == 1 { 4 + o } else { 4 * o + 1 };
+                p[k - 1] = v;
+            }
+            for seed in 0..20 {
+                assert!(survivor_flipped(p, dead, Some(QubitStatus::Lost), seed));
+            }
+        }
+    }
+
+    #[test]
+    fn depolarize2_lost_partner_survivor_flip_rate() {
+        // 8 of the 15 two-qubit Paulis carry X or Y on a given qubit, so its Z
+        // outcome flips with probability 8/15 whether or not the partner is there.
+        let shots = 4000;
+        for status in [None, Some(QubitStatus::Lost), Some(QubitStatus::Leaked)] {
+            let flips = (0..shots)
+                .filter(|&seed| {
+                    let mut t = TestTab::new_with_seed(2, 1e-12, seed);
+                    if let Some(s) = status {
+                        t.qubit_status[0] = s;
+                    }
+                    t.depolarize2(0, 1, 1.0);
+                    t.measure(1).unwrap()
+                })
+                .count();
+            let rate = flips as f64 / shots as f64;
+            assert!((rate - 8.0 / 15.0).abs() < 0.04, "{status:?}: rate {rate}");
+        }
     }
 
     // === Depolarizing2 ===
@@ -1492,13 +1560,32 @@ mod tests {
     }
 
     #[test]
-    fn reset_skips_leaked_qubit() {
-        // reset must not re-zero a leaked qubit.
+    fn reset_state_skips_leaked_qubit() {
+        // reset_state must not re-zero a leaked qubit.
+        let mut t = tab(1);
+        t.leakage_channel(0, 0.0, 1.0); // leaked, |1⟩
+        t.reset_state(0);
+        assert!(t.is_leaked(0));
+        assert_eq!(t.measure(0), Some(true));
+    }
+
+    #[test]
+    fn reset_recovers_leaked_qubit_to_zero() {
         let mut t = tab(1);
         t.leakage_channel(0, 0.0, 1.0); // leaked, |1⟩
         t.reset(0);
-        assert!(t.is_leaked(0));
-        assert_eq!(t.measure(0), Some(true));
+        assert!(!t.is_leaked(0));
+        assert_eq!(t.measure(0), Some(false));
+    }
+
+    #[test]
+    fn reset_recovers_lost_qubit_to_zero() {
+        let mut t = tab(1);
+        t.x(0);
+        t.loss_channel(0, 1.0);
+        t.reset(0);
+        assert!(!t.is_lost(0));
+        assert_eq!(t.measure(0), Some(false));
     }
 
     // === ResetLeakageChannel ===

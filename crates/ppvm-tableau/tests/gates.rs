@@ -336,13 +336,21 @@ fn test_generalized_tableau_reset_from_superposition() {
 }
 
 #[test]
+fn test_generalized_tableau_reset_state_lost_qubit() {
+    // reset_state leaves a lost qubit lost.
+    let mut g: GTab = GeneralizedTableau::new_with_seed(1, 1e-12, 42);
+    g.qubit_status[0] = QubitStatus::Lost;
+    g.reset_state(0);
+    assert_eq!(g.measure(0), None);
+}
+
+#[test]
 fn test_generalized_tableau_reset_lost_qubit() {
-    // Reset on a lost qubit: measure returns None, so reset should not flip
+    // A full reset reloads a lost qubit in |0⟩.
     let mut g: GTab = GeneralizedTableau::new_with_seed(1, 1e-12, 42);
     g.qubit_status[0] = QubitStatus::Lost;
     g.reset(0);
-    // Measurement of lost qubit returns None
-    assert_eq!(g.measure(0), None);
+    assert_eq!(g.measure(0), Some(false));
 }
 
 #[test]

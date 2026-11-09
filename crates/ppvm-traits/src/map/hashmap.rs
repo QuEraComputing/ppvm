@@ -52,6 +52,18 @@ macro_rules! impl_acmap_add_assign {
                     <Self as ACMapAddAssign<S, V, Hasher, W>>::add_assign(dest, new_k, new_v);
                 }
             }
+
+            fn map_flat_add_assign<F, I>(&self, dest: &mut Self, f: F)
+            where
+                F: Fn(&W, &V) -> I + Sync + Send,
+                I: IntoIterator<Item = (W, V)>,
+            {
+                for (k, v) in self.iter() {
+                    for (new_k, new_v) in f(k, v) {
+                        <Self as ACMapAddAssign<S, V, Hasher, W>>::add_assign(dest, new_k, new_v);
+                    }
+                }
+            }
         }
     };
 }

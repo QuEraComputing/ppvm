@@ -7,7 +7,7 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-ppvm-traits-2 = { version = "0.1.0", path = "../ppvm-traits-2"}
+ppvm-traits-2 = { path = "../ppvm-traits-2"}
 bitvec = "1.0.1"
 bytemuck = { version = "1", features = ["min_const_generics"] }
 foldhash = "0.1.5"

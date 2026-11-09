@@ -557,21 +557,37 @@ fn reset_after_depolarize_still_zero() {
 }
 
 #[test]
-fn reset_on_lost_qubit_is_no_op() {
-    // GeneralizedTableau::reset is `measure + flip`; measurement on a lost
-    // qubit returns None, so the reset leaves is_lost set. Both backends
-    // must still report None for that qubit.
+fn reset_state_on_lost_qubit_is_no_op() {
+    // reset_state skips lost qubits; both backends must still report None.
     let shots = 1000;
     let sum = run_sum(1, shots, 1e-12, |t| {
         t.loss_channel(0, 1.0);
-        t.reset(0);
+        t.reset_state(0);
     });
     let pure = run_pure(1, shots, |t| {
         t.loss_channel(0, 1.0);
-        t.reset(0);
+        t.reset_state(0);
     });
     assert!(sum.iter().all(|s| s[0].is_none()));
     assert!(pure.iter().all(|s| s[0].is_none()));
+}
+
+#[test]
+fn reset_reloads_lost_qubit_in_zero() {
+    // A full reset reloads the qubit; both backends must measure |0⟩.
+    let shots = 1000;
+    let sum = run_sum(1, shots, 1e-12, |t| {
+        t.h(0);
+        t.loss_channel(0, 0.5);
+        t.reset(0);
+    });
+    let pure = run_pure(1, shots, |t| {
+        t.h(0);
+        t.loss_channel(0, 0.5);
+        t.reset(0);
+    });
+    assert!(sum.iter().all(|s| s[0] == Some(false)));
+    assert!(pure.iter().all(|s| s[0] == Some(false)));
 }
 
 #[test]
@@ -1106,8 +1122,9 @@ fn two_qubit_pauli_error_nonuniform_on_ground_state() {
 }
 
 #[test]
-fn two_qubit_pauli_error_on_lost_qubit_is_noop() {
-    // If either input qubit is lost the channel short-circuits to a no-op.
+fn two_qubit_pauli_error_on_lost_qubit() {
+    // TableauSum still no-ops on a lost partner (marginalisation follows with
+    // its leakage support); the pure tableau applies the survivor's marginal.
     let shots = 1000;
     let p = [1.0 / 15.0_f64; 15];
     let sum = run_sum(2, shots, 1e-12, |t| {
@@ -1119,7 +1136,10 @@ fn two_qubit_pauli_error_on_lost_qubit_is_noop() {
         t.two_qubit_pauli_error(0, 1, p);
     });
     assert!(sum.iter().all(|s| s == &vec![None, Some(false)]));
-    assert!(pure.iter().all(|s| s == &vec![None, Some(false)]));
+    // 8 of the 15 uniform-weight Paulis carry X or Y on the survivor.
+    assert!(pure.iter().all(|s| s[0].is_none()));
+    let flipped = pure.iter().filter(|s| s[1] == Some(true)).count() as f64 / shots as f64;
+    assert!((flipped - 8.0 / 15.0).abs() < 0.06, "flip rate {flipped}");
 }
 
 #[test]

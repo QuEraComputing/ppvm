@@ -56,6 +56,18 @@ pub enum ExtendedInstruction {
         targets: Vec<usize>,
         span: Span,
     },
+    ResetLoss {
+        targets: Vec<usize>,
+        span: Span,
+    },
+    ResetLeakage {
+        targets: Vec<usize>,
+        span: Span,
+    },
+    ResetState {
+        targets: Vec<usize>,
+        span: Span,
+    },
     MPad {
         tag: String,
         prob: Option<f64>,
@@ -116,7 +128,10 @@ fn max_qubit_in_slice(instructions: &[ExtendedInstruction]) -> Option<usize> {
             | ExtendedInstruction::Rotation { targets, .. }
             | ExtendedInstruction::U3 { targets, .. }
             | ExtendedInstruction::Loss { targets, .. }
-            | ExtendedInstruction::Leakage { targets, .. } => targets.iter().copied().max(),
+            | ExtendedInstruction::Leakage { targets, .. }
+            | ExtendedInstruction::ResetLoss { targets, .. }
+            | ExtendedInstruction::ResetState { targets, .. }
+            | ExtendedInstruction::ResetLeakage { targets, .. } => targets.iter().copied().max(),
             ExtendedInstruction::CorrelatedLoss { targets, .. } => {
                 targets.iter().flat_map(|&(a, b)| [a, b]).max()
             }
@@ -154,7 +169,10 @@ fn count_in_slice(instructions: &[ExtendedInstruction], factor: u64) -> usize {
             | ExtendedInstruction::U3 { .. }
             | ExtendedInstruction::Loss { .. }
             | ExtendedInstruction::CorrelatedLoss { .. }
-            | ExtendedInstruction::Leakage { .. } => {}
+            | ExtendedInstruction::Leakage { .. }
+            | ExtendedInstruction::ResetLoss { .. }
+            | ExtendedInstruction::ResetState { .. }
+            | ExtendedInstruction::ResetLeakage { .. } => {}
         }
     }
     total

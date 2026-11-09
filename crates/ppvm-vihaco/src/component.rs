@@ -14,7 +14,7 @@ use ppvm_pauli_sum::config::fx64hash::Byte8F64;
 use ppvm_pauli_sum::config::indexmap::ByteFxHashF64;
 use ppvm_pauli_sum::strategy::{CoefficientThreshold, CombinedStrategy, MaxPauliWeight};
 use ppvm_tableau::prelude::*;
-use vihaco::{Effects, Execute, PopFromStack, component, dispatch, observe};
+use vihaco::{Apply, Component, Effects, Execute, PopFromStack, component, dispatch, observe};
 use vihaco_circuit_isa::circuit;
 
 /// Largest qubit count any backend can simulate. The widest size bucket is
@@ -184,15 +184,33 @@ pub struct CircuitExecutor<B: CircuitBackend> {
     pub backend: B,
 }
 
+// CircuitOp trait: define how an instruction executes on a generic backend
+// This is used to avoid having huge where constraints on the enums later
+// - without this trait, we'd have to constrain every enum variant to all Execute impls
+// TODO: re-evaluate whether this is needed once we refactor and try to get rid of enums
+pub trait CircuitOp {
+    type Message;
+    type Effect;
+
+    fn apply<B: CircuitBackend>(
+        &self,
+        backend: &mut B,
+        msg: Self::Message,
+    ) -> eyre::Result<Self::Effect>;
+}
+
 macro_rules! single_qubit_execute {
     ($leaf:ident, $method:ident) => {
-        impl<B: CircuitBackend> Execute<circuit::$leaf> for CircuitExecutor<B> {
+        impl CircuitOp for circuit::$leaf {
             type Effect = ();
             type Message = PopFromStack<(u64,)>;
-            type Error = eyre::Report;
 
-            fn execute(&mut self, _: &circuit::$leaf, msg: Self::Message) -> eyre::Result<()> {
-                self.backend.state().$method(msg.0.0 as usize);
+            fn apply<B: CircuitBackend>(
+                &self,
+                backend: &mut B,
+                msg: Self::Message,
+            ) -> eyre::Result<()> {
+                backend.state().$method(msg.0.0 as usize);
                 Ok(())
             }
         }
@@ -201,15 +219,16 @@ macro_rules! single_qubit_execute {
 
 macro_rules! two_qubit_execute {
     ($leaf:ident, $method:ident) => {
-        impl<B: CircuitBackend> Execute<circuit::$leaf> for CircuitExecutor<B> {
+        impl CircuitOp for circuit::$leaf {
             type Effect = ();
             type Message = PopFromStack<(u64, u64)>;
-            type Error = eyre::Report;
 
-            fn execute(&mut self, _: &circuit::$leaf, msg: Self::Message) -> eyre::Result<()> {
-                self.backend
-                    .state()
-                    .$method(msg.0.0 as usize, msg.0.1 as usize);
+            fn apply<B: CircuitBackend>(
+                &self,
+                backend: &mut B,
+                msg: Self::Message,
+            ) -> eyre::Result<()> {
+                backend.state().$method(msg.0.0 as usize, msg.0.1 as usize);
                 Ok(())
             }
         }
@@ -218,13 +237,16 @@ macro_rules! two_qubit_execute {
 
 macro_rules! single_qubit_rotation_execute {
     ($leaf:ident, $method:ident) => {
-        impl<B: CircuitBackend> Execute<circuit::$leaf> for CircuitExecutor<B> {
+        impl CircuitOp for circuit::$leaf {
             type Effect = ();
             type Message = PopFromStack<(u64, f64)>;
-            type Error = eyre::Report;
 
-            fn execute(&mut self, _: &circuit::$leaf, msg: Self::Message) -> eyre::Result<()> {
-                self.backend.state().$method(msg.0.0 as usize, msg.0.1);
+            fn apply<B: CircuitBackend>(
+                &self,
+                backend: &mut B,
+                msg: Self::Message,
+            ) -> eyre::Result<()> {
+                backend.state().$method(msg.0.0 as usize, msg.0.1);
                 Ok(())
             }
         }
@@ -233,13 +255,16 @@ macro_rules! single_qubit_rotation_execute {
 
 macro_rules! two_qubit_rotation_execute {
     ($leaf:ident, $method:ident) => {
-        impl<B: CircuitBackend> Execute<circuit::$leaf> for CircuitExecutor<B> {
+        impl CircuitOp for circuit::$leaf {
             type Effect = ();
             type Message = PopFromStack<(u64, u64, f64)>;
-            type Error = eyre::Report;
 
-            fn execute(&mut self, _: &circuit::$leaf, msg: Self::Message) -> eyre::Result<()> {
-                self.backend
+            fn apply<B: CircuitBackend>(
+                &self,
+                backend: &mut B,
+                msg: Self::Message,
+            ) -> eyre::Result<()> {
+                backend
                     .state()
                     .$method(msg.0.0 as usize, msg.0.1 as usize, msg.0.2);
                 Ok(())
@@ -279,72 +304,66 @@ two_qubit_rotation_execute!(Depolarize2, depolarize2);
 
 // TODO: batched gates; need custom messages
 
-impl<B: CircuitBackend> Execute<circuit::U3> for CircuitExecutor<B> {
+impl CircuitOp for circuit::U3 {
     type Effect = ();
     type Message = PopFromStack<(u64, f64, f64, f64)>;
-    type Error = eyre::Report;
 
-    fn execute(&mut self, _: &circuit::U3, msg: Self::Message) -> eyre::Result<()> {
-        self.backend
+    fn apply<B: CircuitBackend>(&self, backend: &mut B, msg: Self::Message) -> eyre::Result<()> {
+        backend
             .state()
             .u3(msg.0.0 as usize, msg.0.1, msg.0.2, msg.0.3);
         Ok(())
     }
 }
 
-impl<B: CircuitBackend> Execute<circuit::R> for CircuitExecutor<B> {
+impl CircuitOp for circuit::R {
     type Effect = ();
     type Message = PopFromStack<(u64, f64, f64)>;
-    type Error = eyre::Report;
 
-    fn execute(&mut self, _: &circuit::R, msg: Self::Message) -> eyre::Result<()> {
-        self.backend.state().r(msg.0.0 as usize, msg.0.1, msg.0.2);
+    fn apply<B: CircuitBackend>(&self, backend: &mut B, msg: Self::Message) -> eyre::Result<()> {
+        backend.state().r(msg.0.0 as usize, msg.0.1, msg.0.2);
         Ok(())
     }
 }
 
-impl<B: CircuitBackend> Execute<circuit::Leakage> for CircuitExecutor<B> {
+impl CircuitOp for circuit::Leakage {
     type Effect = ();
     type Message = PopFromStack<(u64, f64, f64)>;
-    type Error = eyre::Report;
 
-    fn execute(&mut self, _: &circuit::Leakage, msg: Self::Message) -> eyre::Result<()> {
-        self.backend.leakage(msg.0.0 as usize, msg.0.1, msg.0.2)?;
+    fn apply<B: CircuitBackend>(&self, backend: &mut B, msg: Self::Message) -> eyre::Result<()> {
+        backend.leakage(msg.0.0 as usize, msg.0.1, msg.0.2)?;
         Ok(())
     }
 }
 
-impl<B: CircuitBackend> Execute<circuit::PauliError> for CircuitExecutor<B> {
+impl CircuitOp for circuit::PauliError {
     type Effect = ();
     type Message = PopFromStack<(u64, f64, f64, f64)>;
-    type Error = eyre::Report;
 
-    fn execute(&mut self, _: &circuit::PauliError, msg: Self::Message) -> eyre::Result<()> {
-        self.backend
+    fn apply<B: CircuitBackend>(&self, backend: &mut B, msg: Self::Message) -> eyre::Result<()> {
+        backend
             .state()
             .pauli_error(msg.0.0 as usize, [msg.0.1, msg.0.2, msg.0.3]);
         Ok(())
     }
 }
 
-impl<B: CircuitBackend> Execute<circuit::TwoQubitPauliError> for CircuitExecutor<B> {
+impl CircuitOp for circuit::TwoQubitPauliError {
     type Effect = ();
     type Message = PopFromStack<(u64, u64, f64, f64)>;
-    type Error = eyre::Report;
 
-    fn execute(&mut self, _: &circuit::TwoQubitPauliError, msg: Self::Message) -> eyre::Result<()> {
+    fn apply<B: CircuitBackend>(&self, backend: &mut B, msg: Self::Message) -> eyre::Result<()> {
         // TODO: probably needs a custom message since we can't pop float arrays
         unimplemented!("TODO: needs a custom message")
     }
 }
 
-impl<B: CircuitBackend> Execute<circuit::CorrelatedLoss> for CircuitExecutor<B> {
+impl CircuitOp for circuit::CorrelatedLoss {
     type Effect = ();
     type Message = PopFromStack<(u64, u64, f64, f64, f64)>;
-    type Error = eyre::Report;
 
-    fn execute(&mut self, _: &circuit::CorrelatedLoss, msg: Self::Message) -> eyre::Result<()> {
-        self.backend.state().correlated_loss_channel(
+    fn apply<B: CircuitBackend>(&self, backend: &mut B, msg: Self::Message) -> eyre::Result<()> {
+        backend.state().correlated_loss_channel(
             msg.0.0 as usize,
             msg.0.1 as usize,
             [msg.0.2, msg.0.3, msg.0.4],
@@ -353,13 +372,16 @@ impl<B: CircuitBackend> Execute<circuit::CorrelatedLoss> for CircuitExecutor<B> 
     }
 }
 
-impl<B: CircuitBackend> Execute<circuit::Measure> for CircuitExecutor<B> {
+impl CircuitOp for circuit::Measure {
     type Effect = Effects<CircuitOutcomeEffect>;
     type Message = PopFromStack<(u64,)>;
-    type Error = eyre::Report;
 
-    fn execute(&mut self, _: &circuit::Measure, msg: Self::Message) -> eyre::Result<Self::Effect> {
-        let outcome = self.backend.measure(msg.0.0 as usize)?;
+    fn apply<B: CircuitBackend>(
+        &self,
+        backend: &mut B,
+        msg: Self::Message,
+    ) -> eyre::Result<Self::Effect> {
+        let outcome = backend.measure(msg.0.0 as usize)?;
         Ok(Effects::one(CircuitOutcomeEffect::Measurement(
             MeasurementEffect {
                 measurement_results: smallvec::smallvec![outcome],
@@ -368,23 +390,21 @@ impl<B: CircuitBackend> Execute<circuit::Measure> for CircuitExecutor<B> {
     }
 }
 
-impl<B: CircuitBackend> Execute<circuit::Truncate> for CircuitExecutor<B> {
+impl CircuitOp for circuit::Truncate {
     type Effect = ();
     type Message = vihaco::NoMessage;
-    type Error = eyre::Report;
 
-    fn execute(&mut self, _: &circuit::Truncate, _: Self::Message) -> eyre::Result<()> {
-        self.backend.truncate();
+    fn apply<B: CircuitBackend>(&self, backend: &mut B, _: Self::Message) -> eyre::Result<()> {
+        backend.truncate();
         Ok(())
     }
 }
 
-impl<B: CircuitBackend> Execute<circuit::Trace> for CircuitExecutor<B> {
+impl CircuitOp for circuit::Trace {
     type Effect = ();
     type Message = vihaco::NoMessage;
-    type Error = eyre::Report;
 
-    fn execute(&mut self, _: &circuit::Trace, _: Self::Message) -> eyre::Result<()> {
+    fn apply<B: CircuitBackend>(&self, backend: &mut B, _: Self::Message) -> eyre::Result<()> {
         unimplemented!("TODO: needs a custom message");
     }
 }
@@ -392,5 +412,134 @@ impl<B: CircuitBackend> Execute<circuit::Trace> for CircuitExecutor<B> {
 impl<B: CircuitBackend> vihaco::Reset for CircuitExecutor<B> {
     fn reset(&mut self) {
         self.backend.reset();
+    }
+}
+
+// The single execute impl for all CircuitOps
+impl<B: CircuitBackend, I: CircuitOp> Execute<I> for CircuitExecutor<B> {
+    type Effect = I::Effect;
+    type Message = I::Message;
+    type Error = eyre::Report;
+
+    fn execute(
+        &mut self,
+        instruction: &I,
+        message: Self::Message,
+    ) -> Result<Self::Effect, Self::Error> {
+        I::apply(instruction, &mut self.backend, message)
+    }
+}
+
+// TODO: enum dispatch can go once we only set the index type in tableau #204
+pub(crate) enum TableauBuckets {
+    Bits64(CircuitExecutor<GeneralizedTableau<Byte8F64<1>, usize, Vec<(Complex64, usize)>>>),
+    Bits128(CircuitExecutor<GeneralizedTableau<Byte8F64<2>, u128, Vec<(Complex64, u128)>>>),
+    Bits256(CircuitExecutor<GeneralizedTableau<Byte8F64<4>, U256, Vec<(Complex64, U256)>>>),
+    Bits512(CircuitExecutor<GeneralizedTableau<Byte8F64<8>, U512, Vec<(Complex64, U512)>>>),
+    Bits1024(CircuitExecutor<GeneralizedTableau<Byte8F64<16>, U1024, Vec<(Complex64, U1024)>>>),
+    Bits2048(CircuitExecutor<GeneralizedTableau<Byte8F64<32>, U2048, Vec<(Complex64, U2048)>>>),
+}
+
+impl TableauBuckets {
+    fn apply<I: CircuitOp>(&mut self, op: &I, msg: I::Message) -> eyre::Result<I::Effect> {
+        match self {
+            Self::Bits64(c) => op.apply(&mut c.backend, msg),
+            Self::Bits128(c) => op.apply(&mut c.backend, msg),
+            Self::Bits256(c) => op.apply(&mut c.backend, msg),
+            Self::Bits512(c) => op.apply(&mut c.backend, msg),
+            Self::Bits1024(c) => op.apply(&mut c.backend, msg),
+            Self::Bits2048(c) => op.apply(&mut c.backend, msg),
+        }
+    }
+}
+
+pub(crate) enum PauliSumBuckets {
+    Bits64(CircuitExecutor<PauliSumBackend<PauliSumConfig<8>>>),
+    Bits128(CircuitExecutor<PauliSumBackend<PauliSumConfig<16>>>),
+    Bits256(CircuitExecutor<PauliSumBackend<PauliSumConfig<32>>>),
+    Bits512(CircuitExecutor<PauliSumBackend<PauliSumConfig<64>>>),
+    Bits1024(CircuitExecutor<PauliSumBackend<PauliSumConfig<128>>>),
+    Bits2048(CircuitExecutor<PauliSumBackend<PauliSumConfig<256>>>),
+}
+
+impl PauliSumBuckets {
+    fn apply<I: CircuitOp>(&mut self, op: &I, msg: I::Message) -> eyre::Result<I::Effect> {
+        match self {
+            Self::Bits64(c) => op.apply(&mut c.backend, msg),
+            Self::Bits128(c) => op.apply(&mut c.backend, msg),
+            Self::Bits256(c) => op.apply(&mut c.backend, msg),
+            Self::Bits512(c) => op.apply(&mut c.backend, msg),
+            Self::Bits1024(c) => op.apply(&mut c.backend, msg),
+            Self::Bits2048(c) => op.apply(&mut c.backend, msg),
+        }
+    }
+}
+
+pub(crate) enum LossyPauliSumBuckets {
+    Bits64(CircuitExecutor<PauliSumBackend<LossyPauliSumConfig<8>>>),
+    Bits128(CircuitExecutor<PauliSumBackend<LossyPauliSumConfig<16>>>),
+    Bits256(CircuitExecutor<PauliSumBackend<LossyPauliSumConfig<32>>>),
+    Bits512(CircuitExecutor<PauliSumBackend<LossyPauliSumConfig<64>>>),
+    Bits1024(CircuitExecutor<PauliSumBackend<LossyPauliSumConfig<128>>>),
+    Bits2048(CircuitExecutor<PauliSumBackend<LossyPauliSumConfig<256>>>),
+}
+
+impl LossyPauliSumBuckets {
+    fn apply<I: CircuitOp>(&mut self, op: &I, msg: I::Message) -> eyre::Result<I::Effect> {
+        match self {
+            Self::Bits64(c) => op.apply(&mut c.backend, msg),
+            Self::Bits128(c) => op.apply(&mut c.backend, msg),
+            Self::Bits256(c) => op.apply(&mut c.backend, msg),
+            Self::Bits512(c) => op.apply(&mut c.backend, msg),
+            Self::Bits1024(c) => op.apply(&mut c.backend, msg),
+            Self::Bits2048(c) => op.apply(&mut c.backend, msg),
+        }
+    }
+}
+
+pub(crate) enum CircuitKind {
+    Tableau(TableauBuckets),
+    PauliSum(PauliSumBuckets),
+    LossyPauliSum(LossyPauliSumBuckets),
+}
+
+#[component]
+#[instructions { circuit }]
+pub struct Circuit {
+    inner: CircuitKind,
+}
+
+impl<I: CircuitOp> Execute<I> for Circuit {
+    type Message = I::Message;
+    type Effect = I::Effect;
+    type Error = eyre::Report;
+
+    fn execute(&mut self, instruction: &I, msg: I::Message) -> Result<Self::Effect, eyre::Report> {
+        match &mut self.inner {
+            CircuitKind::Tableau(b) => b.apply(instruction, msg),
+            CircuitKind::PauliSum(b) => b.apply(instruction, msg),
+            CircuitKind::LossyPauliSum(b) => b.apply(instruction, msg),
+        }
+    }
+}
+
+// Tableau-only component
+#[component]
+#[instructions { circuit }]
+pub struct TableauCircuit {
+    inner: TableauBuckets,
+}
+
+impl<I: CircuitOp> Execute<I> for TableauCircuit {
+    type Message = I::Message;
+    type Effect = I::Effect;
+    type Error = eyre::Report;
+
+    fn execute(
+        &mut self,
+        instruction: &I,
+        message: Self::Message,
+    ) -> Result<Self::Effect, Self::Error> {
+        self.inner.apply(instruction, message)
     }
 }

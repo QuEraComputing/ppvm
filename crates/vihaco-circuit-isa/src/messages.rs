@@ -26,8 +26,34 @@ pub struct TwoQubitPauliErrorMsg {
     pub ps: [f64; 15],
 }
 
+/// Pauli pattern to trace against, pushed as a `const_string` id.
 pub struct TraceMessage {
     pub pauli_pattern: String,
+}
+
+/// Read access to a program's string table, used to resolve string operands.
+pub trait StringTable {
+    fn string(&self, id: usize) -> eyre::Result<&str>;
+}
+
+impl<I, V, Ty, Info> StringTable for vihaco::module::LocalModule<I, V, Ty, Info> {
+    fn string(&self, id: usize) -> eyre::Result<&str> {
+        self.strings
+            .get(id)
+            .map(String::as_str)
+            .ok_or_else(|| eyre::eyre!("unknown string id {id}"))
+    }
+}
+
+/// Pop a [`TraceMessage`] whose pattern is a `const_string` id into `strings`.
+pub fn pop_trace<S: PopStack<Word>>(
+    stack: &mut S,
+    strings: &(impl StringTable + ?Sized),
+) -> eyre::Result<TraceMessage> {
+    let id = usize::try_from(stack.pop()?)?;
+    Ok(TraceMessage {
+        pauli_pattern: strings.string(id)?.to_owned(),
+    })
 }
 
 /// Fixed-size parameter blocks popped off the operand stack.
@@ -120,3 +146,17 @@ macro_rules! automatic_batch_message {
 
 automatic_batch_message!(QubitBatch, pop_qubit_batch);
 automatic_batch_message!(QubitPairBatch, pop_qubit_pair_batch);
+
+impl AutomaticMessage for TraceMessage {}
+
+impl<C, F, I, Ctx> PrepareMessage<C, F, I, Ctx> for TraceMessage
+where
+    C: Composite + Field<F> + HasOperandStack<I>,
+    C::Child: Execute<I, Message = TraceMessage>,
+    C::Source: PopStack<Word>,
+    Ctx: StringTable + ?Sized,
+{
+    fn prepare(parent: &mut C, _: &I, strings: &Ctx) -> eyre::Result<Self> {
+        pop_trace(parent.operand_stack(1), strings)
+    }
+}

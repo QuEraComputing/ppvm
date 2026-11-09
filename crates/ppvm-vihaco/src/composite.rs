@@ -52,23 +52,25 @@ type Instruction = <PPVM as HasInstructionSet>::Runtime;
 type Program = LocalModule<Instruction, Value, Type>;
 
 // Batched circuit instructions pop their operands through custom messages.
-impl<I, P: PopParams> BuildMessage<field!(PPVM::circuit), I, Program, QubitBatch<P>> for PPVM
-where
-    Circuit: Execute<I, Message = QubitBatch<P>>,
-{
-    fn build_message(&mut self, _: &I, _: &Program) -> eyre::Result<QubitBatch<P>> {
-        pop_qubit_batch(&mut self.execution)
-    }
-}
+// TODO: per-composite builders conflict with vihaco's blanket `BuildMessage` (E0119)
+// since the messages are foreign here; the ISA crate implements them for now instead.
+// impl<I, P: PopParams> BuildMessage<field!(PPVM::circuit), I, Program, QubitBatch<P>> for PPVM
+// where
+//     Circuit: Execute<I, Message = QubitBatch<P>>,
+// {
+//     fn build_message(&mut self, _: &I, _: &Program) -> eyre::Result<QubitBatch<P>> {
+//         pop_qubit_batch(&mut self.execution)
+//     }
+// }
 
-impl<I, P: PopParams> BuildMessage<field!(PPVM::circuit), I, Program, QubitPairBatch<P>> for PPVM
-where
-    Circuit: Execute<I, Message = QubitPairBatch<P>>,
-{
-    fn build_message(&mut self, _: &I, _: &Program) -> eyre::Result<QubitPairBatch<P>> {
-        pop_qubit_pair_batch(&mut self.execution)
-    }
-}
+// impl<I, P: PopParams> BuildMessage<field!(PPVM::circuit), I, Program, QubitPairBatch<P>> for PPVM
+// where
+//     Circuit: Execute<I, Message = QubitPairBatch<P>>,
+// {
+//     fn build_message(&mut self, _: &I, _: &Program) -> eyre::Result<QubitPairBatch<P>> {
+//         pop_qubit_pair_batch(&mut self.execution)
+//     }
+// }
 
 // execution stepping
 impl<I> Step<field!(PPVM::execution), I, Program> for PPVM

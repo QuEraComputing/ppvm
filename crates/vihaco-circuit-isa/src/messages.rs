@@ -20,10 +20,22 @@ pub struct QubitPairBatch<P = ()> {
     pub params: P,
 }
 
+/// Single two-qubit Pauli channel: pushed as `q0 q1`, then the 15 probabilities.
 pub struct TwoQubitPauliErrorMsg {
-    pub q0: u64,
-    pub q1: u64,
+    pub q0: usize,
+    pub q1: usize,
     pub ps: [f64; 15],
+}
+
+/// Pop a [`TwoQubitPauliErrorMsg`] pushed as `q0 q1`, then the 15 probabilities.
+pub fn pop_two_qubit_pauli_error<S>(stack: &mut S) -> eyre::Result<TwoQubitPauliErrorMsg>
+where
+    S: PopStack<Word> + PopStack<f64>,
+{
+    let ps = <[f64; 15]>::pop_params(stack)?;
+    let q1 = usize::try_from(PopStack::<Word>::pop(stack)?)?;
+    let q0 = usize::try_from(PopStack::<Word>::pop(stack)?)?;
+    Ok(TwoQubitPauliErrorMsg { q0, q1, ps })
 }
 
 /// Pauli pattern to trace against, pushed as a `const_string` id.
@@ -146,6 +158,19 @@ macro_rules! automatic_batch_message {
 
 automatic_batch_message!(QubitBatch, pop_qubit_batch);
 automatic_batch_message!(QubitPairBatch, pop_qubit_pair_batch);
+
+impl AutomaticMessage for TwoQubitPauliErrorMsg {}
+
+impl<C, F, I, Ctx: ?Sized> PrepareMessage<C, F, I, Ctx> for TwoQubitPauliErrorMsg
+where
+    C: Composite + Field<F> + HasOperandStack<I>,
+    C::Child: Execute<I, Message = TwoQubitPauliErrorMsg>,
+    C::Source: PopStack<Word> + PopStack<f64>,
+{
+    fn prepare(parent: &mut C, _: &I, _: &Ctx) -> eyre::Result<Self> {
+        pop_two_qubit_pauli_error(parent.operand_stack(17))
+    }
+}
 
 impl AutomaticMessage for TraceMessage {}
 

@@ -8,7 +8,9 @@ use crate::measurements::{
 use ppvm_tableau::prelude::*;
 use vihaco::{Effects, PopFromStack};
 use vihaco_circuit_isa::circuit;
-use vihaco_circuit_isa::messages::{QubitBatch, QubitPairBatch, TraceMessage};
+use vihaco_circuit_isa::messages::{
+    QubitBatch, QubitPairBatch, TraceMessage, TwoQubitPauliErrorMsg,
+};
 
 macro_rules! batch_for {
     ($tab:expr, $method:ident, $addrs:expr) => {
@@ -359,11 +361,13 @@ impl CircuitOp for circuit::PauliError {
 
 impl CircuitOp for circuit::TwoQubitPauliError {
     type Effect = ();
-    type Message = PopFromStack<(u64, u64, f64, f64)>;
+    type Message = TwoQubitPauliErrorMsg;
 
     fn apply<B: CircuitBackend>(&self, backend: &mut B, msg: Self::Message) -> eyre::Result<()> {
-        // TODO: probably needs a custom message since we can't pop float arrays
-        unimplemented!("TODO: needs a custom message")
+        backend
+            .state()
+            .two_qubit_pauli_error(msg.q0, msg.q1, msg.ps);
+        Ok(())
     }
 }
 

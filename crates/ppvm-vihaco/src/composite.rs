@@ -15,7 +15,7 @@ use vihaco::{
 };
 use vihaco_cpu::CPU;
 
-use crate::component::{CircuitBackend, CircuitExecutor};
+use crate::component::{Circuit, CircuitBackend, CircuitExecutor, CircuitOp};
 use crate::measurements::{CircuitOutcomeEffect, MeasurementObserver, TraceObserver};
 
 use vihaco_circuit_isa::circuit;
@@ -27,7 +27,7 @@ pub use crate::device_info::{BackendKind, PPVM_MAGIC, PPVMDeviceInfo};
 
 // #[derive(Default)]
 #[composite]
-pub struct PPVM<B: CircuitBackend> {
+pub struct PPVM {
     #[device(0)]
     #[program]
     execution: vihaco_stdlib::ExecutionState,
@@ -37,61 +37,54 @@ pub struct PPVM<B: CircuitBackend> {
 
     // NOTE: we need the full import path here for some vihaco macro magic reasons
     #[device(2)]
-    circuit: crate::component::CircuitExecutor<B>,
+    circuit: crate::component::Circuit,
 
     measurement_record: MeasurementObserver,
 
     trace_record: TraceObserver,
 }
 
-type Instruction<B> = <PPVM<B> as HasInstructionSet>::Runtime;
+type Instruction = <PPVM as HasInstructionSet>::Runtime;
 
-type Program<B> = LocalModule<Instruction<B>, Value, Type>;
-
-// TODO: this workaround relies on internals and should be fixed upstream
-type ExecMarker = __vihaco_fields_PPVM::__markers::execution;
-type CpuMarker = __vihaco_fields_PPVM::__markers::cpu;
-type CircuitMarker = __vihaco_fields_PPVM::__markers::circuit;
+type Program = LocalModule<Instruction, Value, Type>;
 
 // execution stepping
-impl<I, B: CircuitBackend> Step<ExecMarker, I, Program<B>> for PPVM<B>
+impl<I> Step<field!(PPVM::execution), I, Program> for PPVM
 where
-    Self: BuildMessage<ExecMarker, I, Program<B>>,
-    <Self as vihaco::Field<ExecMarker>>::Child: Execute<I, Effect = (), Error = eyre::Report>,
+    Self: BuildMessage<field!(PPVM::execution), I, Program>,
+    ExecutionState: Execute<I, Effect = (), Error = eyre::Report>,
 {
-    fn step(&mut self, instruction: &I, module: &Program<B>) -> eyre::Result<()> {
-        let message = <Self as BuildMessage<ExecMarker, I, Program<B>>>::build_message(
+    fn step(&mut self, instruction: &I, module: &Program) -> eyre::Result<()> {
+        let message = <Self as BuildMessage<field!(PPVM::execution), I, Program>>::build_message(
             self,
             instruction,
             module,
         )?;
-        <Self as vihaco::Field<ExecMarker>>::get_mut(self).execute(instruction, message)
+        self.execution.execute(instruction, message)
     }
 }
 
 // CPU stepping
-impl<I, B: CircuitBackend> Step<CpuMarker, I, Program<B>> for PPVM<B>
+impl<I> Step<field!(PPVM::cpu), I, Program> for PPVM
 where
-    Self: BuildMessage<CpuMarker, I, Program<B>>,
-    <Self as vihaco::Field<CpuMarker>>::Child: Execute<I, Error = eyre::Report>,
-    ExecutionState:
-        vihaco::Apply<<<Self as vihaco::Field<CpuMarker>>::Child as Execute<I>>::Effect>,
+    Self: BuildMessage<field!(PPVM::cpu), I, Program>,
+    vihaco_cpu::CPU: Execute<I, Error = eyre::Report>,
+    ExecutionState: vihaco::Apply<<vihaco_cpu::CPU as Execute<I>>::Effect>,
 {
-    fn step(&mut self, instruction: &I, module: &Program<B>) -> eyre::Result<()> {
-        let message = <Self as BuildMessage<CpuMarker, I, Program<B>>>::build_message(
+    fn step(&mut self, instruction: &I, module: &Program) -> eyre::Result<()> {
+        let message = <Self as BuildMessage<field!(PPVM::cpu), I, Program>>::build_message(
             self,
             instruction,
             module,
         )?;
-        let effect =
-            <Self as vihaco::Field<CpuMarker>>::get_mut(self).execute(instruction, message)?;
+        let effect = self.cpu.execute(instruction, message)?;
         vihaco::Apply::apply(&mut self.execution, effect);
         Ok(())
     }
 }
 
 // handling circuit effects
-impl<B: CircuitBackend> vihaco::Apply<Effects<CircuitOutcomeEffect>> for PPVM<B> {
+impl vihaco::Apply<Effects<CircuitOutcomeEffect>> for PPVM {
     fn apply(&mut self, effects: Effects<CircuitOutcomeEffect>) {
         for effect in effects {
             match effect {
@@ -106,635 +99,48 @@ impl<B: CircuitBackend> vihaco::Apply<Effects<CircuitOutcomeEffect>> for PPVM<B>
     }
 }
 
-impl<B: CircuitBackend> vihaco::Apply<()> for PPVM<B> {
+impl vihaco::Apply<()> for PPVM {
     fn apply(&mut self, _effect: ()) {}
 }
 
 // Circuit stepping
-impl<I, B: CircuitBackend> Step<CircuitMarker, I, Program<B>> for PPVM<B>
+impl<I> Step<field!(PPVM::circuit), I, Program> for PPVM
 where
-    Self: BuildMessage<CircuitMarker, I, Program<B>>,
-    <Self as vihaco::Field<CircuitMarker>>::Child: Execute<I, Error = eyre::Report>,
-    Self: vihaco::Apply<<<Self as vihaco::Field<CircuitMarker>>::Child as Execute<I>>::Effect>,
+    Self: BuildMessage<field!(PPVM::circuit), I, Program>,
+    Circuit: Execute<I, Error = eyre::Report>,
+    Self: vihaco::Apply<<Circuit as Execute<I>>::Effect>,
 {
-    fn step(&mut self, instruction: &I, module: &Program<B>) -> eyre::Result<()> {
-        let message = <Self as BuildMessage<CircuitMarker, I, Program<B>>>::build_message(
+    fn step(&mut self, instruction: &I, module: &Program) -> eyre::Result<()> {
+        let message = <Self as BuildMessage<field!(PPVM::circuit), I, Program>>::build_message(
             self,
             instruction,
             module,
         )?;
-        let effect =
-            <Self as vihaco::Field<CircuitMarker>>::get_mut(self).execute(instruction, message)?;
+        let effect = <Self as vihaco::Field<field!(PPVM::circuit)>>::get_mut(self)
+            .execute(instruction, message)?;
         vihaco::Apply::apply(self, effect);
         Ok(())
     }
 }
 
-pub type TableauBackend64 = GeneralizedTableau<Byte8F64<1>>;
-
 #[cfg(test)]
 #[allow(dead_code)]
 fn assert_dispatch_coverage(
-    m: &mut PPVM<TableauBackend64>,
-    inst: &Instruction<TableauBackend64>,
-    module: &Program<TableauBackend64>,
+    m: &mut PPVM,
+    inst: &Instruction,
+    module: &Program,
 ) -> eyre::Result<()> {
-    vihaco::Dispatch::<Program<TableauBackend64>>::dispatch(m, inst, module)
+    vihaco::Dispatch::<Program>::dispatch(m, inst, module)
 }
 
-// pub(crate) use self::ppvm as ppvm_module;
-
-// #[derive(Debug, Clone)]
-// pub enum PPVMEffect {
-//     Step(StepOutcome),
-//     Stdout(StdoutEffect),
-//     Circuit(Box<CircuitEffect>),
-//     Measurement(MeasurementEffect),
-//     Trace(TraceEffect),
-// }
-
-// #[observe(vihaco::observer::stdio::StdoutEffect, effect = PPVMEffect)]
-// impl PPVM {
-//     fn observe_stdout_effect(&mut self, effect: &StdoutEffect) -> eyre::Result<Effects<()>> {
-//         Observe::<StdoutEffect>::observe(&mut self.stdout, effect)
-//     }
-// }
-
-// #[observe(CircuitEffect, effect = PPVMEffect)]
-// impl PPVM {
-//     fn observe_circuit_effect(
-//         &mut self,
-//         effect: &CircuitEffect,
-//     ) -> eyre::Result<Effects<CircuitOutcomeEffect>> {
-//         Observe::<CircuitEffect>::observe(&mut self.circuit, effect)
-//     }
-// }
-
-// #[observe(MeasurementEffect, effect = PPVMEffect)]
-// impl PPVM {
-//     fn observe_measurement_effect(
-//         &mut self,
-//         effect: &MeasurementEffect,
-//     ) -> eyre::Result<Effects<()>> {
-//         Observe::<MeasurementEffect>::observe(&mut self.measurement_record, effect)
-//     }
-// }
-
-// #[observe(TraceEffect, effect = PPVMEffect)]
-// impl PPVM {
-//     fn observe_trace_effect(&mut self, effect: &TraceEffect) -> eyre::Result<Effects<()>> {
-//         Observe::<TraceEffect>::observe(&mut self.trace_record, effect)
-//     }
-// }
-
-// impl From<StdoutEffect> for PPVMEffect {
-//     fn from(value: StdoutEffect) -> Self {
-//         Self::Stdout(value)
-//     }
-// }
-
-// impl From<MeasurementEffect> for PPVMEffect {
-//     fn from(value: MeasurementEffect) -> Self {
-//         Self::Measurement(value)
-//     }
-// }
-
-// impl From<TraceEffect> for PPVMEffect {
-//     fn from(value: TraceEffect) -> Self {
-//         Self::Trace(value)
-//     }
-// }
-
-// impl From<CircuitOutcomeEffect> for PPVMEffect {
-//     fn from(value: CircuitOutcomeEffect) -> Self {
-//         match value {
-//             CircuitOutcomeEffect::Measurement(m) => Self::Measurement(m),
-//             CircuitOutcomeEffect::Trace(t) => Self::Trace(t),
-//         }
-//     }
-// }
-
-// impl std::fmt::Display for PPVMInstruction {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         match self {
-//             PPVMInstruction::Cpu(inst) => inst.fmt(f),
-//             PPVMInstruction::Circuit(inst) => inst.fmt(f),
-//         }
-//     }
-// }
-
-// impl PartialEq for PPVMInstruction {
-//     fn eq(&self, other: &Self) -> bool {
-//         match (self, other) {
-//             (PPVMInstruction::Cpu(a), PPVMInstruction::Cpu(b)) => a == b,
-//             (PPVMInstruction::Circuit(a), PPVMInstruction::Circuit(b)) => a == b,
-//             _ => false,
-//         }
-//     }
-// }
-
-// impl From<vihaco_cpu::RuntimeInstruction> for PPVMInstruction {
-//     fn from(value: vihaco_cpu::RuntimeInstruction) -> Self {
-//         Self::Cpu(value)
-//     }
-// }
-
-// impl From<CircuitInstruction> for PPVMInstruction {
-//     fn from(value: CircuitInstruction) -> Self {
-//         Self::Circuit(value)
-//     }
-// }
-
-// impl PPVM {
-//     fn resolve_cpu(&mut self, inst: &vihaco_cpu::RuntimeInstruction) -> eyre::Result<CPUMessage> {
-//         match inst {
-//             vihaco_cpu::RuntimeInstruction::IndirectCall => {
-//                 let function_id: u32 = self.cpu.stack_top()?.get_function_ref()?;
-//                 let function = self.loader.get_function(function_id as usize)?;
-//                 Ok(CPUMessage::FunctionInfo {
-//                     arity: function.signature.params.len() as u32,
-//                     start_address: function.start_address,
-//                 })
-//             }
-//             vihaco_cpu::RuntimeInstruction::Print => {
-//                 let value = *self.cpu.stack_top()?;
-//                 match value {
-//                     vihaco::Value::String(addr) => {
-//                         let string = self.loader.get_string(addr as usize)?.clone();
-//                         Ok(CPUMessage::Print(string))
-//                     }
-//                     value => Ok(CPUMessage::Print(value.to_string())),
-//                 }
-//             }
-//             _ => Ok(CPUMessage::None),
-//         }
-//     }
-
-//     fn resolve_circuit(&mut self, inst: &CircuitInstruction) -> eyre::Result<CircuitMessage> {
-//         use CircuitInstruction::*;
-//         match inst {
-//             X | Y | Z | H | S | SAdj | SqrtX | SqrtY | SqrtXAdj | SqrtYAdj | T | TAdj | Measure
-//             | Reset => {
-//                 let q = self.pop_u64()?;
-//                 Ok(CircuitMessage::Qubit(q))
-//             }
-//             CNOT | CZ => {
-//                 let q1 = self.pop_u64()?;
-//                 let q0 = self.pop_u64()?;
-//                 Ok(CircuitMessage::TwoQubit(q0, q1))
-//             }
-//             RX | RY | RZ | Depolarize | Loss => {
-//                 let theta = self.pop_f64()?;
-//                 let q = self.pop_u64()?;
-//                 Ok(CircuitMessage::QubitAndFloat(q, theta))
-//             }
-//             Leakage => {
-//                 // Push order: qubit, p0, p1. Pop reverse.
-//                 let p1 = self.pop_f64()?;
-//                 let p0 = self.pop_f64()?;
-//                 let q = self.pop_u64()?;
-//                 Ok(CircuitMessage::QubitAndTwoFloats(q, p0, p1))
-//             }
-//             RXX | RYY | RZZ | Depolarize2 => {
-//                 let theta = self.pop_f64()?;
-//                 let q1 = self.pop_u64()?;
-//                 let q0 = self.pop_u64()?;
-//                 Ok(CircuitMessage::TwoQubitAndFloat(q0, q1, theta))
-//             }
-//             R => {
-//                 let theta = self.pop_f64()?;
-//                 let axis_angle = self.pop_f64()?;
-//                 let q = self.pop_u64()?;
-//                 Ok(CircuitMessage::QubitAndTwoFloats(q, axis_angle, theta))
-//             }
-//             U3 => {
-//                 let lam = self.pop_f64()?;
-//                 let phi = self.pop_f64()?;
-//                 let theta = self.pop_f64()?;
-//                 let q = self.pop_u64()?;
-//                 Ok(CircuitMessage::QubitU3(q, theta, phi, lam))
-//             }
-
-//             // TODO: pop actual float arrays?
-//             PauliError => {
-//                 let pz = self.pop_f64()?;
-//                 let py = self.pop_f64()?;
-//                 let px = self.pop_f64()?;
-//                 let q = self.pop_u64()?;
-//                 Ok(CircuitMessage::QubitAndFloatArr3(q, [px, py, pz]))
-//             }
-//             CorrelatedLoss => {
-//                 let p2 = self.pop_f64()?;
-//                 let p1 = self.pop_f64()?;
-//                 let p0 = self.pop_f64()?;
-//                 let q1 = self.pop_u64()?;
-//                 let q0 = self.pop_u64()?;
-//                 Ok(CircuitMessage::TwoQubitAndFloatArr3(q0, q1, [p0, p1, p2]))
-//             }
-//             TwoQubitPauliError => {
-//                 let mut ps = [0.0; 15];
-//                 for p in ps.iter_mut().rev() {
-//                     *p = self.pop_f64()?;
-//                 }
-//                 let q1 = self.pop_u64()?;
-//                 let q0 = self.pop_u64()?;
-//                 Ok(CircuitMessage::TwoQubitAndFloatArr15(q0, q1, ps))
-//             }
-//             Trace => {
-//                 let s = self.pop_string()?;
-//                 Ok(CircuitMessage::PauliPatternStr(s))
-//             }
-//             Truncate => Ok(CircuitMessage::None),
-//         }
-//     }
-
-//     fn pop_u64(&mut self) -> eyre::Result<usize> {
-//         match self.cpu.stack_pop()? {
-//             vihaco::Value::U64(v) => usize::try_from(v).map_err(Into::into),
-//             v => Err(eyre::eyre!("Expected u64, got {:?}", v)),
-//         }
-//     }
-
-//     fn pop_f64(&mut self) -> eyre::Result<f64> {
-//         match self.cpu.stack_pop()? {
-//             vihaco::Value::F64(v) => Ok(v),
-//             v => Err(eyre::eyre!("Expected f64 argument, got {:?}", v)),
-//         }
-//     }
-
-//     /// Pop a `Value::String(addr)`, look up the addr in the module's string
-//     /// table, and return the owned string. Used by `Trace` to resolve its
-//     /// Pauli-pattern operand before the executor sees the message.
-//     fn pop_string(&mut self) -> eyre::Result<String> {
-//         match self.cpu.stack_pop()? {
-//             vihaco::Value::String(addr) => Ok(self.loader.get_string(addr as usize)?.clone()),
-//             v => Err(eyre::eyre!("Expected string operand, got {:?}", v)),
-//         }
-//     }
-
-//     pub fn init(&mut self) -> eyre::Result<()> {
-//         self.init_inner(None)
-//     }
-
-//     /// Like [`PPVM::init`], but seed the circuit RNG deterministically so the
-//     /// run is reproducible.
-//     pub fn init_with_seed(&mut self, seed: u64) -> eyre::Result<()> {
-//         self.init_inner(Some(seed))
-//     }
-
-//     fn init_inner(&mut self, seed: Option<u64>) -> eyre::Result<()> {
-//         let info = &self.loader.module.extra;
-//         if info.n_qubits == 0 {
-//             return Err(eyre::eyre!("device circuit.n_qubits must be declared"));
-//         }
-//         self.circuit = match (info.backend, seed) {
-//             (BackendKind::Tableau, None) => Circuit::tableau(info)?,
-//             (BackendKind::Tableau, Some(seed)) => Circuit::tableau_with_seed(info, seed)?,
-//             (BackendKind::PauliSum, _) => {
-//                 let terms = parse_observable_terms(info)?;
-//                 Circuit::paulisum(info, &terms)?
-//             }
-//             (BackendKind::LossyPauliSum, _) => {
-//                 let terms = parse_observable_terms(info)?;
-//                 Circuit::lossy_paulisum(info, &terms)?
-//             }
-//         };
-
-//         // push entry frame
-//         self.cpu.push_frame(Frame {
-//             base: 0,
-//             span: (0, 0, 0),
-//             function: None,
-//             ret_pc: 0,
-//         });
-
-//         Ok(())
-//     }
-
-//     pub fn load(
-//         &mut self,
-//         module: &vihaco::module::LocalModule<
-//             PPVMInstruction,
-//             vihaco::Value,
-//             vihaco::Type,
-//             PPVMDeviceInfo,
-//         >,
-//     ) -> eyre::Result<()> {
-//         self.loader.module = module.clone();
-//         Ok(())
-//     }
-
-//     pub fn step_once(&mut self) -> eyre::Result<StepOutcome> {
-//         let inst = self.loader.peek_instruction()?.clone();
-//         let effects = self.execute_effects(inst)?;
-//         self.continue_effects(effects)
-//     }
-
-//     /// Program counter: the index of the next instruction to execute.
-//     pub fn current_pc(&self) -> u32 {
-//         self.loader.pc()
-//     }
-
-//     /// The next instruction to execute, or `None` once execution has run off
-//     /// the end of the code. Intended for debuggers/inspection.
-//     pub fn current_instruction(&self) -> Option<PPVMInstruction> {
-//         self.loader.peek_instruction().ok().cloned()
-//     }
-
-//     /// Append one REPL command's lowered VM ops and run just that block against
-//     /// the persistent state, advancing the pc through it. NOTE: an out-of-range
-//     /// qubit index *panics* in the tableau rather than erroring, so callers must
-//     /// bounds-check qubit operands against `n_qubits` first.
-//     pub fn execute_single_instruction(&mut self, instrs: &[PPVMInstruction]) -> eyre::Result<()> {
-//         let start = self.loader.module.code.len() as u32;
-//         self.loader.module.code.extend_from_slice(instrs);
-//         *self.loader.pc_mut() = start;
-//         for _ in 0..instrs.len() {
-//             self.step_once()?;
-//         }
-//         Ok(())
-//     }
-
-//     /// Render the current circuit state (tableau / Pauli sum) for the REPL's
-//     /// `show` command. Delegates to the circuit's size-specific tableau.
-//     pub fn state_string(&self) -> String {
-//         self.circuit.state_string()
-//     }
-
-//     /// Build a fresh, initialized `n_qubits`-qubit device with no code. The
-//     /// REPL's `device` command uses this to (re)create the machine. Errors if
-//     /// `n_qubits` is zero (a device must have at least one qubit).
-//     pub fn with_qubits(n_qubits: usize) -> eyre::Result<Self> {
-//         let mut machine = Self::default();
-//         let mut module = vihaco::module::LocalModule::<
-//             PPVMInstruction,
-//             Value,
-//             vihaco::Type,
-//             PPVMDeviceInfo,
-//         >::default();
-//         module.extra.n_qubits = n_qubits;
-//         machine.load(&module)?;
-//         machine.init()?;
-//         Ok(machine)
-//     }
-
-//     /// Lower a single circuit instruction — qubit operands first, then float
-//     /// params, per the push-in-order / pop-in-reverse convention — and execute
-//     /// it against the persistent state. Qubit indices are bounds-checked against
-//     /// the device size first, because the tableau panics (rather than erroring)
-//     /// on an out-of-range qubit.
-//     pub fn apply_circuit_instruction(
-//         &mut self,
-//         inst: CircuitInstruction,
-//         qubits: &[usize],
-//         params: &[f64],
-//     ) -> eyre::Result<()> {
-//         let n_qubits = self.loader.module.extra.n_qubits;
-//         for &q in qubits {
-//             if q >= n_qubits {
-//                 eyre::bail!("qubit {q} out of range for {n_qubits}-qubit device");
-//             }
-//         }
-
-//         let mut instrs = Vec::with_capacity(qubits.len() + params.len() + 1);
-//         for &q in qubits {
-//             instrs.push(PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(
-//                 Type::U64,
-//                 Value::U64(q as u64),
-//             )));
-//         }
-//         for &p in params {
-//             instrs.push(PPVMInstruction::Cpu(vihaco_cpu::RuntimeInstruction::Const(
-//                 Type::F64,
-//                 Value::F64(p),
-//             )));
-//         }
-//         instrs.push(PPVMInstruction::Circuit(inst));
-
-//         // Run the appended block, then roll back pc, code, and operand stack (on
-//         // every path, including error) so the injected op is transparent to a
-//         // paused program — only its tableau/measurement effects persist.
-//         let saved_pc = self.loader.pc();
-//         let saved_len = self.loader.module.code.len();
-//         let saved_stack = self.cpu.stack_len();
-//         let result = self.execute_single_instruction(&instrs);
-//         self.loader.module.code.truncate(saved_len);
-//         *self.loader.pc_mut() = saved_pc;
-//         self.cpu.stack_mut().truncate(saved_stack);
-//         result
-//     }
-
-//     fn execute_effects(&mut self, inst: PPVMInstruction) -> eyre::Result<Effects<PPVMEffect>> {
-//         log::debug!("exec inst: {:?}, stack: {:?}", inst, self.cpu.stack());
-//         match inst {
-//             PPVMInstruction::Cpu(cpu_inst) => {
-//                 let msg = self.resolve_cpu(&cpu_inst)?;
-//                 self.cpu.set_current_pc(self.loader.pc());
-//                 let stdout_effect = match (&cpu_inst, &msg) {
-//                     (
-//                         vihaco_cpu::RuntimeInstruction::Print,
-//                         vihaco_cpu::CPUMessage::Print(text),
-//                     ) => Some(PPVMEffect::Stdout(StdoutEffect(text.clone()))),
-//                     _ => None,
-//                 };
-//                 let outcome = vihaco::expect_exactly_one_effect(
-//                     vihaco::GeneratedComponent::execute_generated(&mut self.cpu, cpu_inst, msg)?,
-//                 )?;
-//                 // Advance past a cpu::cpu.breakpoint as well, so the debugger that paused
-//                 // on it doesn't re-hit the same instruction on the next step.
-//                 if matches!(outcome, StepOutcome::Continue | StepOutcome::Breakpoint) {
-//                     if let Some(target) = self.cpu.take_pending_pc() {
-//                         *self.loader.pc_mut() = target;
-//                     } else {
-//                         *self.loader.pc_mut() += 1;
-//                     }
-//                 }
-//                 let mut effects = Effects::one(PPVMEffect::Step(outcome));
-//                 if let Some(stdout_effect) = stdout_effect {
-//                     effects = effects.append(stdout_effect);
-//                 }
-//                 Ok(effects)
-//             }
-//             PPVMInstruction::Circuit(inst) => {
-//                 let msg = self.resolve_circuit(&inst)?;
-//                 let circuit_effects = <Circuit as vihaco::GeneratedComponent>::execute_generated(
-//                     &mut self.circuit,
-//                     inst,
-//                     msg,
-//                 )?;
-//                 *self.loader.pc_mut() += 1;
-//                 let mut effects = Effects::one(PPVMEffect::Step(StepOutcome::Continue));
-//                 for outcome in circuit_effects {
-//                     effects = effects.append(PPVMEffect::from(outcome));
-//                 }
-//                 Ok(effects)
-//             }
-//         }
-//     }
-
-//     fn continue_effects(&mut self, effects: Effects<PPVMEffect>) -> eyre::Result<StepOutcome> {
-//         let mut step_outcome = None;
-//         for effect in effects {
-//             match effect {
-//                 PPVMEffect::Step(outcome) => {
-//                     if step_outcome.replace(outcome).is_some() {
-//                         return Err(eyre::eyre!(
-//                             "expected exactly one PPVM step effect, got multiple"
-//                         ));
-//                     }
-//                 }
-//                 effect => self.continue_observer_effect(effect)?,
-//             }
-//         }
-
-//         step_outcome.ok_or_else(|| eyre::eyre!("expected exactly one PPVM step effect, got 0"))
-//     }
-
-//     fn continue_observer_effect(&mut self, effect: PPVMEffect) -> eyre::Result<()> {
-//         match effect {
-//             PPVMEffect::Stdout(effect) => {
-//                 let follow_ups = Observe::<StdoutEffect>::observe(self, &effect)?;
-//                 self.continue_observer_effects(follow_ups)
-//             }
-//             PPVMEffect::Circuit(effect) => {
-//                 let follow_ups = Observe::<CircuitEffect>::observe(self, &effect)?;
-//                 self.continue_observer_effects(follow_ups)
-//             }
-//             PPVMEffect::Measurement(effect) => {
-//                 let follow_ups = Observe::<MeasurementEffect>::observe(self, &effect)?;
-//                 // NOTE: push measurement outcomes onto the stack as u32 (0/1/2, where 2 = Lost).
-//                 for outcome in effect.measurement_results {
-//                     let m = Value::U32(outcome as u32);
-//                     self.cpu.stack_push(m);
-//                 }
-//                 self.continue_observer_effects(follow_ups)
-//             }
-//             PPVMEffect::Trace(effect) => {
-//                 let value = effect.value;
-//                 let follow_ups = Observe::<TraceEffect>::observe(self, &effect)?;
-//                 // Mirror the measurement wiring: append to the trace record
-//                 // (via the observer above) AND push the value onto the CPU
-//                 // stack so user bytecode can consume it. Plan Task 7.
-//                 self.cpu.stack_push(Value::F64(value));
-//                 self.continue_observer_effects(follow_ups)
-//             }
-//             PPVMEffect::Step(_) => Err(eyre::eyre!(
-//                 "unexpected Step effect while continuing PPVM observer follow-ups"
-//             )),
-//         }
-//     }
-
-//     fn continue_observer_effects(&mut self, effects: Effects<PPVMEffect>) -> eyre::Result<()> {
-//         for effect in effects {
-//             self.continue_observer_effect(effect)?;
-//         }
-//         Ok(())
-//     }
-
-//     pub fn run(&mut self) -> eyre::Result<StepOutcome> {
-//         self.run_with_seed(None)
-//     }
-
-//     /// Like [`PPVM::run`], but seed the circuit RNG deterministically when
-//     /// `seed` is `Some`, making the run reproducible.
-//     pub fn run_with_seed(&mut self, seed: Option<u64>) -> eyre::Result<StepOutcome> {
-//         match seed {
-//             Some(seed) => self.init_with_seed(seed)?,
-//             None => self.init()?,
-//         }
-
-//         loop {
-//             // Breakpoints only pause the interactive debugger; a batch run
-//             // skips straight past them.
-//             match self.step_once()? {
-//                 StepOutcome::Continue | StepOutcome::Breakpoint => continue,
-//                 action => return Ok(action),
-//             }
-//         }
-//     }
-
-//     pub fn stdout(&self) -> &[u8] {
-//         self.stdout.output()
-//     }
-
-//     pub fn measurement_record(&self) -> Vec<MeasurementResult> {
-//         self.measurement_record.record.clone()
-//     }
-
-//     /// Per-trace values collected by `Trace` instructions during the run.
-//     /// Parallel to [`PPVM::measurement_record`]: one f64 per `Trace` executed,
-//     /// in execution order.
-//     pub fn trace_record(&self) -> Vec<f64> {
-//         self.trace_record.record.clone()
-//     }
-
-//     pub fn load_program(&mut self, program: &str) -> eyre::Result<()> {
-//         let module = crate::compile_program(program)?;
-//         self.load(&module)?;
-//         Ok(())
-//     }
-
-//     /// Load from a file, auto-detecting the format: if it starts with the PPVM
-//     /// magic it is loaded as `.ssb` bytecode, otherwise it is parsed as `.sst`
-//     /// source text. A magic match commits to the bytecode path — a corrupt
-//     /// `.ssb` errors rather than silently falling back to the text parser.
-//     pub fn load_file(&mut self, path: &str) -> eyre::Result<()> {
-//         let bytes = std::fs::read(path)?;
-//         if crate::bytecode::is_bytecode(&bytes) {
-//             self.load_bytecode(&bytes)
-//         } else {
-//             self.load_program(std::str::from_utf8(&bytes)?)
-//         }
-//     }
-
-//     /// Load a module from an in-memory `.ssb` byte stream.
-//     pub fn load_bytecode(&mut self, bytes: &[u8]) -> eyre::Result<()> {
-//         let module = crate::bytecode::module_from_bytes(bytes)?;
-//         self.load(&module)
-//     }
-
-//     /// Read a `.ssb` file and load the module it contains.
-//     pub fn load_bytecode_file(&mut self, path: &str) -> eyre::Result<()> {
-//         let bytes = std::fs::read(path)?;
-//         self.load_bytecode(&bytes)
-//     }
-
-//     pub fn run_program(&mut self, program: &str) -> eyre::Result<()> {
-//         self.load_program(program)?;
-//         self.run()?;
-//         Ok(())
-//     }
-
-//     pub fn run_file(&mut self, path: &str) -> eyre::Result<()> {
-//         self.load_file(path)?;
-//         self.run()?;
-//         Ok(())
-//     }
-// }
-
-// impl vihaco::Reset for PPVM {
-//     fn reset(&mut self) {
-//         self.cpu.reset();
-//         self.circuit.reset();
-//         self.loader.pc = 0;
-//         self.measurement_record.record.clear();
-//         self.trace_record.record.clear();
-//     }
-// }
-
-// /// Parse the `device circuit.observable` header into Pauli-sum terms ready to
-// /// seed a `PauliSum` / `LossyPauliSum` state. Single-Pauli observables from
-// /// Phase 2 keep working as the degenerate one-term case; multi-term sums like
-// /// `"1.0*ZZ + 0.5*XX"` are handled by [`parse_pauli_sum_terms`].
-// fn parse_observable_terms(info: &PPVMDeviceInfo) -> Result<Vec<(String, f64)>> {
-//     let observable = info.observable.as_deref().ok_or_else(|| {
-//         eyre!(
-//             "the {:?} backend requires `device circuit.observable` to be set",
-//             info.backend
-//         )
-//     })?;
-//     crate::observable::parse_pauli_sum_terms(observable, info.n_qubits)
-// }
+impl vihaco::Reset for PPVM {
+    fn reset(&mut self) {
+        self.cpu.reset();
+        self.circuit.reset();
+        self.measurement_record.record.clear();
+        self.trace_record.record.clear();
+    }
+}
 
 // #[cfg(test)]
 // mod tests {

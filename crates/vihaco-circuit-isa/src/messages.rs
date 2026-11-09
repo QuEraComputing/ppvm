@@ -9,7 +9,7 @@ use vihaco::word::Word;
 
 /// Qubit batch plus a fixed parameter block; `P = ()` for plain batches.
 pub struct QubitBatch<P = ()> {
-    pub qubits: SmallVec<[u64; 8]>,
+    pub qubits: SmallVec<[usize; 8]>,
     pub params: P,
 }
 
@@ -63,7 +63,8 @@ where
     let n = usize::try_from(PopStack::<Word>::pop(stack)?)?;
     let mut qubits = SmallVec::with_capacity(n);
     for _ in 0..n {
-        qubits.push(PopStack::<Word>::pop(stack)?);
+        let q = usize::try_from(PopStack::<Word>::pop(stack)?)?;
+        qubits.push(q);
     }
     qubits.reverse();
     Ok(QubitBatch { qubits, params })

@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::backend::CircuitBackend;
-use crate::measurements::{CircuitOutcomeEffect, MeasurementEffect};
+use crate::measurements::{CircuitOutcomeEffect, MeasurementEffect, MeasurementResult};
 use ppvm_tableau::prelude::*;
+use smallvec::SmallVec;
 use vihaco::{Effects, PopFromStack};
 use vihaco_circuit_isa::circuit;
+use vihaco_circuit_isa::messages::QubitBatch;
 
 macro_rules! batch_for {
     ($tab:expr, $method:ident, $addrs:expr) => {
@@ -116,6 +118,24 @@ macro_rules! two_qubit_rotation_execute {
     };
 }
 
+macro_rules! single_qubit_batch_execute {
+    ($leaf:ident, $method:ident) => {
+        impl CircuitOp for circuit::$leaf {
+            type Effect = ();
+            type Message = vihaco_circuit_isa::messages::QubitBatch;
+
+            fn apply<B: CircuitBackend>(
+                &self,
+                backend: &mut B,
+                msg: Self::Message,
+            ) -> eyre::Result<Self::Effect> {
+                backend.state().$method(&msg.qubits);
+                Ok(())
+            }
+        }
+    };
+}
+
 single_qubit_execute!(X, x);
 single_qubit_execute!(Y, y);
 single_qubit_execute!(Z, z);
@@ -145,7 +165,165 @@ single_qubit_rotation_execute!(Depolarize, depolarize1);
 single_qubit_rotation_execute!(Loss, loss_channel);
 two_qubit_rotation_execute!(Depolarize2, depolarize2);
 
-// TODO: batched gates; need custom messages
+single_qubit_batch_execute!(XMany, x_many);
+single_qubit_batch_execute!(YMany, y_many);
+single_qubit_batch_execute!(ZMany, z_many);
+single_qubit_batch_execute!(TMany, t_many);
+single_qubit_batch_execute!(SMany, s_many);
+single_qubit_batch_execute!(TAdjMany, t_dag_many);
+single_qubit_batch_execute!(SAdjMany, s_dag_many);
+single_qubit_batch_execute!(SqrtXMany, sqrt_x_many);
+single_qubit_batch_execute!(HMany, h_many);
+single_qubit_batch_execute!(SqrtXAdjMany, sqrt_x_dag_many);
+single_qubit_batch_execute!(SqrtYMany, sqrt_y_many);
+single_qubit_batch_execute!(SqrtYAdjMany, sqrt_y_dag_many);
+single_qubit_batch_execute!(ResetMany, reset_many);
+
+/// Split a flat batch `[a0, b0, a1, b1, ..]` into `(a, b)` pairs.
+fn pairs_of(qubits: &[usize]) -> eyre::Result<std::slice::ChunksExact<'_, usize>> {
+    eyre::ensure!(
+        qubits.len() % 2 == 0,
+        "two-qubit batch needs an even number of qubits, got {}",
+        qubits.len()
+    );
+    Ok(qubits.chunks_exact(2))
+}
+
+macro_rules! single_qubit_rotation_batch_execute {
+    ($leaf:ident, $method:ident) => {
+        impl CircuitOp for circuit::$leaf {
+            type Effect = ();
+            type Message = QubitBatch<f64>;
+
+            fn apply<B: CircuitBackend>(
+                &self,
+                backend: &mut B,
+                msg: Self::Message,
+            ) -> eyre::Result<()> {
+                backend.state().$method(&msg.qubits, msg.params);
+                Ok(())
+            }
+        }
+    };
+}
+
+/// Batched op without a dedicated `*_many` method: applies `$method` per qubit.
+macro_rules! single_qubit_param_loop_execute {
+    ($leaf:ident, $method:ident, $params:ty) => {
+        impl CircuitOp for circuit::$leaf {
+            type Effect = ();
+            type Message = QubitBatch<$params>;
+
+            fn apply<B: CircuitBackend>(
+                &self,
+                backend: &mut B,
+                msg: Self::Message,
+            ) -> eyre::Result<()> {
+                let state = backend.state();
+                for &q in &msg.qubits {
+                    state.$method(q, msg.params);
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
+macro_rules! two_qubit_batch_execute {
+    ($leaf:ident, $method:ident) => {
+        impl CircuitOp for circuit::$leaf {
+            type Effect = ();
+            type Message = QubitBatch;
+
+            fn apply<B: CircuitBackend>(
+                &self,
+                backend: &mut B,
+                msg: Self::Message,
+            ) -> eyre::Result<()> {
+                // `*_many` takes tuples, so the flat batch is copied into pairs.
+                let pairs: SmallVec<[(usize, usize); 4]> =
+                    pairs_of(&msg.qubits)?.map(|p| (p[0], p[1])).collect();
+                backend.state().$method(&pairs);
+                Ok(())
+            }
+        }
+    };
+}
+
+/// Two-qubit counterpart of [`single_qubit_param_loop_execute!`].
+macro_rules! two_qubit_param_loop_execute {
+    ($leaf:ident, $method:ident, $params:ty) => {
+        impl CircuitOp for circuit::$leaf {
+            type Effect = ();
+            type Message = QubitBatch<$params>;
+
+            fn apply<B: CircuitBackend>(
+                &self,
+                backend: &mut B,
+                msg: Self::Message,
+            ) -> eyre::Result<()> {
+                let state = backend.state();
+                for p in pairs_of(&msg.qubits)? {
+                    state.$method(p[0], p[1], msg.params);
+                }
+                Ok(())
+            }
+        }
+    };
+}
+
+two_qubit_batch_execute!(CNOTMany, cnot_many);
+two_qubit_batch_execute!(CZMany, cz_many);
+
+single_qubit_rotation_batch_execute!(RXMany, rx_many);
+single_qubit_rotation_batch_execute!(RYMany, ry_many);
+single_qubit_rotation_batch_execute!(RZMany, rz_many);
+
+single_qubit_param_loop_execute!(DepolarizeMany, depolarize1, f64);
+single_qubit_param_loop_execute!(LossMany, loss_channel, f64);
+single_qubit_param_loop_execute!(PauliErrorMany, pauli_error, [f64; 3]);
+
+two_qubit_param_loop_execute!(RXXMany, rxx, f64);
+two_qubit_param_loop_execute!(RYYMany, ryy, f64);
+two_qubit_param_loop_execute!(RZZMany, rzz, f64);
+two_qubit_param_loop_execute!(Depolarize2Many, depolarize2, f64);
+two_qubit_param_loop_execute!(CorrelatedLossMany, correlated_loss_channel, [f64; 3]);
+two_qubit_param_loop_execute!(TwoQubitPauliErrorMany, two_qubit_pauli_error, [f64; 15]);
+
+impl CircuitOp for circuit::U3Many {
+    type Effect = ();
+    type Message = QubitBatch<[f64; 3]>;
+
+    fn apply<B: CircuitBackend>(&self, backend: &mut B, msg: Self::Message) -> eyre::Result<()> {
+        let [theta, phi, lambda] = msg.params;
+        let state = backend.state();
+        for &q in &msg.qubits {
+            state.u3(q, theta, phi, lambda);
+        }
+        Ok(())
+    }
+}
+
+impl CircuitOp for circuit::MeasureMany {
+    type Effect = Effects<CircuitOutcomeEffect>;
+    type Message = QubitBatch;
+
+    fn apply<B: CircuitBackend>(
+        &self,
+        backend: &mut B,
+        msg: Self::Message,
+    ) -> eyre::Result<Self::Effect> {
+        let mut measurement_results = MeasurementResult::with_capacity(msg.qubits.len());
+        for &q in &msg.qubits {
+            measurement_results.push(backend.measure(q)?);
+        }
+        Ok(Effects::one(CircuitOutcomeEffect::Measurement(
+            MeasurementEffect {
+                measurement_results,
+            },
+        )))
+    }
+}
 
 impl CircuitOp for circuit::U3 {
     type Effect = ();

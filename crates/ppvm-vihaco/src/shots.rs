@@ -126,96 +126,143 @@ pub fn set_global_threads(threads: usize) -> eyre::Result<()> {
     Ok(())
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::compile_program;
-//     use crate::measurements::MeasurementOutcome;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::compile_program;
+    use crate::measurements::MeasurementOutcome;
 
-//     /// Measures q0 in |0>: every shot is deterministically `0`.
-//     const DETERMINISTIC: &str = "device circuit.n_qubits 1;\nfn @main() { cpu::cpu.const u64, 0\n circuit::circuit.measure\n cpu::cpu.ret 0 }\n";
+    /// Measures q0 in |0>: every shot is deterministically `0`.
+    const DETERMINISTIC: &[&str] = &[
+        "execution::program::const_u64 0",
+        "circuit::circuit::measure",
+        "execution::program::ret 0",
+    ];
 
-//     /// Prepares |+> with H, then measures q0: each shot is a random 0/1.
-//     const RANDOM: &str = "device circuit.n_qubits 1;\nfn @main() { cpu::cpu.const u64, 0\n circuit::circuit.h\n cpu::cpu.const u64, 0\n circuit::circuit.measure\n cpu::cpu.ret 0 }\n";
+    /// Prepares |+> with H, then measures q0: each shot is a random 0/1.
+    const RANDOM: &[&str] = &[
+        "execution::program::const_u64 0",
+        "circuit::circuit::h",
+        "execution::program::const_u64 0",
+        "circuit::circuit::measure",
+        "execution::program::ret 0",
+    ];
 
-//     fn module(src: &str) -> PPVMModule {
-//         compile_program(src).unwrap()
-//     }
+    /// Wrap `main`'s instructions in a 1-qubit SST program with its metadata.
+    fn module(main: &[&str]) -> PPVMModule {
+        let body = main.join("\n            ");
+        let src = format!(
+            r#"sst v1
+.section(root):
+    .section(ppvm):
+    .header(ppvm):
+        circuit.n_qubits 1;
+        metadata {{
+            strings: ["main", "shots.sst"],
+            functions: [
+                {{
+                    name: 0,
+                    signature: {{ params: [], ret: [] }},
+                    local_count: 0,
+                    start_address: 0,
+                    end_address: {len},
+                    file: 1,
+                }},
+            ],
+            labels: [],
+            constants: [],
+            main_function: 0,
+            source_symbols: [],
+            extra: {{}},
+        }};
+    .header(ppvm).
+    .text(ppvm):
+        fn @main() {{
+            {body}
+        }}
+    .text(ppvm).
+    .section(ppvm).
+.section(root).
+"#,
+            len = main.len(),
+        );
+        compile_program(&src).unwrap()
+    }
 
-//     #[test]
-//     fn serial_runs_one_record_per_shot() {
-//         let m = module(DETERMINISTIC);
-//         let records = run_shots_serial(&m, 5, None).unwrap();
-//         assert_eq!(records.len(), 5);
-//         for shot in &records {
-//             // One measurement event, one qubit, deterministically |0>.
-//             assert_eq!(shot.measurements.len(), 1);
-//             assert_eq!(shot.measurements[0].as_slice(), [MeasurementOutcome::Zero]);
-//             assert!(shot.traces.is_empty(), "Tableau backend emits no traces");
-//         }
-//     }
+    #[test]
+    fn serial_runs_one_record_per_shot() {
+        let m = module(DETERMINISTIC);
+        let records = run_shots_serial(&m, 5, None).unwrap();
+        assert_eq!(records.len(), 5);
+        for shot in &records {
+            // One measurement event, one qubit, deterministically |0>.
+            assert_eq!(shot.measurements.len(), 1);
+            assert_eq!(shot.measurements[0].as_slice(), [MeasurementOutcome::Zero]);
+            assert!(shot.traces.is_empty(), "Tableau backend emits no traces");
+        }
+    }
 
-//     #[test]
-//     fn dispatcher_runs_all_shots() {
-//         let m = module(DETERMINISTIC);
-//         // 10 shots is below the parallel threshold, so this takes the serial path.
-//         let records = run_shots(&m, 10, None).unwrap();
-//         assert_eq!(records.len(), 10);
-//     }
+    #[test]
+    fn dispatcher_runs_all_shots() {
+        let m = module(DETERMINISTIC);
+        // 10 shots is below the parallel threshold, so this takes the serial path.
+        let records = run_shots(&m, 10, None).unwrap();
+        assert_eq!(records.len(), 10);
+    }
 
-//     #[test]
-//     fn same_seed_is_reproducible() {
-//         let m = module(RANDOM);
-//         let a = run_shots_serial(&m, 20, Some(42)).unwrap();
-//         let b = run_shots_serial(&m, 20, Some(42)).unwrap();
-//         assert_eq!(a, b);
-//     }
+    #[test]
+    fn same_seed_is_reproducible() {
+        let m = module(RANDOM);
+        let a = run_shots_serial(&m, 20, Some(42)).unwrap();
+        let b = run_shots_serial(&m, 20, Some(42)).unwrap();
+        assert_eq!(a, b);
+    }
 
-//     #[test]
-//     fn per_shot_seeds_differ() {
-//         // If every shot shared one seed, all 20 outcomes would be identical.
-//         // Distinct per-shot seeds must produce a mix of 0s and 1s.
-//         let m = module(RANDOM);
-//         let records = run_shots_serial(&m, 20, Some(42)).unwrap();
-//         let first = &records[0];
-//         assert!(
-//             records.iter().any(|r| r != first),
-//             "expected varied outcomes across shots, got {records:?}"
-//         );
-//     }
+    #[test]
+    fn per_shot_seeds_differ() {
+        // If every shot shared one seed, all 20 outcomes would be identical.
+        // Distinct per-shot seeds must produce a mix of 0s and 1s.
+        let m = module(RANDOM);
+        let records = run_shots_serial(&m, 20, Some(42)).unwrap();
+        let first = &records[0];
+        assert!(
+            records.iter().any(|r| r != first),
+            "expected varied outcomes across shots, got {records:?}"
+        );
+    }
 
-//     #[test]
-//     fn nearby_seeds_do_not_share_shots() {
-//         // With `seed + i`, seed 8 was seed 7 shifted by one shot.
-//         let m = module(RANDOM);
-//         let a = run_shots_serial(&m, 128, Some(7)).unwrap();
-//         let b = run_shots_serial(&m, 128, Some(8)).unwrap();
-//         assert_ne!(
-//             a[1..],
-//             b[..127],
-//             "seed 8 reproduced seed 7's shots shifted by one"
-//         );
-//     }
+    #[test]
+    fn nearby_seeds_do_not_share_shots() {
+        // With `seed + i`, seed 8 was seed 7 shifted by one shot.
+        let m = module(RANDOM);
+        let a = run_shots_serial(&m, 128, Some(7)).unwrap();
+        let b = run_shots_serial(&m, 128, Some(8)).unwrap();
+        assert_ne!(
+            a[1..],
+            b[..127],
+            "seed 8 reproduced seed 7's shots shifted by one"
+        );
+    }
 
-//     #[cfg(feature = "rayon")]
-//     #[test]
-//     fn serial_and_parallel_match_for_same_seed() {
-//         let m = module(RANDOM);
-//         let serial = run_shots_serial(&m, 64, Some(7)).unwrap();
-//         let parallel = run_shots_parallel(&m, 64, Some(7)).unwrap();
-//         assert_eq!(serial, parallel);
-//     }
+    #[cfg(feature = "rayon")]
+    #[test]
+    fn serial_and_parallel_match_for_same_seed() {
+        let m = module(RANDOM);
+        let serial = run_shots_serial(&m, 64, Some(7)).unwrap();
+        let parallel = run_shots_parallel(&m, 64, Some(7)).unwrap();
+        assert_eq!(serial, parallel);
+    }
 
-//     #[cfg(feature = "rayon")]
-//     #[test]
-//     fn parallelizes_only_with_multiple_threads_above_threshold() {
-//         // A single-thread pool is always serial, no matter how many shots.
-//         assert!(!should_parallelize(1, 100_000));
-//         // Multiple threads, but too few shots to amortize the overhead: serial.
-//         assert!(!should_parallelize(8, PARALLEL_SHOT_THRESHOLD - 1));
-//         // Multiple threads at the threshold: parallel.
-//         assert!(should_parallelize(8, PARALLEL_SHOT_THRESHOLD));
-//         // Multiple threads, plenty of shots: parallel.
-//         assert!(should_parallelize(8, 100_000));
-//     }
-// }
+    #[cfg(feature = "rayon")]
+    #[test]
+    fn parallelizes_only_with_multiple_threads_above_threshold() {
+        // A single-thread pool is always serial, no matter how many shots.
+        assert!(!should_parallelize(1, 100_000));
+        // Multiple threads, but too few shots to amortize the overhead: serial.
+        assert!(!should_parallelize(8, PARALLEL_SHOT_THRESHOLD - 1));
+        // Multiple threads at the threshold: parallel.
+        assert!(should_parallelize(8, PARALLEL_SHOT_THRESHOLD));
+        // Multiple threads, plenty of shots: parallel.
+        assert!(should_parallelize(8, 100_000));
+    }
+}

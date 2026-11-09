@@ -781,3 +781,25 @@ impl Default for Circuit {
         Self::tableau(&PPVMDeviceInfo::default()).expect("0-qubit tableau is always constructible")
     }
 }
+
+impl TableauCircuit {
+    /// Build a Tableau-backed circuit. Tableau init only needs `n_qubits` and
+    /// `coefficient_threshold` from `info`; no observable required.
+    pub fn new(info: &PPVMDeviceInfo) -> Result<Self> {
+        let tab = TableauBuckets::new(info.n_qubits, info.coefficient_threshold)?;
+        Ok(Self { inner: tab })
+    }
+
+    /// Same as [`Circuit.tableau`], but seed the tableau RNG deterministically
+    /// so a shot is reproducible.
+    pub fn new_with_seed(info: &PPVMDeviceInfo, seed: u64) -> Result<Self> {
+        let tab = TableauBuckets::new_with_seed(info.n_qubits, info.coefficient_threshold, seed)?;
+        Ok(Self { inner: tab })
+    }
+}
+
+impl Default for TableauCircuit {
+    fn default() -> Self {
+        Self::new(&PPVMDeviceInfo::default()).expect("0-qubit tableau is always constructible")
+    }
+}

@@ -5,17 +5,15 @@
 pub mod component;
 pub mod composite;
 pub mod device_info;
+pub mod header;
 pub mod measurements;
 pub mod observable;
 // pub mod shots;
-// mod syntax;
 
 /// Re-exported so consumers (e.g. the CLI REPL) can name gates for
 /// [`composite::PPVM::apply_circuit_instruction`] without depending on the ISA
 /// crate directly.
-// pub use vihaco_circuit_isa::CircuitInstruction;
-use vihaco::syntax::ParsedModule;
-use vihaco::{Type, Value, module::LocalModule};
+pub use vihaco_circuit_isa::circuit;
 
 // use crate::composite::ppvm_module as ppvm;
 // use crate::composite::{PPVM, PPVMDeviceInfo, PPVMInstruction};

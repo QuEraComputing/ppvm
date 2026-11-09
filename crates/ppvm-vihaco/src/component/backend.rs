@@ -46,6 +46,8 @@ pub trait CircuitBackend {
     type Config: Config<Coeff = f64>;
     type State: Clifford
         + CliffordExtensions
+        + CliffordBatch
+        + CliffordExtensionsBatch
         + Reset
         + TGate<Self::Config>
         + U3Gate<Self::Config>

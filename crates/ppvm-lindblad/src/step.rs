@@ -5,9 +5,7 @@
 
 use crate::sector::Sector;
 use crate::spec::LindbladSpec;
-use crate::truncate::{
-    add_leakage_capped, cap_basis, cap_basis_by_score, cap_basis_with_scratch, prune_basis,
-};
+use crate::truncate::{add_leakage_capped, cap_basis, cap_basis_with_scratch, prune_basis};
 use crate::word::Word;
 use crate::{
     CandidateBuffer, CandidateProposer, CandidateStrategy, Error, PcStepConfig, PcStepWorkspace,
@@ -72,11 +70,6 @@ impl<const C: usize> LindbladSpec<C> {
     /// phases.
     ///
     /// `protected` words are never dropped. All tuning knobs live in `cfg`.
-    ///
-    /// The generator is fixed during this call. Piecewise-constant driving
-    /// requires a spec for each segment and steps split at every switch.
-    /// Forward-looking retention extrapolates only the current step's change;
-    /// it does not anticipate subsequent drive or dissipation changes.
     pub fn pc_step(
         &self,
         basis: &mut Vec<Word<C>>,
@@ -216,7 +209,6 @@ impl<const C: usize> LindbladSpec<C> {
         workspace: &mut PcStepWorkspace<C>,
         proposer: &mut P,
     ) -> Result<PcStepTimings, Error> {
-        let ranking_factor = cfg.ranking_factor(dt)?;
         if basis.len() != coeffs.len() {
             return Err(Error::LengthMismatch {
                 what: "basis and coeffs",
@@ -251,15 +243,7 @@ impl<const C: usize> LindbladSpec<C> {
         }
         self.run_in_pool(cfg, |this| {
             this.pc_step_inner(
-                basis,
-                coeffs,
-                dt,
-                protected,
-                cfg,
-                timed,
-                workspace,
-                proposer,
-                ranking_factor,
+                basis, coeffs, dt, protected, cfg, timed, workspace, proposer,
             )
         })
     }
@@ -291,7 +275,6 @@ impl<const C: usize> LindbladSpec<C> {
         timed: bool,
         workspace: &mut PcStepWorkspace<C>,
         proposer: &mut P,
-        ranking_factor: Option<f64>,
     ) -> Result<PcStepTimings, Error> {
         let PcStepConfig {
             max_basis,
@@ -327,7 +310,7 @@ impl<const C: usize> LindbladSpec<C> {
         coeffs.resize(basis.len(), 0.0);
         p.stop(&mut t.expand1_us);
 
-        if basis.len() < admit || ranking_factor.is_some() {
+        if basis.len() < admit {
             workspace.coefficient_auxiliary.clear();
             workspace
                 .coefficient_auxiliary
@@ -362,28 +345,10 @@ impl<const C: usize> LindbladSpec<C> {
             p.stop(&mut t.expm2_us);
         }
 
-        if let Some(factor) = ranking_factor {
-            // Score before compaction so the saved coefficient prefix stays aligned.
-            let history = &workspace.coefficient_auxiliary;
-            cap_basis_by_score(
-                basis,
-                coeffs,
-                max_basis,
-                protected,
-                &mut workspace.taylor,
-                |index, value| {
-                    if drop_tol > 0.0 && value.abs() < drop_tol {
-                        return f64::NEG_INFINITY;
-                    }
-                    let before = history.get(index).copied().unwrap_or(0.0);
-                    (before + factor * (value - before)).abs()
-                },
-            );
-            prune_basis(basis, coeffs, drop_tol, protected);
-        } else {
-            prune_basis(basis, coeffs, drop_tol, protected);
-            cap_basis_with_scratch(basis, coeffs, max_basis, protected, &mut workspace.taylor);
-        }
+        // 5. Prune basis entries below `drop_tol` (protected words never dropped).
+        prune_basis(basis, coeffs, drop_tol, protected);
+        // The exponential's work vector is idle until the next step's proposal.
+        cap_basis_with_scratch(basis, coeffs, max_basis, protected, &mut workspace.taylor);
         Ok(t)
     }
 
@@ -397,8 +362,7 @@ impl<const C: usize> LindbladSpec<C> {
     /// `max_basis` is a hard rank cap on the live orbit-rep basis:
     /// enrichment adds at most `admit − basis.len()` of the largest
     /// leakage reps, the leakage map is capped to the same room, and the
-    /// post-step basis is trimmed to the top-`max_basis` reps by retention
-    /// score (`|c|` by default).
+    /// post-step basis is trimmed to the top-`max_basis` reps by `|c|`.
     /// Pass a large value (e.g. `usize::MAX`) for the near-exact,
     /// uncapped case. `drop_tol` additionally prunes by magnitude.
     /// `protected` reps are never dropped.
@@ -408,8 +372,7 @@ impl<const C: usize> LindbladSpec<C> {
     /// [`canonicalize_basis_to_rep`](crate::canonicalize_basis_to_rep)
     /// first.
     ///
-    /// Honours `cfg.num_threads` and `cfg.forward_looking` the same way
-    /// [`Self::pc_step`] does, using the complex modulus for retention scores.
+    /// Honours `cfg.num_threads` the same way [`Self::pc_step`] does.
     pub fn pc_step_orbit_rep(
         &self,
         basis: &mut Vec<Word<C>>,
@@ -419,14 +382,6 @@ impl<const C: usize> LindbladSpec<C> {
         sector: &Sector<'_>,
         cfg: &PcStepConfig,
     ) -> Result<(), Error> {
-        cfg.ranking_factor(dt)?;
-        if basis.len() != coeffs.len() {
-            return Err(Error::LengthMismatch {
-                what: "basis and coeffs",
-                a: basis.len(),
-                b: coeffs.len(),
-            });
-        }
         self.run_in_pool(cfg, |this| {
             this.pc_step_orbit_rep_inner(basis, coeffs, dt, protected, sector, cfg)
         })
@@ -456,10 +411,6 @@ impl<const C: usize> LindbladSpec<C> {
         // `drop_tol > 0`.
         let admit = admit_basis.unwrap_or(max_basis).max(max_basis);
         let tau_add = tau_add.unwrap_or(0.0);
-
-        // Appended orbit representatives have zero pre-step coefficients.
-        let ranking_factor = cfg.ranking_factor(dt)?;
-        let history = ranking_factor.map(|_| coeffs.clone());
 
         // 1. First-hop phase-aware leakage.
         let mut leak = self.leakage_orbit_rep(basis, coeffs, protected, sector, admit)?;
@@ -493,25 +444,7 @@ impl<const C: usize> LindbladSpec<C> {
             *coeffs = mf_expm::expm_apply_orbit_rep(self, basis, sector, dt, coeffs);
         }
 
-        // 5. Score before compaction to preserve the pre-step coefficient positions.
-        if let (Some(factor), Some(history)) = (ranking_factor, history) {
-            cap_basis_by_score(
-                basis,
-                coeffs,
-                max_basis,
-                protected,
-                &mut Vec::new(),
-                |index, value| {
-                    if drop_tol > 0.0 && value.norm() < drop_tol {
-                        return f64::NEG_INFINITY;
-                    }
-                    let before = history.get(index).copied().unwrap_or_default();
-                    (before + (value - before) * factor).norm()
-                },
-            );
-            prune_basis(basis, coeffs, drop_tol, protected);
-            return Ok(());
-        }
+        // 5. Prune by magnitude, then rank-cap to max_basis.
         prune_basis(basis, coeffs, drop_tol, protected);
         cap_basis(basis, coeffs, max_basis, protected);
         Ok(())

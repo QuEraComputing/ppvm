@@ -307,8 +307,6 @@ class Lindbladian:
         tau_add: float | None = None,
         *,
         proposer: str = "streaming",
-        forward_looking: bool = False,
-        lookahead_dt: float = 0.1,
     ) -> tuple[np.ndarray, np.ndarray]:
         """One predictor-corrector adaptive step.
 
@@ -345,15 +343,7 @@ class Lindbladian:
         ``max_basis`` and turnover requires ``drop_tol > 0``.
 
         ``proposer`` chooses ``"streaming"`` (default) or ``"shortlist"``
-        candidate generation. ``forward_looking=True`` independently ranks
-        retention by a linear coefficient prediction over ``lookahead_dt``
-        (default 0.1). Actual evolved coefficients are preserved.
-        The score is ``abs(c_before + lookahead_dt / dt * (c_after - c_before))``;
-        the interval starts at the beginning of this step. Only this call's
-        coefficient change is used, with no history carried between calls.
-        Each call uses a fixed generator. For piecewise-constant driving,
-        select the appropriate model for each segment and split steps at
-        switches; the prediction does not anticipate future generator changes.
+        candidate generation.
 
         Returns ``(new_basis_arr, new_coeffs)``; the basis may have grown
         (or shrunk, if ``max_basis`` / ``drop_tol`` pruned entries).
@@ -372,8 +362,6 @@ class Lindbladian:
             None if admit_basis is None else int(admit_basis),
             None if tau_add is None else float(tau_add),
             proposer=proposer,
-            forward_looking=forward_looking,
-            lookahead_dt=lookahead_dt,
         )
 
     def pc_step_orbit_rep(
@@ -459,8 +447,6 @@ class Lindbladian:
         tau_add: float | None = None,
         *,
         proposer: str = "streaming",
-        forward_looking: bool = False,
-        lookahead_dt: float = 0.1,
     ) -> tuple[list[str], np.ndarray]:
         """String-keyed variant of `pc_step_arr`."""
         n = self.n_qubits
@@ -479,8 +465,6 @@ class Lindbladian:
             admit_basis,
             tau_add,
             proposer=proposer,
-            forward_looking=forward_looking,
-            lookahead_dt=lookahead_dt,
         )
         return _codes_to_basis(new_basis_arr), new_coeffs
 

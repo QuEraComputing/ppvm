@@ -41,8 +41,6 @@
 //! Real predictor-corrector steps use [`StreamingProposer`] by default.
 //! [`CandidateStrategy::Shortlist`] selects [`ShortlistScoreProposer`], which
 //! shortlists individual contributions and scores their complete signed leakage.
-//! [`PcStepConfig::forward_looking`] controls retention ranking independently
-//! of candidate generation.
 
 mod algebra;
 mod basis;

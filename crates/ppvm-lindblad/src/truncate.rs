@@ -80,19 +80,6 @@ pub(crate) fn cap_basis_with_scratch<const C: usize, T: Coeff>(
     protected: &[Word<C>],
     mags: &mut Vec<f64>,
 ) {
-    cap_basis_by_score(basis, coeffs, max_basis, protected, mags, |_, c| c.mag());
-}
-
-/// Retain the highest-scoring terms without changing their evolved coefficients.
-/// Scores use original indices; protected terms and ties preserve visit order.
-pub(crate) fn cap_basis_by_score<const C: usize, T: Coeff>(
-    basis: &mut Vec<Word<C>>,
-    coeffs: &mut Vec<T>,
-    max_basis: usize,
-    protected: &[Word<C>],
-    mags: &mut Vec<f64>,
-    score: impl Fn(usize, T) -> f64,
-) {
     if basis.len() <= max_basis {
         return;
     }
@@ -104,19 +91,15 @@ pub(crate) fn cap_basis_by_score<const C: usize, T: Coeff>(
         basis
             .iter()
             .zip(coeffs.iter())
-            .enumerate()
-            .filter(|(_, (w, _))| !protected_set.contains(w))
-            .map(|(index, (_, c))| score(index, *c)),
+            .filter(|(w, _)| !protected_set.contains(w))
+            .map(|(_, c)| c.mag()),
     );
     if slots >= mags.len() {
         return;
     }
     let mut keep = top_k_keeper(mags, slots);
-    let mut index = 0;
     retain_in_place(basis, coeffs, |w, c| {
-        let retain = protected_set.contains(w) || keep(score(index, *c));
-        index += 1;
-        retain
+        protected_set.contains(w) || keep(c.mag())
     });
 }
 
@@ -206,24 +189,6 @@ fn desc_by_mag<T: Coeff>(a: T, b: T) -> std::cmp::Ordering {
 mod tests {
     use super::*;
     use crate::word::word_from_codes;
-
-    #[test]
-    fn scored_cap_keeps_values_protection_and_stable_ties() {
-        let mut basis = words(4);
-        let original = basis.clone();
-        let mut coeffs = vec![0.8, 0.3, 0.1, 0.2];
-        let scores = [0.1, 0.9, 1.0, 0.9];
-        cap_basis_by_score(
-            &mut basis,
-            &mut coeffs,
-            3,
-            &[original[0]],
-            &mut Vec::new(),
-            |i, _| scores[i],
-        );
-        assert_eq!(basis, original[..3]);
-        assert_eq!(coeffs, [0.8, 0.3, 0.1]);
-    }
 
     /// `n` distinct 4-qubit words.
     fn words(n: usize) -> Vec<Word> {

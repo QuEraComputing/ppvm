@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2026 The PPVM Authors
 # SPDX-License-Identifier: Apache-2.0
-"""Independent candidate-strategy and retention options across Python entry points."""
+"""Candidate-strategy options across Python entry points."""
 
 import numpy as np
 import pytest
@@ -23,15 +23,9 @@ def evolve(op, dt=0.025, **options):
 
 
 @pytest.mark.parametrize("proposer", ["streaming", "shortlist"])
-def test_retention_options(proposer):
+def test_proposer_options(proposer):
     op = model()
     ordinary = evolve(op, proposer=proposer)
-    forward = evolve(op, proposer=proposer, forward_looking=True)
-    assert ordinary[0] != forward[0] or not np.array_equal(ordinary[1], forward[1])
-    a = evolve(op, dt=0.1, proposer=proposer)
-    b = evolve(op, dt=0.1, proposer=proposer, forward_looking=True)
-    assert a[0] == b[0]
-    np.testing.assert_array_equal(a[1], b[1])
     if proposer == "streaming":
         implicit = evolve(op)
         assert implicit[0] == ordinary[0]
@@ -39,12 +33,11 @@ def test_retention_options(proposer):
 
 
 @pytest.mark.parametrize("proposer", ["streaming", "shortlist"])
-@pytest.mark.parametrize("forward_looking", [False, True])
-def test_array_and_timed_options_agree(proposer, forward_looking):
+def test_array_and_timed_options_agree(proposer):
     op = model()
     basis = np.array([[2, 0, 0, 0]], dtype=np.uint8)
     coeffs = np.array([1.0])
-    options = dict(drop_tol=0.0, admit_basis=12, proposer=proposer, forward_looking=forward_looking)
+    options = dict(drop_tol=0.0, admit_basis=12, proposer=proposer)
     a = op.pc_step_arr(basis, coeffs, 0.025, 4, protected_arr=basis, **options)
     b, timings = op._spec.pc_step_timed(basis, coeffs, 0.025, 4, protected=basis, **options)
     np.testing.assert_array_equal(a[0], b[0])
@@ -52,9 +45,6 @@ def test_array_and_timed_options_agree(proposer, forward_looking):
     assert all(value >= 0 for value in timings.values())
 
 
-@pytest.mark.parametrize(
-    "options", [{"proposer": "unknown"}, {"forward_looking": True, "lookahead_dt": 0}]
-)
-def test_invalid_options(options):
+def test_invalid_proposer():
     with pytest.raises(ValueError):
-        evolve(model(), **options)
+        evolve(model(), proposer="unknown")

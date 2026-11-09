@@ -296,8 +296,7 @@ impl LindbladSpec {
     /// (displacement truncation). `drop_tol` prunes by magnitude after the
     /// step; `tau_add` filters leakage admission by inflow rate. Protected
     /// words are never dropped. `proposer` selects streaming (the default) or
-    /// shortlist candidate generation. `forward_looking` independently enables
-    /// retention ranking over `lookahead_dt`, keeping actual evolved coefficients.
+    /// shortlist candidate generation.
     #[pyo3(signature = (
         basis, coeffs, dt, max_basis,
         drop_tol = 0.0,
@@ -307,8 +306,6 @@ impl LindbladSpec {
         tau_add = None,
         *,
         proposer = "streaming",
-        forward_looking = false,
-        lookahead_dt = 0.1,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn pc_step<'py>(
@@ -324,8 +321,6 @@ impl LindbladSpec {
         admit_basis: Option<usize>,
         tau_add: Option<f64>,
         proposer: &str,
-        forward_looking: bool,
-        lookahead_dt: f64,
     ) -> PyResult<PyPauliMap<'py>> {
         let proposer = candidate_strategy(proposer)?;
         with_spec!(&self.inner, inner, C => {
@@ -348,7 +343,6 @@ impl LindbladSpec {
                     &protected_words,
                     &ppvm_lindblad::PcStepConfig {
                         proposer,
-                        forward_looking: forward_looking.then_some(lookahead_dt),
                         max_basis,
                         admit_basis,
                         drop_tol,
@@ -375,8 +369,6 @@ impl LindbladSpec {
         tau_add = None,
         *,
         proposer = "streaming",
-        forward_looking = false,
-        lookahead_dt = 0.1,
     ))]
     #[allow(clippy::too_many_arguments)]
     fn pc_step_timed<'py>(
@@ -392,8 +384,6 @@ impl LindbladSpec {
         admit_basis: Option<usize>,
         tau_add: Option<f64>,
         proposer: &str,
-        forward_looking: bool,
-        lookahead_dt: f64,
     ) -> PyResult<(PyPauliMap<'py>, Bound<'py, pyo3::types::PyDict>)> {
         let proposer = candidate_strategy(proposer)?;
         with_spec!(&self.inner, inner, C => {
@@ -416,7 +406,6 @@ impl LindbladSpec {
                     &protected_words,
                     &ppvm_lindblad::PcStepConfig {
                         proposer,
-                        forward_looking: forward_looking.then_some(lookahead_dt),
                         max_basis,
                         admit_basis,
                         drop_tol,

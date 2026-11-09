@@ -4,13 +4,14 @@
 mod backend;
 mod buckets;
 mod executors;
-mod messages;
 mod ops;
 
 pub use backend::{CircuitBackend, MAX_QUBITS, PauliSumBackend};
 pub use executors::{Circuit, CircuitExecutor, TableauCircuit};
-pub use messages::{PopParams, QubitBatch, TraceMessage, TwoQubitPauliErrorMsg, pop_qubit_batch};
 pub use ops::CircuitOp;
+pub use vihaco_circuit_isa::messages::{
+    PopParams, QubitBatch, TraceMessage, TwoQubitPauliErrorMsg, pop_qubit_batch,
+};
 
 // vihaco resolves `#[device]` children through these generated companions.
 pub use executors::*;

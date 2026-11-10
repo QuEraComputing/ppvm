@@ -20,10 +20,10 @@ pub use containers::{
     TermSink,
 };
 pub use gates::{
-    AmplitudeDamping, AsymmetricLossChannel, CRx, Clifford, CliffordBatch, CorrelatedLossChannel,
-    Depolarizing, Depolarizing2, LossChannel, Measure, PauliError, Projection, Reset,
-    ResetLossChannel, ResetState, RotXY, RotationOne, RotationOneBatch, RotationTwo,
-    RotationTwoBatch, TGate, TwoQubitPauliError, U3Gate,
+    AmplitudeDamping, ApplyGateRule, AsymmetricLossChannel, Bits, CRx, Clifford, CliffordBatch,
+    CorrelatedLossChannel, Depolarizing, Depolarizing2, LossChannel, Measure, PauliError,
+    Projection, Reset, ResetLossChannel, ResetState, RotXY, RotationOne, RotationOneBatch,
+    RotationTwo, RotationTwoBatch, TGate, TwoQubitPauliError, U3Gate,
 };
 pub use loss::{LossState, LossySite};
 pub use pauli::{Pauli, PhaseTrack, SymplecticColumns};

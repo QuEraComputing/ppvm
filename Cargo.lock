@@ -2394,6 +2394,7 @@ name = "ppvm-traits-2"
 version = "0.4.0"
 dependencies = [
  "num",
+ "ppvm-pauli-kernels",
 ]
 
 [[package]]

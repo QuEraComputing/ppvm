@@ -32,7 +32,7 @@ pub struct LossyPauliWord<A: PauliStorage = DefaultStorage, H = fxhash::FxBuildH
 
 impl<A: PauliStorage, H> LossyPauliWord<A, H> {
     #[inline]
-    fn check_qubit(&self, qubit: usize) {
+    pub(crate) fn check_qubit(&self, qubit: usize) {
         if qubit >= self.nqubits {
             panic!("qubit {qubit} out of bounds for {} sites", self.nqubits);
         }

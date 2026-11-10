@@ -26,7 +26,7 @@ pub use gates::{
     RotationTwo, RotationTwoBatch, TGate, TwoQubitPauliError, U3Gate,
 };
 pub use loss::{LossState, LossySite};
-pub use pauli::{Pauli, PhaseTrack, SymplecticColumns};
+pub use pauli::Pauli;
 pub use word::{PauliBits, Word};
 
 /// Common traits and types for implementing and using the interfaces.

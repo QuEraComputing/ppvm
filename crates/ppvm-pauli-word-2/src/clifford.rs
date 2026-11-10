@@ -5,12 +5,11 @@
 //! `PauliWord` implements `ApplyGateRule`, so `Clifford` comes from the blanket impl
 //! and each gate's bits from `ppvm_pauli_kernels::heisenberg`. The hash is
 //! refreshed once per gate, and only when a bit changes.
-//! Symplectic bit operations remain available; `PhaseTrack` is a no-op.
 //! Phase signs must be handled separately by phased words or the sum engine.
 
 use std::hash::BuildHasher;
 
-use ppvm_traits_2::{ApplyGateRule, PhaseTrack, SymplecticColumns};
+use ppvm_traits_2::ApplyGateRule;
 
 use crate::data::{PauliWord, xor_bits2};
 use crate::{HashFinalize, PauliStorage};
@@ -67,91 +66,6 @@ where
     }
 }
 
-impl<A, H> SymplecticColumns for PauliWord<A, H>
-where
-    A: PauliStorage,
-    H: BuildHasher + Default + HashFinalize,
-{
-    #[inline]
-    fn n_qubits(&self) -> usize {
-        self.nqubits
-    }
-
-    /// `H` on `q`: swap the X and Z bits. Touches only in-range slot `q`, so the
-    /// canonical-unused-bits invariant is preserved.
-    #[inline]
-    fn swap_xz(&mut self, q: usize) {
-        debug_assert!(q < self.nqubits, "qubit {q} out of bounds");
-        let xb = self.xbits[q];
-        let zb = self.zbits[q];
-        self.xbits.set(q, zb);
-        self.zbits.set(q, xb);
-        self.refresh_hash();
-    }
-
-    /// `S` on `q`: `z_q ⊕= x_q` (maps `X → Y`).
-    #[inline]
-    fn xor_z_from_x(&mut self, q: usize) {
-        debug_assert!(q < self.nqubits, "qubit {q} out of bounds");
-        let z = self.zbits[q] ^ self.xbits[q];
-        self.zbits.set(q, z);
-        self.refresh_hash();
-    }
-
-    /// `CNOT` bit rule, part one: `x_tgt ⊕= x_ctrl`.
-    #[inline]
-    fn xor_x_col(&mut self, ctrl: usize, tgt: usize) {
-        debug_assert!(
-            ctrl < self.nqubits && tgt < self.nqubits,
-            "qubit out of bounds"
-        );
-        let x = self.xbits[tgt] ^ self.xbits[ctrl];
-        self.xbits.set(tgt, x);
-        self.refresh_hash();
-    }
-
-    /// `CNOT` bit rule, part two: `z_ctrl ⊕= z_tgt`.
-    #[inline]
-    fn xor_z_col(&mut self, tgt: usize, ctrl: usize) {
-        debug_assert!(
-            ctrl < self.nqubits && tgt < self.nqubits,
-            "qubit out of bounds"
-        );
-        let z = self.zbits[ctrl] ^ self.zbits[tgt];
-        self.zbits.set(ctrl, z);
-        self.refresh_hash();
-    }
-
-    /// `CZ` on `(a, b)`: `z_a ⊕= x_b` and `z_b ⊕= x_a`.
-    #[inline]
-    fn cz_bits(&mut self, a: usize, b: usize) {
-        debug_assert!(a < self.nqubits && b < self.nqubits, "qubit out of bounds");
-        let za = self.zbits[a] ^ self.xbits[b];
-        let zb = self.zbits[b] ^ self.xbits[a];
-        self.zbits.set(a, za);
-        self.zbits.set(b, zb);
-        self.refresh_hash();
-    }
-}
-
-/// Bare words store no phase, so phase updates deliberately do nothing.
-impl<A: PauliStorage, H> PhaseTrack for PauliWord<A, H> {
-    #[inline]
-    fn flip_phase_where_xz(&mut self, _q: usize) {}
-    #[inline]
-    fn s_phase(&mut self, _q: usize) {}
-    #[inline]
-    fn cnot_phase(&mut self, _ctrl: usize, _tgt: usize) {}
-    #[inline]
-    fn cz_phase(&mut self, _a: usize, _b: usize) {}
-    #[inline]
-    fn x_phase(&mut self, _q: usize) {}
-    #[inline]
-    fn y_phase(&mut self, _q: usize) {}
-    #[inline]
-    fn z_phase(&mut self, _q: usize) {}
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -170,7 +84,7 @@ mod tests {
 
     #[test]
     fn single_qubit_operations_enforce_logical_bounds() {
-        let operations: [fn(&mut PauliWord, usize); 12] = [
+        let operations: [fn(&mut PauliWord, usize); 10] = [
             PauliWord::x,
             PauliWord::y,
             PauliWord::z,
@@ -181,8 +95,6 @@ mod tests {
             PauliWord::sqrt_x_dag,
             PauliWord::sqrt_y,
             PauliWord::sqrt_y_dag,
-            PauliWord::swap_xz,
-            PauliWord::xor_z_from_x,
         ];
         for operation in operations {
             for invalid in [1, 7, 63] {
@@ -194,14 +106,8 @@ mod tests {
 
     #[test]
     fn two_qubit_operations_enforce_logical_bounds() {
-        let operations: [fn(&mut PauliWord, usize, usize); 6] = [
-            PauliWord::cnot,
-            PauliWord::cy,
-            PauliWord::cz,
-            PauliWord::xor_x_col,
-            PauliWord::xor_z_col,
-            PauliWord::cz_bits,
-        ];
+        let operations: [fn(&mut PauliWord, usize, usize); 3] =
+            [PauliWord::cnot, PauliWord::cy, PauliWord::cz];
         for operation in operations {
             for input in ["X", "Y", "Z"] {
                 for invalid in [1, 7, 63] {

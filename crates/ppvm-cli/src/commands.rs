@@ -6,7 +6,6 @@ use ppvm_vihaco::composite::{PPVM, PPVMModule};
 use ppvm_vihaco::measurements::MeasurementResult;
 use ppvm_vihaco::shots::ShotRecord;
 use std::io::{BufRead, Write};
-use std::path::Path;
 
 /// Output format for `parse`.
 #[derive(Clone, Debug, clap::ValueEnum)]
@@ -229,11 +228,11 @@ fn debug_loop(
     writeln!(
         output,
         "Measurements: {}",
-        format_shot(&machine.measurement_record())
+        format_shot(machine.measurement_record())
     )?;
     let traces = machine.trace_record();
     if !traces.is_empty() {
-        writeln!(output, "Traces: {}", format_traces(&traces))?;
+        writeln!(output, "Traces: {}", format_traces(traces))?;
     }
     if !ever_paused {
         writeln!(
@@ -254,11 +253,11 @@ fn print_location(machine: &PPVM, module: &PPVMModule, output: &mut impl Write) 
     writeln!(
         output,
         "measurements: {}",
-        format_shot(&machine.measurement_record())
+        format_shot(machine.measurement_record())
     )?;
     let traces = machine.trace_record();
     if !traces.is_empty() {
-        writeln!(output, "traces: {}", format_traces(&traces))?;
+        writeln!(output, "traces: {}", format_traces(traces))?;
     }
     Ok(())
 }

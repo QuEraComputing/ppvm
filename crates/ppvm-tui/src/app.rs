@@ -357,7 +357,7 @@ impl AppState {
                 if rec.is_empty() {
                     "(none)".to_string()
                 } else {
-                    format_record(&rec)
+                    format_record(rec)
                 }
             }
             None => "(none)".to_string(),

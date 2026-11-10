@@ -2409,7 +2409,6 @@ dependencies = [
  "bnum",
  "chumsky 0.10.1",
  "eyre",
- "log",
  "num",
  "ppvm-pauli-sum",
  "ppvm-tableau",
@@ -3516,7 +3515,6 @@ dependencies = [
  "eyre",
  "smallvec",
  "vihaco",
- "vihaco-stdlib",
 ]
 
 [[package]]

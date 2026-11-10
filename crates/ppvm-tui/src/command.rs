@@ -20,7 +20,7 @@ pub enum Command {
     Gate { name: String, args: Vec<String> },
     /// Advance one instruction (also the meaning of an empty line).
     Step,
-    /// Run to the next cpu::cpu.breakpoint or program end.
+    /// Run to the next breakpoint or program end.
     Continue,
     /// Reset the loaded program / device to its initial state.
     Reset,

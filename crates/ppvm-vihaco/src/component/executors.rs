@@ -109,6 +109,11 @@ impl Circuit {
         self.n_qubits
     }
 
+    /// Human-readable rendering of the backend state (tableau or Pauli sum).
+    pub fn state_string(&self) -> String {
+        self.inner.state_string()
+    }
+
     /// Build a Tableau-backed circuit. Tableau init only needs `n_qubits` and
     /// `coefficient_threshold` from `info`; no observable required.
     pub fn tableau(info: &PPVMDeviceInfo) -> Result<Self> {

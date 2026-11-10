@@ -195,6 +195,36 @@ impl PPVM {
     pub fn n_qubits(&self) -> usize {
         self.circuit.n_qubits()
     }
+
+    /// Human-readable rendering of the circuit state.
+    pub fn state_string(&self) -> String {
+        self.circuit.state_string()
+    }
+
+    /// Enter `module`'s main without executing anything; `resume` runs it.
+    pub fn start(&mut self, module: &Program) -> eyre::Result<()> {
+        self.execution.start(module, &[])
+    }
+
+    /// Run the started program until it halts, returns, or hits a breakpoint.
+    pub fn resume(&mut self, module: &Program) -> eyre::Result<()> {
+        vihaco::resume(module, self)
+    }
+
+    /// Index of the next instruction to execute.
+    pub fn pc(&self) -> u32 {
+        self.execution.pc()
+    }
+
+    /// True while a breakpoint has suspended the running program.
+    pub fn is_paused(&self) -> bool {
+        self.execution.is_paused()
+    }
+
+    /// True once the program has finished (or before one was started).
+    pub fn is_halted(&self) -> bool {
+        self.execution.is_halted()
+    }
 }
 
 impl vihaco::Apply<()> for PPVM {

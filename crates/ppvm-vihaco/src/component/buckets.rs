@@ -24,6 +24,17 @@ pub(crate) enum TableauBuckets {
 }
 
 impl TableauBuckets {
+    pub(crate) fn state_string(&self) -> String {
+        match self {
+            Self::Bits64(c) => c.backend.to_string(),
+            Self::Bits128(c) => c.backend.to_string(),
+            Self::Bits256(c) => c.backend.to_string(),
+            Self::Bits512(c) => c.backend.to_string(),
+            Self::Bits1024(c) => c.backend.to_string(),
+            Self::Bits2048(c) => c.backend.to_string(),
+        }
+    }
+
     pub(crate) fn apply<I: CircuitOp>(
         &mut self,
         op: &I,
@@ -115,6 +126,17 @@ pub(crate) enum PauliSumBuckets {
 }
 
 impl PauliSumBuckets {
+    pub(crate) fn state_string(&self) -> String {
+        match self {
+            Self::Bits64(c) => c.backend.state.to_string(),
+            Self::Bits128(c) => c.backend.state.to_string(),
+            Self::Bits256(c) => c.backend.state.to_string(),
+            Self::Bits512(c) => c.backend.state.to_string(),
+            Self::Bits1024(c) => c.backend.state.to_string(),
+            Self::Bits2048(c) => c.backend.state.to_string(),
+        }
+    }
+
     pub(crate) fn apply<I: CircuitOp>(
         &mut self,
         op: &I,
@@ -193,6 +215,17 @@ pub(crate) enum LossyPauliSumBuckets {
 }
 
 impl LossyPauliSumBuckets {
+    pub(crate) fn state_string(&self) -> String {
+        match self {
+            Self::Bits64(c) => c.backend.state.to_string(),
+            Self::Bits128(c) => c.backend.state.to_string(),
+            Self::Bits256(c) => c.backend.state.to_string(),
+            Self::Bits512(c) => c.backend.state.to_string(),
+            Self::Bits1024(c) => c.backend.state.to_string(),
+            Self::Bits2048(c) => c.backend.state.to_string(),
+        }
+    }
+
     pub(crate) fn apply<I: CircuitOp>(
         &mut self,
         op: &I,
@@ -265,6 +298,14 @@ pub(crate) enum CircuitKind {
 }
 
 impl CircuitKind {
+    pub(crate) fn state_string(&self) -> String {
+        match self {
+            Self::Tableau(b) => b.state_string(),
+            Self::PauliSum(b) => b.state_string(),
+            Self::LossyPauliSum(b) => b.state_string(),
+        }
+    }
+
     pub(crate) fn reset(&mut self) {
         match self {
             Self::Tableau(b) => b.reset(),

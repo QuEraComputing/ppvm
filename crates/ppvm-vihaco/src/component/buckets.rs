@@ -13,14 +13,17 @@ use num::complex::Complex64;
 use ppvm_pauli_sum::config::fx64hash::Byte8F64;
 use ppvm_tableau::prelude::*;
 
+pub(crate) type TableauExecutor<const N: usize, I> =
+    CircuitExecutor<GeneralizedTableau<Byte8F64<N>, I, Vec<(Complex64, I)>>>;
+
 // TODO: enum dispatch can go once we only set the index type in tableau #204
 pub(crate) enum TableauBuckets {
-    Bits64(CircuitExecutor<GeneralizedTableau<Byte8F64<1>, usize, Vec<(Complex64, usize)>>>),
-    Bits128(CircuitExecutor<GeneralizedTableau<Byte8F64<2>, u128, Vec<(Complex64, u128)>>>),
-    Bits256(CircuitExecutor<GeneralizedTableau<Byte8F64<4>, U256, Vec<(Complex64, U256)>>>),
-    Bits512(CircuitExecutor<GeneralizedTableau<Byte8F64<8>, U512, Vec<(Complex64, U512)>>>),
-    Bits1024(CircuitExecutor<GeneralizedTableau<Byte8F64<16>, U1024, Vec<(Complex64, U1024)>>>),
-    Bits2048(CircuitExecutor<GeneralizedTableau<Byte8F64<32>, U2048, Vec<(Complex64, U2048)>>>),
+    Bits64(TableauExecutor<1, usize>),
+    Bits128(TableauExecutor<2, u128>),
+    Bits256(TableauExecutor<4, U256>),
+    Bits512(TableauExecutor<8, U512>),
+    Bits1024(TableauExecutor<16, U1024>),
+    Bits2048(TableauExecutor<32, U2048>),
 }
 
 impl TableauBuckets {

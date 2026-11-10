@@ -12,26 +12,6 @@ use vihaco_circuit_isa::messages::{
     QubitBatch, QubitPairBatch, TraceMessage, TwoQubitPauliErrorMsg,
 };
 
-macro_rules! batch_for {
-    ($tab:expr, $method:ident, $addrs:expr) => {
-        for addr in $addrs { $tab.$method(*addr); }
-    };
-    ($tab:expr, $method:ident, $addrs:expr, $($arg:expr),+) => {
-        for addr in $addrs { $tab.$method(*addr, $($arg),+); }
-    };
-}
-
-/// Two-qubit sibling of [`batch_for!`]: drives a method that takes two qubit
-/// addresses (plus optional extra args) over a slice of `(usize, usize)` pairs.
-macro_rules! batch_pairs_for {
-    ($state:expr, $method:ident, $pairs:expr) => {
-        for &(a, b) in $pairs { $state.$method(a, b); }
-    };
-    ($state:expr, $method:ident, $pairs:expr, $($arg:expr),+) => {
-        for &(a, b) in $pairs { $state.$method(a, b, $($arg),+); }
-    };
-}
-
 // CircuitOp trait: define how an instruction executes on a generic backend
 // This is used to avoid having huge where constraints on the enums later
 // - without this trait, we'd have to constrain every enum variant to all Execute impls

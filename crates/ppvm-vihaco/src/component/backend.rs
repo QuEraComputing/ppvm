@@ -69,7 +69,7 @@ pub trait CircuitBackend {
         Err(eyre!("measure is not supported on this backend"))
     }
 
-    fn leakage(&mut self, _addr0: usize, p0: f64, p1: f64) -> eyre::Result<()> {
+    fn leakage(&mut self, _addr0: usize, _p0: f64, _p1: f64) -> eyre::Result<()> {
         Err(eyre!("leakage is not supported on this backend"))
     }
 

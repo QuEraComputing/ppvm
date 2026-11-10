@@ -54,7 +54,7 @@ fn bit_mask<A: PauliStorage>(offset: usize, toggle: bool) -> <A as BitView>::Sto
 /// Used for data-dependent Clifford toggles to avoid separate conditional writes.
 /// Rotation builders use direct flips instead; see `PauliWord::with_bits_toggled2`.
 #[inline(always)]
-fn xor_bits2<A: PauliStorage>(
+pub(crate) fn xor_bits2<A: PauliStorage>(
     plane: &mut BitArray<A>,
     i: usize,
     toggle_i: bool,

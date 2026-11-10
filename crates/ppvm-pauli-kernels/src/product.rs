@@ -30,6 +30,26 @@ fn exponent(sign_count: u32, imag_count: u32) -> u8 {
     (sign_count.wrapping_mul(2).wrapping_add(imag_count) % 4) as u8
 }
 
+/// One storage word of the product `dst · src`.
+///
+/// Returns the product's bits `[dst_x ⊕ src_x, dst_z ⊕ src_z]` and this word's
+/// contribution `2·popcount(sign) + popcount(imag)` to the phase exponent. A row's
+/// exponent is the wrapping sum of its words' contributions, mod 4.
+///
+/// For containers that write their own loop around the product, e.g. to follow
+/// it with a hash of the same words: a loop the compiler sees inline lets that
+/// work reuse the words still in registers, which a call to [`row_product`] did
+/// not (measured on `PauliWord`).
+#[inline(always)]
+pub fn word_product<W: Bits>(dst_x: W, dst_z: W, src_x: W, src_z: W) -> ([W; 2], u32) {
+    let (sign, imag) = masks(dst_x, dst_z, src_x, src_z);
+    let contribution = sign
+        .popcount()
+        .wrapping_mul(2)
+        .wrapping_add(imag.popcount());
+    ([dst_x ^ src_x, dst_z ^ src_z], contribution)
+}
+
 /// `dst ← dst · src`. Returns `k ∈ 0..4` with `dst · src = iᵏ · (dst ⊕ src)`.
 ///
 /// All four slices must have the same length.

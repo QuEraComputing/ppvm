@@ -2263,6 +2263,7 @@ dependencies = [
  "foldhash",
  "fxhash",
  "num",
+ "ppvm-pauli-kernels",
  "ppvm-traits-2",
 ]
 

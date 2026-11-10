@@ -10,7 +10,7 @@ mod common;
 mod tables;
 
 use common::Rng;
-use ppvm_pauli_kernels::{row_product, row_product_phase};
+use ppvm_pauli_kernels::{row_product, row_product_phase, word_product};
 
 /// A Pauli word on `64 · len` qubits as X and Z planes.
 #[derive(Clone, PartialEq, Debug)]
@@ -51,6 +51,29 @@ fn single_site_matches_matrix_model() {
         let k = row_product(&mut x, &mut z, &[c as u8], &[d as u8]);
         assert_eq!(k, e, "site {:?}", [a, b, c, d]);
         assert_eq!((x[0], z[0]), ((a ^ c) as u8, (b ^ d) as u8));
+    }
+}
+
+/// One word's contribution, mod 4, is the sum of its 64 site exponents.
+#[test]
+fn word_product_matches_site_phases() {
+    let mut rng = Rng::new(19);
+    for _ in 0..256 {
+        let [a, b, c, d] = [
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+            rng.next_u64(),
+        ];
+        let expected: u32 = (0..64)
+            .map(|i| {
+                let bit = |w: u64| (w >> i) & 1 == 1;
+                site_exponent(bit(a), bit(b), bit(c), bit(d)) as u32
+            })
+            .sum();
+        let ([x, z], e) = word_product(a, b, c, d);
+        assert_eq!(e % 4, expected % 4);
+        assert_eq!([x, z], [a ^ c, b ^ d]);
     }
 }
 

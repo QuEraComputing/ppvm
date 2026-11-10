@@ -10,7 +10,8 @@
 //!   sign-flip mask. It is generic over [`Bits`], so the same formula updates
 //!   one Pauli (`bool`) or 64 at once (`u64`, one per bit position).
 //! - [`row_product`] / [`row_product_phase`]: the packed Pauli-word product and
-//!   the exponent `k` of the phase `iᵏ` it emits.
+//!   the exponent `k` of the phase `iᵏ` it emits, built on the per-word
+//!   [`word_product`].
 //!
 //! The crate has no PPVM dependencies; containers wire the rules into their own
 //! loops.
@@ -28,4 +29,4 @@ pub mod heisenberg;
 mod product;
 
 pub use bits::Bits;
-pub use product::{row_product, row_product_phase};
+pub use product::{row_product, row_product_phase, word_product};

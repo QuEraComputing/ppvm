@@ -14,19 +14,24 @@ pub const PPVM_SECTION: &str = "ppvm";
 
 type SourceInstruction = <PPVM as HasInstructionSet>::Syntax;
 
-/// Parse and lower SST source into a module whose `extra` is the device info.
-pub fn compile_program(source: &str) -> eyre::Result<PPVMModule> {
+/// A parsed but not yet lowered PPVM program: header declarations and functions.
+pub type ParsedProgram =
+    ParsedModule<SourceInstruction, Type, HeaderDeclarations<HeaderDeclaration>>;
+
+/// Parse SST source into its header declarations and functions, without lowering.
+pub fn parse_program(source: &str) -> eyre::Result<ParsedProgram> {
     let file = SstFile::<NoContext>::from_text(source)?;
     let section = file
         .root()
         .child(PPVM_SECTION)
         .ok_or_else(|| eyre::eyre!("missing `{PPVM_SECTION}` section"))?;
 
-    let ParsedModule { header, functions } = ParsedModule::<
-        SourceInstruction,
-        Type,
-        HeaderDeclarations<HeaderDeclaration>,
-    >::parse_section(section)?;
+    ParsedProgram::parse_section(section)
+}
+
+/// Parse and lower SST source into a module whose `extra` is the device info.
+pub fn compile_program(source: &str) -> eyre::Result<PPVMModule> {
+    let ParsedModule { header, functions } = parse_program(source)?;
     let (metadata, info) = collect_header(header)?;
 
     let mut context = MetadataLoweringContext::new(&metadata)?;

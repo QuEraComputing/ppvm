@@ -24,7 +24,7 @@ pub enum Command {
     Continue,
     /// Reset the loaded program / device to its initial state.
     Reset,
-    /// Load a `.sst`/`.ssb` file.
+    /// Load a `.sst` file.
     Load(String),
     /// Toggle the help overlay.
     Help,

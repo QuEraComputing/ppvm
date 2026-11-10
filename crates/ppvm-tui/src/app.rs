@@ -435,7 +435,7 @@ impl AppState {
 const HELP_TEXT: &str = "\
 Meta / debug
   device N              create a fresh N-qubit tableau device
-  :load <file>          load a .sst / .ssb program (paused at start)
+  :load <file>          load a .sst program (paused at start)
   Enter (empty)  :s     step one instruction
   :continue  :c         run to the next breakpoint or the end
   :reset                restart the loaded program / device
@@ -593,41 +593,8 @@ pub(crate) mod tests {
     }
 
     /// A 1-qubit program with a breakpoint before measuring q0 (|0> -> 0).
-    pub(crate) const BP_PROGRAM: &str = r#"sst v1
-.section(root):
-    .section(ppvm):
-    .header(ppvm):
-        circuit.n_qubits 1;
-        metadata {
-            strings: ["main", "bp.sst"],
-            functions: [
-                {
-                    name: 0,
-                    signature: { params: [], ret: [] },
-                    local_count: 0,
-                    start_address: 0,
-                    end_address: 4,
-                    file: 1,
-                },
-            ],
-            labels: [],
-            constants: [],
-            main_function: 0,
-            source_symbols: [],
-            extra: {},
-        };
-    .header(ppvm).
-    .text(ppvm):
-        fn @main() {
-            execution::program::breakpoint
-            execution::program::const_u64 0
-            circuit::circuit::measure
-            execution::program::ret 0
-        }
-    .text(ppvm).
-    .section(ppvm).
-.section(root).
-"#;
+    pub(crate) const BP_PROGRAM: &str =
+        include_str!("../../ppvm-vihaco/tests/breakpoint_measure.sst");
 
     #[test]
     fn load_source_starts_paused_with_a_listing() {

@@ -2398,6 +2398,7 @@ dependencies = [
  "eyre",
  "ppvm-vihaco",
  "ratatui",
+ "vihaco",
 ]
 
 [[package]]

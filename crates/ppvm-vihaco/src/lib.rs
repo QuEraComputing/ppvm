@@ -16,7 +16,7 @@ pub mod shots;
 pub use vihaco_circuit_isa::circuit;
 
 pub use composite::PPVMModule;
-pub use loader::{compile_program, load_module_file};
+pub use loader::{compile_program, load_module_file, parse_program};
 
 // use crate::composite::ppvm_module as ppvm;
 // use crate::composite::{PPVM, PPVMDeviceInfo, PPVMInstruction};

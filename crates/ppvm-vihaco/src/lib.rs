@@ -11,9 +11,8 @@ pub mod measurements;
 pub mod observable;
 pub mod shots;
 
-/// Re-exported so consumers (e.g. the CLI REPL) can name gates for
-/// [`composite::PPVM::apply_circuit_instruction`] without depending on the ISA
-/// crate directly.
+/// Re-exported so consumers (e.g. the TUI) can name gates for
+/// [`composite::PPVM::send`] without depending on the ISA crate directly.
 pub use vihaco_circuit_isa::circuit;
 
 pub use composite::PPVMModule;

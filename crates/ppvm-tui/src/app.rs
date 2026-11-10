@@ -10,14 +10,14 @@
 use eyre::{Result, eyre};
 use ppvm_vihaco::composite::{PPVM, StepOutcome};
 use ppvm_vihaco::measurements::MeasurementResult;
-use ppvm_vihaco::{CircuitInstruction, PPVMModule, compile_program, load_module_file};
+use ppvm_vihaco::{PPVMModule, compile_program, load_module_file};
 use ratatui::Frame;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::widgets::Clear;
 
 use crate::codeview::CodeView;
-use crate::command::{Command, parse_command};
+use crate::command::{Command, parse_command, send_gate};
 use crate::editor::LineEditor;
 use crate::widgets::{CommandLine, HelpOverlay, ProgramView, RecordView, StateView};
 
@@ -99,11 +99,7 @@ impl AppState {
                 Ok(())
             }
             Command::Device(n) => self.new_device(n),
-            Command::Gate {
-                inst,
-                qubits,
-                params,
-            } => self.apply_gate(inst, &qubits, &params),
+            Command::Gate { name, args } => self.apply_gate(&name, &args),
             Command::Step => self.step(),
             Command::Continue => self.cont(),
             Command::Reset => self.reset(),
@@ -268,18 +264,14 @@ impl AppState {
         self.paused
     }
 
-    fn apply_gate(
-        &mut self,
-        inst: CircuitInstruction,
-        qubits: &[usize],
-        params: &[f64],
-    ) -> Result<()> {
+    fn apply_gate(&mut self, name: &str, args: &[String]) -> Result<()> {
         let m = self
             .machine
             .as_mut()
             .ok_or_else(|| eyre!("no device — run `device N` or :load a file first"))?;
         let before = m.measurement_record().len();
-        m.apply_circuit_instruction(inst, qubits, params)?;
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        send_gate(m, name, &args)?;
         // Any new record entries are this gate's measurement outcomes.
         let new: Vec<MeasurementResult> = m.measurement_record()[before..].to_vec();
         if new.is_empty() {
@@ -465,7 +457,8 @@ Meta / debug
   :quit  :q  (Ctrl-C)   leave
 
 Gates  (q = qubit index; angles / probabilities are floats)
-  x y z h s sadj sqrtx sqrty sqrtxadj sqrtyadj t tadj reset measure <q>
+  x y z h s s_adj t t_adj reset measure <q>
+  sqrt_x sqrt_y sqrt_x_adj sqrt_y_adj <q>
   cnot <c> <t>     cz <a> <b>
   rx ry rz <q> <angle>     r <q> <axis> <angle>
   u3 <q> <theta> <phi> <lam>
@@ -473,6 +466,7 @@ Gates  (q = qubit index; angles / probabilities are floats)
   depolarize loss <q> <p>     depolarize2 <a> <b> <p>
   leakage <q> <p0> <p1>
   pauli_error <q> <px> <py> <pz>     correlated_loss <a> <b> <p0> <p1> <p2>
+  two_qubit_pauli_error <a> <b> <p1> .. <p15>
 
 Line editing: ←/→ move · Home/End · Backspace/Del · ↑/↓ history";
 

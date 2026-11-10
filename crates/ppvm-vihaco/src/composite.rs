@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::component::Circuit;
+use crate::component::{Circuit, CircuitOp};
 use crate::measurements::{
     CircuitOutcomeEffect, MeasurementObserver, MeasurementResult, TraceObserver,
 };
@@ -131,21 +131,69 @@ where
 impl vihaco::Apply<Effects<CircuitOutcomeEffect>> for PPVM {
     fn apply(&mut self, effects: Effects<CircuitOutcomeEffect>) {
         for effect in effects {
-            match effect {
+            // Programs branch on outcomes: push each as u32 (0/1/2, 2 = Lost),
+            // and can consume trace values the same way.
+            match &effect {
                 CircuitOutcomeEffect::Measurement(m) => {
-                    // Programs branch on outcomes: push each as u32 (0/1/2, 2 = Lost).
                     for &outcome in &m.measurement_results {
                         self.execution.apply(PushToStack((outcome as u32,)));
                     }
-                    self.measurement_record.record.push(m.measurement_results)
                 }
                 CircuitOutcomeEffect::Trace(t) => {
-                    // Programs can consume the expectation value, as with outcomes.
                     self.execution.apply(PushToStack((t.value,)));
-                    self.trace_record.record.push(t.value);
                 }
             }
+            self.record_outcome(effect);
         }
+    }
+}
+
+/// Record a circuit effect without pushing it onto the operand stack.
+pub trait Record<E> {
+    fn record(&mut self, effect: E);
+}
+
+impl Record<()> for PPVM {
+    fn record(&mut self, _effect: ()) {}
+}
+
+impl Record<Effects<CircuitOutcomeEffect>> for PPVM {
+    fn record(&mut self, effects: Effects<CircuitOutcomeEffect>) {
+        for effect in effects {
+            self.record_outcome(effect);
+        }
+    }
+}
+
+impl PPVM {
+    fn record_outcome(&mut self, effect: CircuitOutcomeEffect) {
+        match effect {
+            CircuitOutcomeEffect::Measurement(m) => {
+                self.measurement_record.record.push(m.measurement_results)
+            }
+            CircuitOutcomeEffect::Trace(t) => self.trace_record.record.push(t.value),
+        }
+    }
+
+    /// Execute one circuit instruction on a ready-made message, outside any
+    /// running program.
+    ///
+    /// The operand stack is not touched: outcomes land in the measurement and
+    /// trace records only. Qubit indices are not range-checked here; callers
+    /// building messages by hand should check them against `n_qubits`.
+    pub fn send<I>(&mut self, instruction: &I, message: I::Message) -> eyre::Result<()>
+    where
+        I: CircuitOp,
+        Self: Record<I::Effect>,
+    {
+        let effect = self.circuit.execute(instruction, message)?;
+        self.record(effect);
+        Ok(())
+    }
+
+    /// Number of qubits on the circuit device.
+    pub fn n_qubits(&self) -> usize {
+        self.circuit.n_qubits()
     }
 }
 

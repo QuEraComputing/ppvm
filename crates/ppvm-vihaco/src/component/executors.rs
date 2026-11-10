@@ -42,6 +42,7 @@ impl<B: CircuitBackend, I: CircuitOp> Execute<I> for CircuitExecutor<B> {
 #[instructions { circuit }]
 pub struct Circuit {
     inner: CircuitKind,
+    n_qubits: usize,
 }
 
 impl<I: CircuitOp> Execute<I> for Circuit {
@@ -103,12 +104,18 @@ impl Circuit {
         }
     }
 
+    /// Number of qubits this circuit was built for.
+    pub fn n_qubits(&self) -> usize {
+        self.n_qubits
+    }
+
     /// Build a Tableau-backed circuit. Tableau init only needs `n_qubits` and
     /// `coefficient_threshold` from `info`; no observable required.
     pub fn tableau(info: &PPVMDeviceInfo) -> Result<Self> {
         let tab = TableauBuckets::new(info.n_qubits, info.coefficient_threshold)?;
         Ok(Self {
             inner: CircuitKind::Tableau(tab),
+            n_qubits: info.n_qubits,
         })
     }
 
@@ -118,6 +125,7 @@ impl Circuit {
         let tab = TableauBuckets::new_with_seed(info.n_qubits, info.coefficient_threshold, seed)?;
         Ok(Self {
             inner: CircuitKind::Tableau(tab),
+            n_qubits: info.n_qubits,
         })
     }
 
@@ -129,6 +137,7 @@ impl Circuit {
         let psum = PauliSumBuckets::new(info, terms)?;
         Ok(Self {
             inner: CircuitKind::PauliSum(psum),
+            n_qubits: info.n_qubits,
         })
     }
 
@@ -138,6 +147,7 @@ impl Circuit {
         let psum = LossyPauliSumBuckets::new(info, terms)?;
         Ok(Self {
             inner: CircuitKind::LossyPauliSum(psum),
+            n_qubits: info.n_qubits,
         })
     }
 }

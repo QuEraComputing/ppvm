@@ -8,3 +8,21 @@ prek = "0.4.14"
 "cargo:cargo-machete" = "0.9.2"
 # Local release preview (`release-plz update`); same version the CI action uses
 release-plz = "0.3.169"
+# Lean toolchain manager. `elan` reads `lean/lean-toolchain` and provisions the
+# pinned Lean/Lake proxies into `~/.elan/bin`.
+"github:leanprover/elan" = "4.2.4"
+
+[env]
+# Put the elan-managed `lean` / `lake` proxies on PATH for mise tasks and shells.
+_.path = ["~/.elan/bin"]
+
+# Runs inside `lean/` so elan picks up `lean/lean-toolchain`.
+[tasks.lean-build]
+description = "Build the PPVM Lean formalization (lake build)."
+dir = "lean"
+run = "lake build"
+
+[tasks.lean-tables]
+description = "Regenerate the ppvm-pauli-kernels test tables from the Lean matrix model."
+dir = "lean"
+run = "lake env lean --run scripts/GenTables.lean > ../crates/ppvm-pauli-kernels/tests/generated/tables.rs"

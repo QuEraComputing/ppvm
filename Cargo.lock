@@ -2215,6 +2215,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppvm-pauli-kernels"
+version = "0.3.0"
+
+[[package]]
 name = "ppvm-pauli-sum"
 version = "0.4.0"
 dependencies = [

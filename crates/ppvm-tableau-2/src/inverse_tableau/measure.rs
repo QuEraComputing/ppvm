@@ -141,10 +141,10 @@ mod tests {
             let mut outcomes = vec![false; qubits.len()];
             batched.measure_many(&qubits, coins(7), &mut outcomes);
             let mut coin = coins(7);
-            let expected: Vec<bool> = qubits
-                .iter()
-                .map(|&q| single.measure(q, &mut coin))
-                .collect();
+            let mut expected = Vec::new();
+            for &q in &qubits {
+                expected.push(single.measure(q, &mut coin));
+            }
             assert_eq!(outcomes, expected, "n = {n}");
             assert_eq!(batched, single, "n = {n}");
         }

@@ -6,15 +6,23 @@ Development benchmarks comparing the stabilizer core of `ppvm-tableau-2`
 shipped; nothing in the crate depends on this directory.
 
 ```bash
+# A reference: stim_driver.cc built against any Stim checkout (C++, -march=native).
+cmake -S <stim-checkout> -B target/stim-build -DCMAKE_BUILD_TYPE=Release
+cmake --build target/stim-build --target libstim -j
+clang++ -O3 -std=c++20 -march=native -fno-strict-aliasing -I <stim-checkout>/src \
+    crates/ppvm-tableau-2/benches/stim-compare/stim_driver.cc \
+    target/stim-build/out/libstim.a -o target/stim-compare/stim_driver
+
 cd crates/ppvm-tableau-2/benches/stim-compare
-uv run --no-project --with stim python sweep.py            # sizes, three code families
-uv run --no-project --with stim python gates.py            # CX and H cost over n
-uv run --no-project --with stim python stim_bench.py <circuit.stim> <shots>
+uv run --no-project --with stim python sweep.py --reference stim=$PWD/../../../../target/stim-compare/stim_driver \
+    --case surface:7 --case color:25            # or no --case for the full sweep
+uv run --no-project --with stim python gates.py --reference stim=... --size 64 --size 2048
 ```
 
-Outputs (circuits, `sweep.csv`) go to `target/stim-compare/`. `--extra
-NAME=PATH` adds a reference binary with `run_stim`'s CLI
-(`<tool> <circuit> <shots>`, printing `<x> µs/shot`).
+Python Stim (`uv run --with stim`) only generates circuits. Outputs (circuits,
+`sweep.csv`) go to `target/stim-compare/`. Each `--reference NAME=PATH` is a
+binary with `run_stim`'s CLI (`<tool> <circuit> <shots>`, printing
+`<x> µs/shot`); ratios are against the first.
 
 ## What is measured
 
@@ -30,10 +38,9 @@ NAME=PATH` adds a reference binary with `run_stim`'s CLI
 
 ## Caveats
 
-- **PyPI Stim** is a generic build and is called from Python once per shot,
-  which adds a few µs per shot. Per-shot comparisons on small circuits favor
-  ppvm; `gates.py` cancels the overhead. A natively built Stim
-  (`-march=native`) is the stricter baseline; pass it with `--extra`.
+- Compare against a native C++ build, as above. PyPI Stim is a generic build
+  and its per-shot Python call adds a few µs, which flatters ppvm on small
+  circuits.
 - **Instruction batching differs**: Stim merges consecutive same-gate
   instructions and shares measurement setup per instruction; ppvm's
   `stim-parser` does not merge (issue 291). See the design doc's Benchmarks

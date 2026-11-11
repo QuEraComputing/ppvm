@@ -1,9 +1,9 @@
 """Per-gate cost over size: a brickwork `CX` layer and a full `H` layer, on
-ppvm-tableau-2's `run_stim` and on official Stim. Each circuit is timed at two
-repeat counts; the difference removes per-shot overhead (simulator
-construction, the Python call).
+ppvm-tableau-2's `run_stim` and on reference binaries. Each circuit is timed at
+two repeat counts; the difference removes per-shot overhead (simulator
+construction).
 
-    uv run --no-project --with stim python gates.py [--extra NAME=PATH]...
+    python gates.py --reference stim=PATH [--size 64]... [--rounds 3]
 """
 
 import argparse
@@ -32,14 +32,15 @@ def layer(gate: str, n: int) -> tuple[str, int]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--extra", action="append", default=[])
+    parser.add_argument("--reference", action="append", default=[])
+    parser.add_argument("--size", action="append", type=int)
     parser.add_argument("--rounds", type=int, default=3)
     args = parser.parse_args()
     common.build_ppvm()
-    tools = common.tools(args.extra)
+    tools = common.tools(args.reference)
     (common.OUT / "gates").mkdir(parents=True, exist_ok=True)
     for gate in ("CX", "H"):
-        for n in SIZES:
+        for n in args.size or SIZES:
             body, count = layer(gate, n)
             paths = []
             for reps in REPEATS:

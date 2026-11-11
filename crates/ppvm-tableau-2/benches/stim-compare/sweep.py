@@ -1,14 +1,15 @@
 """Size sweep: Stim-generated Clifford memory circuits (see `circuits.py`) on
-ppvm-tableau-2's `run_stim` and on official Stim, alternating tools over a few
-rounds; median per tool. Writes the circuits and `sweep.csv` to
+ppvm-tableau-2's `run_stim` and on reference binaries, alternating tools over a
+few rounds; median per tool. Writes the circuits and `sweep.csv` to
 `target/stim-compare/`.
 
-    uv run --no-project --with stim python sweep.py [--rounds 3] [--max-qubits N]
-        [--family surface] [--extra NAME=PATH]...
+    uv run --no-project --with stim python sweep.py --reference stim=PATH
+        [--case surface:7]... [--family surface] [--max-qubits N] [--rounds 3]
 
-`--extra` adds a reference binary with `run_stim`'s CLI. Times are per shot,
-noise-free, gates/measurements/resets only; see the design doc's Benchmarks
-section for how instruction batching differs between the tools.
+Python Stim only generates the circuits; timing is against the references
+(e.g. `stim_driver`, see README.md). Times are per shot, noise-free,
+gates/measurements/resets only; see the design doc's Benchmarks section for how
+instruction batching differs between the tools.
 """
 
 import argparse
@@ -24,20 +25,27 @@ def main() -> None:
     parser.add_argument("--rounds", type=int, default=3)
     parser.add_argument("--max-qubits", type=int, default=10**9)
     parser.add_argument("--family", action="append")
-    parser.add_argument("--extra", action="append", default=[])
+    parser.add_argument(
+        "--case", action="append", help="family:distance, e.g. surface:7"
+    )
+    parser.add_argument("--reference", action="append", default=[])
     parser.add_argument(
         "--seconds", type=float, default=0.3, help="target runtime per measurement"
     )
     args = parser.parse_args()
 
     common.build_ppvm()
-    tools = common.tools(args.extra)
+    tools = common.tools(args.reference)
+    reference = list(tools)[1]
+    cases = {(f, int(d)) for f, d in (c.split(":") for c in args.case or [])}
     (common.OUT / "circuits").mkdir(parents=True, exist_ok=True)
     rows = []
     for family, task, distances in circuits.FAMILIES:
         if args.family and family not in args.family:
             continue
         for d in distances:
+            if cases and (family, d) not in cases:
+                continue
             text = circuits.generate(task, d)
             n = circuits.num_qubits(text)
             if n > args.max_qubits:
@@ -57,16 +65,14 @@ def main() -> None:
                 f"{name}_us": round(statistics.median(ts), 3)
                 for name, ts in times.items()
             }
-            row["ppvm_over_stim"] = round(row["ppvm_us"] / row["stim_us"], 3)
-            rows.append(row)
-            others = "  ".join(
-                f"{name} {row[f'{name}_us']:.1f}"
-                for name in tools
-                if name not in ("ppvm", "stim")
+            row[f"ppvm_over_{reference}"] = round(
+                row["ppvm_us"] / row[f"{reference}_us"], 3
             )
+            rows.append(row)
+            cells = "  ".join(f"{name} {row[f'{name}_us']:10.1f} µs" for name in tools)
+            ratio = row[f"ppvm_over_{reference}"]
             print(
-                f"{family:10} d={d:<4} {n:5} q  ppvm {row['ppvm_us']:10.1f} µs  stim {row['stim_us']:10.1f} µs"
-                f"  ppvm/stim {row['ppvm_over_stim']:.2f}  {others}",
+                f"{family:10} d={d:<4} {n:5} q  {cells}  ppvm/{reference} {ratio:.2f}",
                 flush=True,
             )
     with open(common.OUT / "sweep.csv", "w", newline="") as f:

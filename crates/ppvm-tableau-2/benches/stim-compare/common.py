@@ -1,6 +1,6 @@
-"""Running the timing tools: ppvm's `run_stim`, official Stim, and optional
-extra reference binaries with the same CLI (`<tool> <circuit> <shots>`,
-printing `<x> µs/shot` or `<x> us/shot`)."""
+"""Running the timing tools: ppvm's `run_stim` and reference binaries with
+the same CLI (`<tool> <circuit> <shots>`, printing `<x> µs/shot` or
+`<x> us/shot`), such as `stim_driver` built against a Stim checkout."""
 
 import pathlib
 import re
@@ -30,14 +30,13 @@ def build_ppvm() -> None:
     )
 
 
-def tools(extras: list[str]) -> dict[str, list[str]]:
-    """`ppvm`, `stim`, and `NAME=PATH` extras."""
-    found = {
-        "ppvm": [str(RUN_STIM)],
-        "stim": [sys.executable, str(HERE / "stim_bench.py")],
-    }
-    for extra in extras:
-        name, path = extra.split("=", 1)
+def tools(references: list[str]) -> dict[str, list[str]]:
+    """`ppvm`, then the `NAME=PATH` references in order."""
+    if not references:
+        sys.exit("give at least one --reference NAME=PATH (see README.md)")
+    found = {"ppvm": [str(RUN_STIM)]}
+    for reference in references:
+        name, path = reference.split("=", 1)
         found[name] = [path]
     return found
 

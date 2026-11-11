@@ -12,3 +12,4 @@ ppvm-traits-2 = { path = "../ppvm-traits-2" }
 [dev-dependencies]
 ppvm-pauli-word-2 = { path = "../ppvm-pauli-word-2" }
 ppvm-phased-pauli-word-2 = { path = "../ppvm-phased-pauli-word-2" }
+num-complex = "0.4.6"

@@ -2357,6 +2357,7 @@ dependencies = [
 name = "ppvm-tableau-2"
 version = "0.3.0"
 dependencies = [
+ "num-complex",
  "ppvm-pauli-kernels",
  "ppvm-pauli-word-2",
  "ppvm-phased-pauli-word-2",

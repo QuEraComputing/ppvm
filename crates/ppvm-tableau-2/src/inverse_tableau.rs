@@ -12,7 +12,9 @@
 //! by changing the alias. Where rows sit in the arena is decided only by
 //! `x_at` / `z_at`.
 
-use ppvm_pauli_kernels::row_product;
+use std::ops::Range;
+
+use ppvm_pauli_kernels::word_product;
 use ppvm_traits_2::ApplyGateRule;
 
 /// Storage word. Swap to benchmark other widths.
@@ -112,44 +114,28 @@ impl InverseTableau {
         flip_bit(&mut self.signs[r / BITWORD_BITS], r % BITWORD_BITS);
     }
 
-    /// Replace rows `rows[g]` by the images of their generators.
-    ///
-    /// `images[g] = (bits, flip)` says that generator `g` maps to
-    /// `(−1)^flip · P(bits)`, with `bits` over the generators in `rows` order
-    /// (X then Z per qubit). The new row is that product of the old rows.
-    fn recombine<const M: usize>(&mut self, rows: [usize; M], images: [([bool; M], bool); M]) {
-        let s = self.stride;
-        // Old rows, then new rows, each stored as [x | z].
-        let mut buf = vec![ZERO; 2 * M * 2 * s];
-        let (old, new) = buf.split_at_mut(M * 2 * s);
-        let mut old_negative = [false; M];
-        for (j, &r) in rows.iter().enumerate() {
-            let row = self.row(r);
-            old[2 * j * s..(2 * j + 1) * s].copy_from_slice(row.x);
-            old[(2 * j + 1) * s..(2 * j + 2) * s].copy_from_slice(row.z);
-            old_negative[j] = row.negative;
-        }
-        let mut new_negative = [false; M];
-        for (g, (bits, flip)) in images.iter().enumerate() {
-            let (nx, nz) = new[2 * g * s..(2 * g + 2) * s].split_at_mut(s);
-            // i per Y (P(bits) = i^#Y · X…Z… in generator order), −1 per flip.
-            let ys = bits.chunks(2).filter(|xz| xz[0] && xz[1]).count() as u32;
-            let mut e = ys + 2 * *flip as u32;
-            for j in (0..M).filter(|&j| bits[j]) {
-                let (ox, oz) = old[2 * j * s..(2 * j + 2) * s].split_at(s);
-                e += row_product(nx, nz, ox, oz) as u32 + 2 * old_negative[j] as u32;
-            }
-            debug_assert!(e.is_multiple_of(2), "recombined row is not Hermitian");
-            new_negative[g] = e % 4 == 2;
-        }
+    /// Starting phase of each new row, as a power of `i`: one `i` per Y in the
+    /// image, `−1` for its flip and `−1` per negative old row it multiplies.
+    fn initial_phases<const M: usize>(&self, rows: [usize; M], images: &[Image<M>; M]) -> [u32; M] {
+        images.map(|image| {
+            let negatives = (0..M).filter(|&j| image.factors[j] && self.row(rows[j]).negative);
+            image.y_count() + 2 * image.flip as u32 + 2 * negatives.count() as u32
+        })
+    }
+
+    /// Set each row's sign from its final phase (`i⁰ = +`, `i² = −`).
+    fn set_signs<const M: usize>(&mut self, rows: [usize; M], phases: [u32; M]) {
         for (g, &r) in rows.iter().enumerate() {
-            let (x, z) = (self.x_at(r), self.z_at(r));
-            self.words[x..x + s].copy_from_slice(&new[2 * g * s..(2 * g + 1) * s]);
-            self.words[z..z + s].copy_from_slice(&new[(2 * g + 1) * s..(2 * g + 2) * s]);
-            if self.row(r).negative != new_negative[g] {
+            debug_assert!(phases[g].is_multiple_of(2), "row is not Hermitian");
+            if self.row(r).negative != (phases[g] % 4 == 2) {
                 self.flip_sign(r);
             }
         }
+    }
+
+    fn xz(&self, r: usize) -> [Range<usize>; 2] {
+        let (x, z) = (self.x_at(r), self.z_at(r));
+        [x..x + self.stride, z..z + self.stride]
     }
 
     // Arrangement: blocks by row kind, ix-X, ix-Z, iz-X, iz-Z (#204's order).
@@ -166,20 +152,107 @@ impl InverseTableau {
     }
 }
 
+/// Where a gate sends one of its generators: `G† P G = (−1)^flip · P(factors)`.
+///
+/// The generators are X then Z for each gate qubit; `factors[j]` says whether
+/// the Hermitian Pauli `P(factors)` contains generator `j`.
+#[derive(Clone, Copy)]
+struct Image<const M: usize> {
+    factors: [bool; M],
+    flip: bool,
+}
+
+impl<const M: usize> Image<M> {
+    fn new((factors, flip): ([bool; M], bool)) -> Self {
+        Self { factors, flip }
+    }
+
+    /// Whether generator `g` maps to itself up to sign, so its row keeps its bits.
+    fn keeps_bits(&self, g: usize) -> bool {
+        (0..M).all(|j| self.factors[j] == (j == g))
+    }
+
+    /// Number of Y factors: an X and a Z on the same qubit.
+    fn y_count(&self) -> u32 {
+        self.factors.chunks(2).filter(|xz| xz[0] && xz[1]).count() as u32
+    }
+}
+
+/// Rewrite row `g` (X words `x[g]`, Z words `z[g]`) as `C⁻¹ (G† P_g G) C`.
+///
+/// Write the image as `(−1)^flip · i^#Y` times its generators in order (a Y is
+/// `i·X·Z`). Conjugating by `C` turns each generator into its old row, so the
+/// new row is the product of those old rows times `(−1)^flip · i^#Y`. For
+/// example `S` sends `X ↦ −Y = −i·X·Z`, so `ix ← −i · ix · iz`, and keeps `Z`,
+/// so `iz` stays.
+///
+/// The product is taken site by site, so the new words at index `w` depend
+/// only on the old words at `w`: each index is loaded, multiplied in registers
+/// and stored once. `phases[g]` (a power of `i`) comes in with the image's own
+/// factors and signs and collects each word's product phase.
+#[inline(always)]
+fn recombine<const M: usize>(
+    x: [&mut [BitWord]; M],
+    z: [&mut [BitWord]; M],
+    images: &[Image<M>; M],
+    phases: &mut [u32; M],
+) {
+    let len = x[0].len();
+    assert!(x.iter().chain(&z).all(|s| s.len() == len));
+    for w in 0..len {
+        let old_words: [[BitWord; 2]; M] = std::array::from_fn(|j| [x[j][w], z[j][w]]);
+        for (g, image) in images.iter().enumerate() {
+            if image.keeps_bits(g) {
+                continue;
+            }
+            let mut new_word = [ZERO; 2];
+            for j in (0..M).filter(|&j| image.factors[j]) {
+                let [ox, oz] = old_words[j];
+                let (product, k) = word_product(new_word[0], new_word[1], ox, oz);
+                new_word = product;
+                phases[g] = phases[g].wrapping_add(k);
+            }
+            x[g][w] = new_word[0];
+            z[g][w] = new_word[1];
+        }
+    }
+}
+
 /// Physical gates, `C ← G·C`: the new row for generator `P` is `C⁻¹ (G† P G) C`,
 /// so the rule evaluated on `P` names the old rows to multiply.
 impl ApplyGateRule for InverseTableau {
     type B = bool;
 
     fn apply1(&mut self, q: usize, rule: impl Fn(bool, bool) -> ([bool; 2], bool)) {
-        let images = [rule(true, false), rule(false, true)];
-        self.recombine([q, self.n + q], images);
+        let images = [rule(true, false), rule(false, true)].map(Image::new);
+        let rows = [q, self.n + q];
+        let mut phases = self.initial_phases(rows, &images);
+        let [[ix_x, ix_z], [iz_x, iz_z]] = rows.map(|r| self.xz(r));
+        let [ix_x, ix_z, iz_x, iz_z] = self
+            .words
+            .get_disjoint_mut([ix_x, ix_z, iz_x, iz_z])
+            .unwrap();
+        recombine([ix_x, iz_x], [ix_z, iz_z], &images, &mut phases);
+        self.set_signs(rows, phases);
     }
 
     fn apply2(&mut self, a: usize, b: usize, rule: impl Fn([bool; 4]) -> ([bool; 4], bool)) {
-        let unit = |j: usize| std::array::from_fn(|i| i == j);
-        let images = std::array::from_fn(|j| rule(unit(j)));
-        self.recombine([a, self.n + a, b, self.n + b], images);
+        let generator = |j: usize| std::array::from_fn(|i| i == j);
+        let images = std::array::from_fn(|j| Image::new(rule(generator(j))));
+        let rows = [a, self.n + a, b, self.n + b];
+        let mut phases = self.initial_phases(rows, &images);
+        let [[r0x, r0z], [r1x, r1z], [r2x, r2z], [r3x, r3z]] = rows.map(|r| self.xz(r));
+        let [r0x, r0z, r1x, r1z, r2x, r2z, r3x, r3z] = self
+            .words
+            .get_disjoint_mut([r0x, r0z, r1x, r1z, r2x, r2z, r3x, r3z])
+            .unwrap();
+        recombine(
+            [r0x, r1x, r2x, r3x],
+            [r0z, r1z, r2z, r3z],
+            &images,
+            &mut phases,
+        );
+        self.set_signs(rows, phases);
     }
 
     fn apply_sign1(&mut self, q: usize, rule: impl Fn(bool, bool) -> ([bool; 2], bool)) {

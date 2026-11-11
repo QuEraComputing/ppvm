@@ -24,15 +24,13 @@ impl InverseTableau {
     pub fn change_basis1(&mut self, v: usize, rule: impl Fn(bool, bool) -> ([bool; 2], bool)) {
         debug_assert!(v < self.n);
         let (w, m) = bit_position(v);
-        for (r, (x, z)) in self.row_offsets().enumerate() {
-            let (x, z) = (x + w, z + w);
-            let old = [self.words[x] & m != ZERO, self.words[z] & m != ZERO];
+        self.for_each_row(|x, z| {
+            let old = [x[w] & m != ZERO, z[w] & m != ZERO];
             let (new, flip) = rule(old[0], old[1]);
-            self.words[x] ^= m & mask_if(new[0] != old[0]);
-            self.words[z] ^= m & mask_if(new[1] != old[1]);
-            let (sw, sm) = bit_position(r);
-            self.signs[sw] ^= sm & mask_if(flip);
-        }
+            x[w] ^= m & mask_if(new[0] != old[0]);
+            z[w] ^= m & mask_if(new[1] != old[1]);
+            flip
+        });
     }
 
     /// Change the basis of virtual qubits `a`, `b` by the two-qubit Clifford
@@ -50,17 +48,20 @@ impl InverseTableau {
     ) {
         debug_assert!(a < self.n && b < self.n && a != b);
         let [(wa, ma), (wb, mb)] = [bit_position(a), bit_position(b)];
-        for (r, (x, z)) in self.row_offsets().enumerate() {
-            let words = [x + wa, z + wa, x + wb, z + wb];
-            let masks = [ma, ma, mb, mb];
-            let old: [bool; 4] = std::array::from_fn(|j| self.words[words[j]] & masks[j] != ZERO);
+        self.for_each_row(|x, z| {
+            let old = [
+                x[wa] & ma != ZERO,
+                z[wa] & ma != ZERO,
+                x[wb] & mb != ZERO,
+                z[wb] & mb != ZERO,
+            ];
             let (new, flip) = rule(old);
-            for j in 0..4 {
-                self.words[words[j]] ^= masks[j] & mask_if(new[j] != old[j]);
-            }
-            let (sw, sm) = bit_position(r);
-            self.signs[sw] ^= sm & mask_if(flip);
-        }
+            x[wa] ^= ma & mask_if(new[0] != old[0]);
+            z[wa] ^= ma & mask_if(new[1] != old[1]);
+            x[wb] ^= mb & mask_if(new[2] != old[2]);
+            z[wb] ^= mb & mask_if(new[3] != old[3]);
+            flip
+        });
     }
 
     /// Change basis by a pivot fan-out in one pass over the rows:
@@ -91,62 +92,39 @@ impl InverseTableau {
                 .all(|&t| t < self.n && t != pivot)
         );
         let (pw, pm) = bit_position(pivot);
-        let cx = cx_targets
-            .iter()
-            .map(|&t| bit_position(t))
-            .collect::<Vec<_>>();
-        let cz = cz_targets
-            .iter()
-            .map(|&t| bit_position(t))
-            .collect::<Vec<_>>();
-        for (r, (x, z)) in self.row_offsets().enumerate() {
-            let old_pivot = [
-                self.words[x + pw] & pm != ZERO,
-                self.words[z + pw] & pm != ZERO,
-            ];
+        self.for_each_row(|x, z| {
+            let old_pivot = [x[pw] & pm != ZERO, z[pw] & pm != ZERO];
             let (mut pivot_bits, mut flip) = (old_pivot, false);
-            for &(tw, tm) in &cx {
-                flip ^= target_step(
-                    &mut self.words,
-                    [x + tw, z + tw],
-                    tm,
-                    &mut pivot_bits,
-                    heisenberg::cnot,
-                );
+            for &t in cx_targets {
+                flip ^= target_step(x, z, t, &mut pivot_bits, heisenberg::cnot);
             }
-            for &(tw, tm) in &cz {
-                flip ^= target_step(
-                    &mut self.words,
-                    [x + tw, z + tw],
-                    tm,
-                    &mut pivot_bits,
-                    heisenberg::cz,
-                );
+            for &t in cz_targets {
+                flip ^= target_step(x, z, t, &mut pivot_bits, heisenberg::cz);
             }
             let (new_pivot, f) = last(pivot_bits[0], pivot_bits[1]);
-            self.words[x + pw] ^= pm & mask_if(new_pivot[0] != old_pivot[0]);
-            self.words[z + pw] ^= pm & mask_if(new_pivot[1] != old_pivot[1]);
-            let (sw, sm) = bit_position(r);
-            self.signs[sw] ^= sm & mask_if(flip ^ f);
-        }
+            x[pw] ^= pm & mask_if(new_pivot[0] != old_pivot[0]);
+            z[pw] ^= pm & mask_if(new_pivot[1] != old_pivot[1]);
+            flip ^ f
+        });
     }
 }
 
-/// Run a two-qubit `rule` on the pivot's bits (held in `pivot_bits`) and one
-/// target's bits (at `words[at]`, bit `mask`); store the target's changed bits.
+/// Run a two-qubit `rule` on the pivot's bits (held in `pivot_bits`) and
+/// target `t`'s bits in one row (`x`, `z`); store the target's changed bits.
 /// Returns the sign flip.
 #[inline(always)]
 fn target_step(
-    words: &mut [BitWord],
-    at: [usize; 2],
-    mask: BitWord,
+    x: &mut [BitWord],
+    z: &mut [BitWord],
+    t: usize,
     pivot_bits: &mut [bool; 2],
     rule: impl Fn([bool; 4]) -> ([bool; 4], bool),
 ) -> bool {
-    let old = at.map(|i| words[i] & mask != ZERO);
+    let (w, m) = bit_position(t);
+    let old = [x[w] & m != ZERO, z[w] & m != ZERO];
     let ([px, pz, tx, tz], flip) = rule([pivot_bits[0], pivot_bits[1], old[0], old[1]]);
-    words[at[0]] ^= mask & mask_if(tx != old[0]);
-    words[at[1]] ^= mask & mask_if(tz != old[1]);
+    x[w] ^= m & mask_if(tx != old[0]);
+    z[w] ^= m & mask_if(tz != old[1]);
     *pivot_bits = [px, pz];
     flip
 }

@@ -13,8 +13,8 @@
 //! - `virtual_gates`: changes of basis `C ← C·V`, which rewrite columns.
 //! - `measure`: Z measurement and reset of the stabilizer state.
 //!
-//! Where rows sit in the arena is decided only by `offsets` (used by `x_at`,
-//! `z_at` and `row_offsets`).
+//! Where rows sit in the arena is decided only in `data`: by `offsets` (used
+//! by `x_at`, `z_at`) and by `for_each_row`, which walks the same blocks.
 
 mod bitword;
 mod data;

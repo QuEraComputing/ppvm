@@ -3,7 +3,9 @@
 
 //! The tableau's storage: rows, signs, and where rows sit in the arena.
 
-use super::bitword::{BITWORD_BITS, BitWord, ZERO, flip_bit, get_bit};
+use super::bitword::{
+    BITWORD_BITS, BitWord, TOP_BIT, ZERO, bit_position, flip_bit, get_bit, mask_if,
+};
 
 /// The inverse tableau of an `n`-qubit Clifford.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -162,10 +164,41 @@ impl InverseTableau {
         Self::offsets(self.n, self.stride, kind, i).1
     }
 
-    /// `(x_at(r), z_at(r))` for every row in order, without a division per row.
-    pub(super) fn row_offsets(&self) -> impl Iterator<Item = (usize, usize)> + use<> {
+    /// Visit every row in order with its X words and Z words; `f` returns
+    /// whether the row's sign flips. Signs are updated a word (64 rows) at a
+    /// time. Walks the blocks of `offsets` directly: rows of one kind are
+    /// `stride` words apart.
+    #[inline(always)]
+    pub(super) fn for_each_row(
+        &mut self,
+        mut f: impl FnMut(&mut [BitWord], &mut [BitWord]) -> bool,
+    ) {
         let (n, stride) = (self.n, self.stride);
-        (0..2).flat_map(move |kind| (0..n).map(move |i| Self::offsets(n, stride, kind, i)))
+        if n == 0 {
+            return;
+        }
+        debug_assert_eq!(
+            Self::offsets(n, stride, 1, 0),
+            (2 * n * stride, 3 * n * stride)
+        );
+        let (ix, iz) = self.words.split_at_mut(2 * n * stride);
+        let (ix_x, ix_z) = ix.split_at_mut(n * stride);
+        let (iz_x, iz_z) = iz.split_at_mut(n * stride);
+        let (mut flips, mut r) = (ZERO, 0);
+        for (xs, zs) in [(ix_x, ix_z), (iz_x, iz_z)] {
+            for (x, z) in xs.chunks_exact_mut(stride).zip(zs.chunks_exact_mut(stride)) {
+                let (sw, sm) = bit_position(r);
+                flips |= sm & mask_if(f(x, z));
+                if sm == TOP_BIT {
+                    self.signs[sw] ^= flips;
+                    flips = ZERO;
+                }
+                r += 1;
+            }
+        }
+        if !r.is_multiple_of(BITWORD_BITS) {
+            self.signs[r / BITWORD_BITS] ^= flips;
+        }
     }
 }
 

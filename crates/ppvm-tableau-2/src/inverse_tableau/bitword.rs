@@ -9,6 +9,8 @@
 pub(super) type BitWord = u64;
 pub(super) const BITWORD_BITS: usize = BitWord::BITS as usize;
 pub(super) const ZERO: BitWord = 0;
+/// The highest bit of a word.
+pub(super) const TOP_BIT: BitWord = 1 << (BITWORD_BITS - 1);
 
 /// Bit `i` of a packed bit string.
 #[inline(always)]

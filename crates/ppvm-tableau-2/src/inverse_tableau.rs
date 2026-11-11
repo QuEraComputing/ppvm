@@ -22,14 +22,15 @@ type BitWord = u64;
 const BITWORD_BITS: usize = BitWord::BITS as usize;
 const ZERO: BitWord = 0;
 
+/// Bit `i` of a packed bit string.
 #[inline(always)]
-fn get_bit(w: BitWord, i: usize) -> bool {
-    (w >> i) & 1 == 1
+fn get_bit(words: &[BitWord], i: usize) -> bool {
+    (words[i / BITWORD_BITS] >> (i % BITWORD_BITS)) & 1 == 1
 }
 
 #[inline(always)]
-fn flip_bit(w: &mut BitWord, i: usize) {
-    *w ^= 1 << i;
+fn flip_bit(words: &mut [BitWord], i: usize) {
+    words[i / BITWORD_BITS] ^= 1 << (i % BITWORD_BITS);
 }
 
 /// The inverse tableau of an `n`-qubit Clifford.
@@ -56,12 +57,12 @@ pub struct RowRef<'a> {
 impl RowRef<'_> {
     /// X bit of the row at qubit `q`.
     pub fn x_bit(&self, q: usize) -> bool {
-        get_bit(self.x[q / BITWORD_BITS], q % BITWORD_BITS)
+        get_bit(self.x, q)
     }
 
     /// Z bit of the row at qubit `q`.
     pub fn z_bit(&self, q: usize) -> bool {
-        get_bit(self.z[q / BITWORD_BITS], q % BITWORD_BITS)
+        get_bit(self.z, q)
     }
 }
 
@@ -76,11 +77,9 @@ impl InverseTableau {
             signs: vec![ZERO; (2 * n).div_ceil(BITWORD_BITS)],
         };
         for q in 0..n {
-            let (w, b) = (q / BITWORD_BITS, q % BITWORD_BITS);
-            let ix = t.x_at(q) + w;
-            let iz = t.z_at(n + q) + w;
-            flip_bit(&mut t.words[ix], b);
-            flip_bit(&mut t.words[iz], b);
+            let (ix, iz) = (t.x_at(q), t.z_at(n + q));
+            flip_bit(&mut t.words[ix..], q);
+            flip_bit(&mut t.words[iz..], q);
         }
         t
     }
@@ -106,12 +105,12 @@ impl InverseTableau {
         RowRef {
             x: &self.words[x..x + self.stride],
             z: &self.words[z..z + self.stride],
-            negative: get_bit(self.signs[r / BITWORD_BITS], r % BITWORD_BITS),
+            negative: get_bit(&self.signs, r),
         }
     }
 
     fn flip_sign(&mut self, r: usize) {
-        flip_bit(&mut self.signs[r / BITWORD_BITS], r % BITWORD_BITS);
+        flip_bit(&mut self.signs, r);
     }
 
     /// Starting phase of each new row, as a power of `i`: one `i` per Y in the
@@ -133,6 +132,7 @@ impl InverseTableau {
         }
     }
 
+    /// Positions of row `r`'s X words and Z words in the arena.
     fn xz(&self, r: usize) -> [Range<usize>; 2] {
         let (x, z) = (self.x_at(r), self.z_at(r));
         [x..x + self.stride, z..z + self.stride]
@@ -176,6 +176,19 @@ impl<const M: usize> Image<M> {
     fn y_count(&self) -> u32 {
         self.factors.chunks(2).filter(|xz| xz[0] && xz[1]).count() as u32
     }
+
+    /// One word of the product of the old rows in `factors`, and its phase.
+    #[inline(always)]
+    fn multiply(&self, old_words: &[[BitWord; 2]; M]) -> ([BitWord; 2], u32) {
+        let mut word = [ZERO; 2];
+        let mut phase = 0u32;
+        for j in (0..M).filter(|&j| self.factors[j]) {
+            let (product, k) = word_product(word[0], word[1], old_words[j][0], old_words[j][1]);
+            word = product;
+            phase = phase.wrapping_add(k);
+        }
+        (word, phase)
+    }
 }
 
 /// Rewrite row `g` (X words `x[g]`, Z words `z[g]`) as `C⁻¹ (G† P_g G) C`.
@@ -201,19 +214,15 @@ fn recombine<const M: usize>(
     assert!(x.iter().chain(&z).all(|s| s.len() == len));
     for w in 0..len {
         let old_words: [[BitWord; 2]; M] = std::array::from_fn(|j| [x[j][w], z[j][w]]);
-        for (g, image) in images.iter().enumerate() {
-            if image.keeps_bits(g) {
-                continue;
-            }
-            let mut new_word = [ZERO; 2];
-            for j in (0..M).filter(|&j| image.factors[j]) {
-                let [ox, oz] = old_words[j];
-                let (product, k) = word_product(new_word[0], new_word[1], ox, oz);
-                new_word = product;
-                phases[g] = phases[g].wrapping_add(k);
-            }
-            x[g][w] = new_word[0];
-            z[g][w] = new_word[1];
+        for (g, image) in images
+            .iter()
+            .enumerate()
+            .filter(|(g, image)| !image.keeps_bits(*g))
+        {
+            let ([new_x, new_z], phase) = image.multiply(&old_words);
+            x[g][w] = new_x;
+            z[g][w] = new_z;
+            phases[g] = phases[g].wrapping_add(phase);
         }
     }
 }

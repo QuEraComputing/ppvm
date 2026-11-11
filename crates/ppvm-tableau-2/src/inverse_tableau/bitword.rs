@@ -48,3 +48,26 @@ pub(super) fn set_bits(words: &[BitWord]) -> impl Iterator<Item = usize> + '_ {
         })
     })
 }
+
+/// Transpose a 64 × 64 bit matrix in place: bit `j` of word `i` swaps with bit
+/// `i` of word `j`. Width-specific (64-bit words).
+#[inline(always)]
+pub(super) fn transpose_64x64(a: &mut [BitWord; 64]) {
+    const PASSES: [(BitWord, usize); 6] = [
+        (0x5555_5555_5555_5555, 1),
+        (0x3333_3333_3333_3333, 2),
+        (0x0F0F_0F0F_0F0F_0F0F, 4),
+        (0x00FF_00FF_00FF_00FF, 8),
+        (0x0000_FFFF_0000_FFFF, 16),
+        (0x0000_0000_FFFF_FFFF, 32),
+    ];
+    for (mask, shift) in PASSES {
+        for k in 0..64 {
+            if k & shift == 0 {
+                let (x, y) = (a[k], a[k + shift]);
+                a[k] = (x & mask) | ((y & mask) << shift);
+                a[k + shift] = ((x & !mask) >> shift) | (y & !mask);
+            }
+        }
+    }
+}

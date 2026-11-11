@@ -96,7 +96,7 @@ impl InverseTableau {
     // Arrangement: blocks by row kind, ix-X, ix-Z, iz-X, iz-Z (#204's order).
     // Row r is row i = r % n of kind r / n (0 for ix, 1 for iz).
     #[inline(always)]
-    fn offsets(n: usize, stride: usize, kind: usize, i: usize) -> (usize, usize) {
+    pub(super) fn offsets(n: usize, stride: usize, kind: usize, i: usize) -> (usize, usize) {
         (
             ((2 * kind) * n + i) * stride,
             ((2 * kind + 1) * n + i) * stride,

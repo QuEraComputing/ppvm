@@ -4,73 +4,177 @@
 //! Z measurement and reset of the stabilizer state `C |0…0⟩` (no active
 //! qubits).
 
-use ppvm_pauli_kernels::heisenberg;
+use ppvm_pauli_kernels::{Bits, heisenberg};
 use ppvm_traits_2::Clifford;
 
 use super::InverseTableau;
-use super::bitword::set_bits;
+use super::bitword::{BitWord, ZERO, set_bits};
+use super::transposed::TransposedTableau;
+
+/// Random targets a batch needs before `measure_many` transposes. Measured at
+/// 118 qubits: a batch of ~48 small collapses (the d=7 surface code) is faster
+/// strided, a batch of 118 is 2.8× faster transposed. The break-even should
+/// grow with `n` (transposing costs ~n²/64 words, a strided collapse ~n rows);
+/// retune with other sizes.
+const TRANSPOSE_THRESHOLD: usize = 64;
+
+/// What measuring needs from a tableau layout: row `iz_q` and the collapse.
+trait Collapse {
+    /// Columns where row `iz_q` has an X bit, ascending, into `out`.
+    fn iz_x_support(&self, q: usize, out: &mut Vec<usize>);
+    fn iz_z_bit(&self, q: usize, c: usize) -> bool;
+    fn iz_negative(&self, q: usize) -> bool;
+    /// `C ← C·V` with `V = CX(p, targets…) · last(p)`, where `last` is
+    /// [`collapse_last`] with these flags.
+    fn collapse(&mut self, pivot: usize, targets: &[usize], has_y: bool, fix_sign: bool);
+}
+
+/// The collapse's final gate on the pivot: `S` if it holds a Y, then `H`, then
+/// `X` if the sign calls for it. Generic so both layouts run the same rules.
+#[inline(always)]
+fn collapse_last<B: Bits>(has_y: bool, fix_sign: bool, x: B, z: B) -> ([B; 2], B) {
+    // `x & !x` is the zero flip (`Bits` has no zero constant).
+    let ([x, z], f1) = if has_y {
+        heisenberg::s(x, z)
+    } else {
+        ([x, z], x & !x)
+    };
+    let ([x, z], f2) = heisenberg::h(x, z);
+    let ([x, z], f3) = if fix_sign {
+        heisenberg::x(x, z)
+    } else {
+        ([x, z], x & !x)
+    };
+    ([x, z], f1 ^ f2 ^ f3)
+}
+
+/// Measure `Z_q` on `t` and collapse; `targets` is scratch.
+///
+/// Measuring `Z_q` is measuring `O = C⁻¹ Z_q C` (row `iz_q`) on `|0…0⟩`:
+///
+/// - **No X in `O`:** `O` is a signed Z string, so the outcome is its sign.
+/// - **X on some virtual qubits:** 50/50. Pick the lowest, `p`, as pivot
+///   and change basis so that `O` becomes `±Z_p`: `CX(p, v)` clears every
+///   other X (trivial on the state, since `p` is in `|0⟩`), leaving
+///   `O = s · X_p · Z…` or `s · Y_p · Z…`. The projected state on `p` is
+///   `|0⟩ ± |1⟩` (or `|0⟩ ± i|1⟩`), which `C ← C·H` (or `C·S·H`) and an
+///   `X` when the sign calls for it map back to `|0⟩`.
+fn measure_on<T: Collapse>(
+    t: &mut T,
+    q: usize,
+    coin: impl FnOnce() -> bool,
+    targets: &mut Vec<usize>,
+) -> bool {
+    targets.clear();
+    t.iz_x_support(q, targets);
+    if targets.is_empty() {
+        return t.iz_negative(q);
+    }
+    let pivot = targets.remove(0);
+    // The CXs reduce O to s · X_p or s · Y_p (times Z's); find which, and s,
+    // from row iz_q alone before changing the tableau.
+    let (mut pivot_bits, mut negative) = ([true, t.iz_z_bit(q, pivot)], t.iz_negative(q));
+    for &v in targets.iter() {
+        let ([px, pz, _, _], flip) =
+            heisenberg::cnot([pivot_bits[0], pivot_bits[1], true, t.iz_z_bit(q, v)]);
+        pivot_bits = [px, pz];
+        negative ^= flip;
+    }
+    let (has_y, outcome) = (pivot_bits[1], coin());
+    t.collapse(pivot, targets, has_y, outcome != negative);
+    outcome
+}
+
+impl Collapse for InverseTableau {
+    fn iz_x_support(&self, q: usize, out: &mut Vec<usize>) {
+        out.extend(set_bits(self.iz(q).x));
+    }
+
+    fn iz_z_bit(&self, q: usize, c: usize) -> bool {
+        self.iz(q).z_bit(c)
+    }
+
+    fn iz_negative(&self, q: usize) -> bool {
+        self.iz(q).negative
+    }
+
+    fn collapse(&mut self, pivot: usize, targets: &[usize], has_y: bool, fix_sign: bool) {
+        self.fan_out(pivot, targets, &[], |x, z| {
+            collapse_last(has_y, fix_sign, x, z)
+        });
+    }
+}
+
+impl Collapse for TransposedTableau {
+    fn iz_x_support(&self, q: usize, out: &mut Vec<usize>) {
+        out.extend((0..self.num_qubits()).filter(|&c| self.bits(1, q, c)[0]));
+    }
+
+    fn iz_z_bit(&self, q: usize, c: usize) -> bool {
+        self.bits(1, q, c)[1]
+    }
+
+    fn iz_negative(&self, q: usize) -> bool {
+        self.negative(1, q)
+    }
+
+    fn collapse(&mut self, pivot: usize, targets: &[usize], has_y: bool, fix_sign: bool) {
+        self.fan_out(pivot, targets, |x: BitWord, z: BitWord| {
+            collapse_last(has_y, fix_sign, x, z)
+        });
+    }
+}
 
 impl InverseTableau {
     /// Measure `Z_q` on `C |0…0⟩` and collapse; returns the outcome (`true`
-    /// for `|1⟩`). `coin` is called only if the outcome is random.
-    ///
-    /// Measuring `Z_q` is measuring `O = C⁻¹ Z_q C` (row `iz_q`) on `|0…0⟩`:
-    ///
-    /// - **No X in `O`:** `O` is a signed Z string, so the outcome is its sign.
-    /// - **X on some virtual qubits:** 50/50. Pick the lowest, `p`, as pivot
-    ///   and change basis so that `O` becomes `±Z_p`: `CX(p, v)` clears every
-    ///   other X (trivial on the state, since `p` is in `|0⟩`), leaving
-    ///   `O = s · X_p · Z…` or `s · Y_p · Z…`. The projected state on `p` is
-    ///   `|0⟩ ± |1⟩` (or `|0⟩ ± i|1⟩`), which `C ← C·H` (or `C·S·H`) and an
-    ///   `X` when the sign calls for it map back to `|0⟩`.
+    /// for `|1⟩`). `coin` is called only if the outcome is random. See
+    /// [`measure_on`] for the method.
     pub fn measure(&mut self, q: usize, coin: impl FnOnce() -> bool) -> bool {
-        let mut x_support = set_bits(self.iz(q).x);
-        let Some(pivot) = x_support.next() else {
-            return self.iz(q).negative;
-        };
-        let targets: Vec<usize> = x_support.collect();
-        // The CXs reduce O to s · X_p or s · Y_p (times Z's); find which, and s,
-        // from row iz_q alone before changing the tableau.
-        let row = self.iz(q);
-        let (mut pivot_bits, mut negative) = ([true, row.z_bit(pivot)], row.negative);
-        for &t in &targets {
-            let ([px, pz, _, _], flip) =
-                heisenberg::cnot([pivot_bits[0], pivot_bits[1], row.x_bit(t), row.z_bit(t)]);
-            pivot_bits = [px, pz];
-            negative ^= flip;
-        }
-        let (has_y, outcome) = (pivot_bits[1], coin());
-        let fix_sign = outcome != negative;
-        self.fan_out(pivot, &targets, &[], |x, z| {
-            let ([x, z], f1) = if has_y {
-                heisenberg::s(x, z)
-            } else {
-                ([x, z], false)
-            };
-            let ([x, z], f2) = heisenberg::h(x, z);
-            let ([x, z], f3) = if fix_sign {
-                heisenberg::x(x, z)
-            } else {
-                ([x, z], false)
-            };
-            ([x, z], f1 ^ f2 ^ f3)
-        });
-        outcome
+        measure_on(self, q, coin, &mut Vec::new())
     }
 
     /// Measure `Z_q` for each of `qubits` in order, collapsing after each, and
     /// write the outcomes to `outcomes`. `coin` is called once per random
-    /// outcome. Same result as calling [`measure`](Self::measure) in order;
-    /// a batch can share setup across its random targets.
+    /// outcome. Same result as calling [`measure`](Self::measure) in order.
+    ///
+    /// With at least `TRANSPOSE_THRESHOLD` random targets, the batch runs on a
+    /// column-major copy: two transposes, then each collapse a few words per
+    /// 64 rows instead of one bit per row.
     pub fn measure_many(
+        &mut self,
+        qubits: &[usize],
+        coin: impl FnMut() -> bool,
+        outcomes: &mut [bool],
+    ) {
+        // Count random targets only as far as the decision needs.
+        let transpose = qubits.len() >= TRANSPOSE_THRESHOLD
+            && qubits
+                .iter()
+                .filter(|&&q| self.iz(q).x.iter().any(|&w| w != ZERO))
+                .nth(TRANSPOSE_THRESHOLD - 1)
+                .is_some();
+        self.measure_many_with(qubits, coin, outcomes, transpose);
+    }
+
+    fn measure_many_with(
         &mut self,
         qubits: &[usize],
         mut coin: impl FnMut() -> bool,
         outcomes: &mut [bool],
+        transpose: bool,
     ) {
         assert_eq!(qubits.len(), outcomes.len());
-        for (&q, outcome) in qubits.iter().zip(outcomes) {
-            *outcome = self.measure(q, &mut coin);
+        let mut targets = Vec::new();
+        if transpose {
+            let mut columns = TransposedTableau::from_rows(self);
+            for (&q, outcome) in qubits.iter().zip(outcomes) {
+                *outcome = measure_on(&mut columns, q, &mut coin, &mut targets);
+            }
+            columns.write_rows(self);
+        } else {
+            for (&q, outcome) in qubits.iter().zip(outcomes) {
+                *outcome = measure_on(self, q, &mut coin, &mut targets);
+            }
         }
     }
 
@@ -118,7 +222,8 @@ mod tests {
         }
     }
 
-    /// `measure_many` equals measuring one qubit at a time with the same coins.
+    /// `measure_many` equals measuring one qubit at a time with the same coins,
+    /// on both the row-major and the column-major path.
     #[test]
     fn measure_many_matches_measure() {
         for (i, n) in SIZES.into_iter().enumerate() {
@@ -137,9 +242,7 @@ mod tests {
                     s & 1 == 1
                 }
             };
-            let (mut batched, mut single) = (start.clone(), start);
-            let mut outcomes = vec![false; qubits.len()];
-            batched.measure_many(&qubits, coins(7), &mut outcomes);
+            let mut single = start.clone();
             let mut coin = coins(7);
             let mut expected = Vec::new();
             // `&mut coin` is needed: `coin` is reused across iterations.
@@ -147,8 +250,13 @@ mod tests {
             for &q in &qubits {
                 expected.push(single.measure(q, &mut coin));
             }
-            assert_eq!(outcomes, expected, "n = {n}");
-            assert_eq!(batched, single, "n = {n}");
+            for transpose in [false, true] {
+                let mut batched = start.clone();
+                let mut outcomes = vec![false; qubits.len()];
+                batched.measure_many_with(&qubits, coins(7), &mut outcomes, transpose);
+                assert_eq!(outcomes, expected, "n = {n}, transpose = {transpose}");
+                assert_eq!(batched, single, "n = {n}, transpose = {transpose}");
+            }
         }
     }
 

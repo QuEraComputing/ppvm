@@ -12,6 +12,7 @@
 //! - `physical_gates`: physical gates `C ← G·C`, which mix rows.
 //! - `virtual_gates`: changes of basis `C ← C·V`, which rewrite columns.
 //! - `measure`: Z measurement and reset of the stabilizer state.
+//! - `transposed`: a column-major copy for batches of changes of basis.
 //!
 //! Where rows sit in the arena is decided only in `data`: by `offsets` (used
 //! by `x_at`, `z_at`) and by `for_each_row`, which walks the same blocks.
@@ -22,6 +23,7 @@ mod measure;
 mod physical_gates;
 #[cfg(test)]
 mod test_support;
+mod transposed;
 mod virtual_gates;
 
 pub use data::{InverseTableau, RowRef};

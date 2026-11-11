@@ -8,7 +8,11 @@ size (118 qubits). Run with the `run_stim` example; per-operation cost is
   no single gate dominates.
 - mr_batched: 10 rounds of H on all, 128 random CX, one MR over all qubits
   (random collapses with fan-outs).
-- mr_split: the same with one MR per instruction (no per-instruction batching).
+- mr_split: the same with one MR per instruction. Stim's parser merges
+  consecutive same-gate instructions back into one, so for Stim this equals
+  mr_batched.
+- mr_unfused: mr_split with a TICK after each MR, which Stim cannot merge:
+  really one target per instruction.
 
 Regenerate with `python3 gen.py` in this directory (seeded, deterministic).
 """
@@ -44,3 +48,4 @@ for _ in range(10):
     rounds.append("MR " + " ".join(map(str, range(n))))
 write("mr_batched", rounds)
 write("mr_split", [l if not l.startswith("MR") else "\n".join(f"MR {q}" for q in range(n)) for l in rounds])
+write("mr_unfused", [l if not l.startswith("MR") else "\n".join(f"MR {q}\nTICK" for q in range(n)) for l in rounds])

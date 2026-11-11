@@ -29,18 +29,32 @@ impl InverseTableau {
             return self.iz(q).negative;
         };
         let targets: Vec<usize> = x_support.collect();
-        for v in targets {
-            self.change_basis2(pivot, v, heisenberg::cnot);
+        // The CXs reduce O to s · X_p or s · Y_p (times Z's); find which, and s,
+        // from row iz_q alone before changing the tableau.
+        let row = self.iz(q);
+        let (mut pivot_bits, mut negative) = ([true, row.z_bit(pivot)], row.negative);
+        for &t in &targets {
+            let ([px, pz, _, _], flip) =
+                heisenberg::cnot([pivot_bits[0], pivot_bits[1], row.x_bit(t), row.z_bit(t)]);
+            pivot_bits = [px, pz];
+            negative ^= flip;
         }
-        let (has_y, negative) = (self.iz(q).z_bit(pivot), self.iz(q).negative);
-        if has_y {
-            self.change_basis1(pivot, heisenberg::s);
-        }
-        self.change_basis1(pivot, heisenberg::h);
-        let outcome = coin();
-        if outcome != negative {
-            self.change_basis1(pivot, heisenberg::x);
-        }
+        let (has_y, outcome) = (pivot_bits[1], coin());
+        let fix_sign = outcome != negative;
+        self.fan_out(pivot, &targets, &[], |x, z| {
+            let ([x, z], f1) = if has_y {
+                heisenberg::s(x, z)
+            } else {
+                ([x, z], false)
+            };
+            let ([x, z], f2) = heisenberg::h(x, z);
+            let ([x, z], f3) = if fix_sign {
+                heisenberg::x(x, z)
+            } else {
+                ([x, z], false)
+            };
+            ([x, z], f1 ^ f2 ^ f3)
+        });
         outcome
     }
 

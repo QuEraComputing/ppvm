@@ -4,6 +4,8 @@
 //! Hybrid stabilizer simulation: an inverse tableau plus a dense vector over
 //! the active qubits. Design: `docs/design/hybrid-tableau.md`.
 
+mod active;
 mod inverse_tableau;
 
+pub use active::{ActiveState, AxisPauli, DenseState, Rotation};
 pub use inverse_tableau::{InverseTableau, RowRef};

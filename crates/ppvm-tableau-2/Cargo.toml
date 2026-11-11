@@ -6,11 +6,11 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+num-complex = "0.4.6"
 ppvm-pauli-kernels = { path = "../ppvm-pauli-kernels" }
 ppvm-traits-2 = { path = "../ppvm-traits-2" }
 
 [dev-dependencies]
 ppvm-pauli-word-2 = { path = "../ppvm-pauli-word-2" }
 ppvm-phased-pauli-word-2 = { path = "../ppvm-phased-pauli-word-2" }
-num-complex = "0.4.6"
 stim-parser = { path = "../stim-parser" }

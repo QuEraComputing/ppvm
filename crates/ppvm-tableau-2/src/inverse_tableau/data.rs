@@ -77,8 +77,14 @@ impl InverseTableau {
         RowRef {
             x: &self.words[x..x + self.stride],
             z: &self.words[z..z + self.stride],
-            negative: get_bit(&self.signs, r),
+            negative: self.negative(r),
         }
+    }
+
+    /// Whether row `r` has sign `−`.
+    #[inline(always)]
+    pub(super) fn negative(&self, r: usize) -> bool {
+        get_bit(&self.signs, r)
     }
 
     pub(super) fn flip_sign(&mut self, r: usize) {
@@ -95,14 +101,48 @@ impl InverseTableau {
         )
     }
 
+    /// The X words and the Z words of distinct rows, mutably.
+    ///
+    /// Panics unless every row is in range and no row repeats: that is what
+    /// makes the ranges disjoint, so this is the one place that checks it.
+    #[inline(always)]
+    pub(super) fn rows_mut<const R: usize>(
+        &mut self,
+        rows: [usize; R],
+    ) -> ([&mut [BitWord]; R], [&mut [BitWord]; R]) {
+        for (i, &r) in rows.iter().enumerate() {
+            assert!(r < 2 * self.n, "row {r} out of range");
+            assert!(!rows[..i].contains(&r), "row {r} repeated");
+        }
+        let (xs, zs) = (rows.map(|r| self.x_at(r)), rows.map(|r| self.z_at(r)));
+        let (stride, words) = (self.stride, self.words.as_mut_ptr());
+        // SAFETY: distinct rows in range own disjoint `stride`-word ranges of
+        // `words`, and the slices borrow `self` mutably for their lifetime.
+        unsafe {
+            (
+                xs.map(|x| std::slice::from_raw_parts_mut(words.add(x), stride)),
+                zs.map(|z| std::slice::from_raw_parts_mut(words.add(z), stride)),
+            )
+        }
+    }
+
+    /// Kind and index of row `r < 2n`, without dividing.
+    #[inline(always)]
+    fn kind_and_index(&self, r: usize) -> (usize, usize) {
+        let kind = usize::from(r >= self.n);
+        (kind, r - kind * self.n)
+    }
+
     #[inline(always)]
     pub(super) fn x_at(&self, r: usize) -> usize {
-        Self::offsets(self.n, self.stride, r / self.n, r % self.n).0
+        let (kind, i) = self.kind_and_index(r);
+        Self::offsets(self.n, self.stride, kind, i).0
     }
 
     #[inline(always)]
     pub(super) fn z_at(&self, r: usize) -> usize {
-        Self::offsets(self.n, self.stride, r / self.n, r % self.n).1
+        let (kind, i) = self.kind_and_index(r);
+        Self::offsets(self.n, self.stride, kind, i).1
     }
 
     /// `(x_at(r), z_at(r))` for every row in order, without a division per row.

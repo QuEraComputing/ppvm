@@ -3,8 +3,6 @@
 
 //! Physical gates, `C ← G·C`: they mix whole rows.
 
-use std::ops::Range;
-
 use ppvm_pauli_kernels::word_product;
 use ppvm_traits_2::ApplyGateRule;
 
@@ -91,7 +89,7 @@ impl InverseTableau {
     /// image, `−1` for its flip and `−1` per negative old row it multiplies.
     fn initial_phases<const M: usize>(&self, rows: [usize; M], images: &[Image<M>; M]) -> [u32; M] {
         images.map(|image| {
-            let negatives = (0..M).filter(|&j| image.factors[j] && self.row(rows[j]).negative);
+            let negatives = (0..M).filter(|&j| image.factors[j] && self.negative(rows[j]));
             image.y_count() + 2 * image.flip as u32 + 2 * negatives.count() as u32
         })
     }
@@ -100,16 +98,10 @@ impl InverseTableau {
     fn set_signs<const M: usize>(&mut self, rows: [usize; M], phases: [u32; M]) {
         for (g, &r) in rows.iter().enumerate() {
             debug_assert!(phases[g].is_multiple_of(2), "row is not Hermitian");
-            if self.row(r).negative != (phases[g] % 4 == 2) {
+            if self.negative(r) != (phases[g] % 4 == 2) {
                 self.flip_sign(r);
             }
         }
-    }
-
-    /// Positions of row `r`'s X words and Z words in the arena.
-    fn xz(&self, r: usize) -> [Range<usize>; 2] {
-        let (x, z) = (self.x_at(r), self.z_at(r));
-        [x..x + self.stride, z..z + self.stride]
     }
 }
 
@@ -122,12 +114,8 @@ impl ApplyGateRule for InverseTableau {
         let images = [rule(true, false), rule(false, true)].map(Image::new);
         let rows = [q, self.n + q];
         let mut phases = self.initial_phases(rows, &images);
-        let [[ix_x, ix_z], [iz_x, iz_z]] = rows.map(|r| self.xz(r));
-        let [ix_x, ix_z, iz_x, iz_z] = self
-            .words
-            .get_disjoint_mut([ix_x, ix_z, iz_x, iz_z])
-            .unwrap();
-        recombine([ix_x, iz_x], [ix_z, iz_z], &images, &mut phases);
+        let (x, z) = self.rows_mut(rows);
+        recombine(x, z, &images, &mut phases);
         self.set_signs(rows, phases);
     }
 
@@ -136,17 +124,8 @@ impl ApplyGateRule for InverseTableau {
         let images = std::array::from_fn(|j| Image::new(rule(generator(j))));
         let rows = [a, self.n + a, b, self.n + b];
         let mut phases = self.initial_phases(rows, &images);
-        let [[r0x, r0z], [r1x, r1z], [r2x, r2z], [r3x, r3z]] = rows.map(|r| self.xz(r));
-        let [r0x, r0z, r1x, r1z, r2x, r2z, r3x, r3z] = self
-            .words
-            .get_disjoint_mut([r0x, r0z, r1x, r1z, r2x, r2z, r3x, r3z])
-            .unwrap();
-        recombine(
-            [r0x, r1x, r2x, r3x],
-            [r0z, r1z, r2z, r3z],
-            &images,
-            &mut phases,
-        );
+        let (x, z) = self.rows_mut(rows);
+        recombine(x, z, &images, &mut phases);
         self.set_signs(rows, phases);
     }
 

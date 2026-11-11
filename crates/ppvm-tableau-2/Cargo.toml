@@ -13,3 +13,4 @@ ppvm-traits-2 = { path = "../ppvm-traits-2" }
 ppvm-pauli-word-2 = { path = "../ppvm-pauli-word-2" }
 ppvm-phased-pauli-word-2 = { path = "../ppvm-phased-pauli-word-2" }
 num-complex = "0.4.6"
+stim-parser = { path = "../stim-parser" }

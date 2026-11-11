@@ -3,7 +3,7 @@
 
 //! Physical gates, `C ← G·C`: they mix whole rows.
 
-use ppvm_pauli_kernels::word_product;
+use ppvm_pauli_kernels::{row_product, word_product};
 use ppvm_traits_2::ApplyGateRule;
 
 use super::InverseTableau;
@@ -27,6 +27,12 @@ impl<const M: usize> Image<M> {
     /// Whether generator `g` maps to itself up to sign, so its row keeps its bits.
     fn keeps_bits(&self, g: usize) -> bool {
         (0..M).all(|j| self.factors[j] == (j == g))
+    }
+
+    /// Whether row `g` becomes itself times rows that keep their bits, so it can
+    /// be multiplied in place (CX, CZ, S, √X and their inverses).
+    fn multiplies_in_place(&self, g: usize, images: &[Image<M>; M]) -> bool {
+        self.factors[g] && (0..M).all(|j| j == g || !self.factors[j] || images[j].keeps_bits(j))
     }
 
     /// Number of Y factors: an X and a Z on the same qubit.
@@ -84,6 +90,44 @@ fn recombine<const M: usize>(
     }
 }
 
+/// `(&mut v[g], &v[j])` for `g ≠ j`.
+fn pair<T>(v: &mut [T], g: usize, j: usize) -> (&mut T, &T) {
+    if g < j {
+        let (lo, hi) = v.split_at_mut(j);
+        (&mut lo[g], &hi[0])
+    } else {
+        let (lo, hi) = v.split_at_mut(g);
+        (&mut hi[0], &lo[j])
+    }
+}
+
+/// The in-place path: each changed row `g` is multiplied by its other factors
+/// with `row_product`, like Stim's `zs[t] *= zs[c]`.
+///
+/// That computes `R_g · R_j …` with `R_g` first, while the image is a product
+/// in generator order; moving `R_g` past an earlier factor costs `−1` when the
+/// two anticommute, i.e. when they are the X and Z rows of one qubit.
+#[inline(always)]
+fn multiply_in_place<const M: usize>(
+    mut x: [&mut [BitWord]; M],
+    mut z: [&mut [BitWord]; M],
+    images: &[Image<M>; M],
+    phases: &mut [u32; M],
+) {
+    for (g, image) in images.iter().enumerate() {
+        if image.keeps_bits(g) {
+            continue;
+        }
+        for j in (0..M).filter(|&j| j != g && image.factors[j]) {
+            let (dst_x, src_x) = pair(&mut x, g, j);
+            let (dst_z, src_z) = pair(&mut z, g, j);
+            let k = row_product(dst_x, dst_z, src_x, src_z);
+            let reorder = if j < g && j / 2 == g / 2 { 2 } else { 0 };
+            phases[g] = phases[g].wrapping_add(u32::from(k) + reorder);
+        }
+    }
+}
+
 impl InverseTableau {
     /// Starting phase of each new row, as a power of `i`: one `i` per Y in the
     /// image, `−1` for its flip and `−1` per negative old row it multiplies.
@@ -92,6 +136,23 @@ impl InverseTableau {
             let negatives = (0..M).filter(|&j| image.factors[j] && self.negative(rows[j]));
             image.y_count() + 2 * image.flip as u32 + 2 * negatives.count() as u32
         })
+    }
+
+    /// Replace each row in `rows` by its image's product of old rows: in place
+    /// when the pattern allows it, else with the fused pass. The choice depends
+    /// only on the images, which are constants for a given gate.
+    #[inline(always)]
+    fn rewrite_rows<const M: usize>(&mut self, rows: [usize; M], images: &[Image<M>; M]) {
+        let mut phases = self.initial_phases(rows, images);
+        let in_place =
+            (0..M).all(|g| images[g].keeps_bits(g) || images[g].multiplies_in_place(g, images));
+        let (x, z) = self.rows_mut(rows);
+        if in_place {
+            multiply_in_place(x, z, images, &mut phases);
+        } else {
+            recombine(x, z, images, &mut phases);
+        }
+        self.set_signs(rows, phases);
     }
 
     /// Set each row's sign from its final phase (`i⁰ = +`, `i² = −`).
@@ -113,20 +174,14 @@ impl ApplyGateRule for InverseTableau {
     fn apply1(&mut self, q: usize, rule: impl Fn(bool, bool) -> ([bool; 2], bool)) {
         let images = [rule(true, false), rule(false, true)].map(Image::new);
         let rows = [q, self.n + q];
-        let mut phases = self.initial_phases(rows, &images);
-        let (x, z) = self.rows_mut(rows);
-        recombine(x, z, &images, &mut phases);
-        self.set_signs(rows, phases);
+        self.rewrite_rows(rows, &images);
     }
 
     fn apply2(&mut self, a: usize, b: usize, rule: impl Fn([bool; 4]) -> ([bool; 4], bool)) {
         let generator = |j: usize| std::array::from_fn(|i| i == j);
         let images = std::array::from_fn(|j| Image::new(rule(generator(j))));
         let rows = [a, self.n + a, b, self.n + b];
-        let mut phases = self.initial_phases(rows, &images);
-        let (x, z) = self.rows_mut(rows);
-        recombine(x, z, &images, &mut phases);
-        self.set_signs(rows, phases);
+        self.rewrite_rows(rows, &images);
     }
 
     fn apply_sign1(&mut self, q: usize, rule: impl Fn(bool, bool) -> ([bool; 2], bool)) {

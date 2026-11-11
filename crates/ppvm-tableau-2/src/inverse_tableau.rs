@@ -33,6 +33,18 @@ fn flip_bit(words: &mut [BitWord], i: usize) {
     words[i / BITWORD_BITS] ^= 1 << (i % BITWORD_BITS);
 }
 
+/// Word index and mask of bit `i`.
+#[inline(always)]
+fn bit_position(i: usize) -> (usize, BitWord) {
+    (i / BITWORD_BITS, 1 << (i % BITWORD_BITS))
+}
+
+/// All ones if `b`, else zero (for branch-free masked updates).
+#[inline(always)]
+fn mask_if(b: bool) -> BitWord {
+    ZERO.wrapping_sub(BitWord::from(b))
+}
+
 /// The inverse tableau of an `n`-qubit Clifford.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InverseTableau {
@@ -138,17 +150,84 @@ impl InverseTableau {
         [x..x + self.stride, z..z + self.stride]
     }
 
+    /// Change the basis of virtual qubit `v` by the one-qubit Clifford `V`
+    /// whose Heisenberg rule is `rule`: `C ← C·V`.
+    ///
+    /// Updates the tableau only. The state `C (|φ⟩ ⊗ |0…0⟩)` stays the same if
+    /// the caller also applies `V†` to `φ`, or if `V` acts trivially on it (e.g.
+    /// `v` dormant and `V` fixes `|0⟩`).
+    ///
+    /// Every row `R` becomes `V† R V`: the rule runs on each row's bits in
+    /// column `v`. Strided: one word per row.
+    ///
+    /// Used by: dormant-pivot collapse (`H` on the pivot, `X` to fix the
+    /// outcome), active collapse (the final rotation onto `Z_h`), reset.
+    pub fn change_basis1(&mut self, v: usize, rule: impl Fn(bool, bool) -> ([bool; 2], bool)) {
+        debug_assert!(v < self.n);
+        let (w, m) = bit_position(v);
+        for (r, (x, z)) in self.row_offsets().enumerate() {
+            let (x, z) = (x + w, z + w);
+            let old = [self.words[x] & m != ZERO, self.words[z] & m != ZERO];
+            let (new, flip) = rule(old[0], old[1]);
+            self.words[x] ^= m & mask_if(new[0] != old[0]);
+            self.words[z] ^= m & mask_if(new[1] != old[1]);
+            let (sw, sm) = bit_position(r);
+            self.signs[sw] ^= sm & mask_if(flip);
+        }
+    }
+
+    /// Change the basis of virtual qubits `a`, `b` by the two-qubit Clifford
+    /// `V` whose Heisenberg rule is `rule` (`a` is the control for controlled
+    /// gates): `C ← C·V`. Same contract as [`change_basis1`](Self::change_basis1).
+    ///
+    /// Used by: T-gate localization (`CX(p, v)` collects the X bits of `O` onto
+    /// the pivot `p`), dormant-pivot collapse (`CX(p, v)`, `CZ(p, c)`), active
+    /// collapse (the `CX` / `CZ` that reduce `P` to one qubit).
+    pub fn change_basis2(
+        &mut self,
+        a: usize,
+        b: usize,
+        rule: impl Fn([bool; 4]) -> ([bool; 4], bool),
+    ) {
+        debug_assert!(a < self.n && b < self.n && a != b);
+        let [(wa, ma), (wb, mb)] = [bit_position(a), bit_position(b)];
+        for (r, (x, z)) in self.row_offsets().enumerate() {
+            let words = [x + wa, z + wa, x + wb, z + wb];
+            let masks = [ma, ma, mb, mb];
+            let old: [bool; 4] = std::array::from_fn(|j| self.words[words[j]] & masks[j] != ZERO);
+            let (new, flip) = rule(old);
+            for j in 0..4 {
+                self.words[words[j]] ^= masks[j] & mask_if(new[j] != old[j]);
+            }
+            let (sw, sm) = bit_position(r);
+            self.signs[sw] ^= sm & mask_if(flip);
+        }
+    }
+
     // Arrangement: blocks by row kind, ix-X, ix-Z, iz-X, iz-Z (#204's order).
+    // Row r is row i = r % n of kind r / n (0 for ix, 1 for iz).
+    #[inline(always)]
+    fn offsets(n: usize, stride: usize, kind: usize, i: usize) -> (usize, usize) {
+        (
+            ((2 * kind) * n + i) * stride,
+            ((2 * kind + 1) * n + i) * stride,
+        )
+    }
+
     #[inline(always)]
     fn x_at(&self, r: usize) -> usize {
-        let (kind, i) = (r / self.n, r % self.n);
-        ((2 * kind) * self.n + i) * self.stride
+        Self::offsets(self.n, self.stride, r / self.n, r % self.n).0
     }
 
     #[inline(always)]
     fn z_at(&self, r: usize) -> usize {
-        let (kind, i) = (r / self.n, r % self.n);
-        ((2 * kind + 1) * self.n + i) * self.stride
+        Self::offsets(self.n, self.stride, r / self.n, r % self.n).1
+    }
+
+    /// `(x_at(r), z_at(r))` for every row in order, without a division per row.
+    fn row_offsets(&self) -> impl Iterator<Item = (usize, usize)> + use<> {
+        let (n, stride) = (self.n, self.stride);
+        (0..2).flat_map(move |kind| (0..n).map(move |i| Self::offsets(n, stride, kind, i)))
     }
 }
 
@@ -434,6 +513,58 @@ mod tests {
                 apply(&mut t, gate);
                 assert_canonical_commutation(&t);
             }
+        }
+    }
+
+    type Rule1 = fn(bool, bool) -> ([bool; 2], bool);
+    type Rule2 = fn([bool; 4]) -> ([bool; 4], bool);
+
+    /// `gate` as a change of basis on virtual qubits, `C ← C·V`.
+    fn change_basis(t: &mut InverseTableau, gate: Gate) {
+        use ppvm_pauli_kernels::heisenberg as rules;
+        let one: [Rule1; 10] = [
+            rules::x,
+            rules::y,
+            rules::z,
+            rules::h,
+            rules::s,
+            rules::s_dag,
+            rules::sqrt_x,
+            rules::sqrt_x_dag,
+            rules::sqrt_y,
+            rules::sqrt_y_dag,
+        ];
+        let two: [Rule2; 3] = [rules::cnot, rules::cz, rules::cy];
+        match gate {
+            Gate::One(g, v) => t.change_basis1(v, one[g]),
+            Gate::Two(g, a, b) => t.change_basis2(a, b, two[g]),
+        }
+    }
+
+    #[test]
+    fn change_basis_preserves_commutation() {
+        for (i, n) in [1, 2, 7, 65].into_iter().enumerate() {
+            let mut t = InverseTableau::new(n);
+            for gate in random_circuit(n, 100, 0xba5e + i as u64) {
+                change_basis(&mut t, gate);
+                assert_canonical_commutation(&t);
+            }
+        }
+    }
+
+    /// `(G·C)·V = G·(C·V)`: the order of physical gates relative to changes of
+    /// basis does not matter.
+    #[test]
+    fn physical_gates_commute_with_changes_of_basis() {
+        for (i, n) in SIZES.into_iter().filter(|&n| n > 1).enumerate() {
+            let physical = random_circuit(n, 100, 0xc0de + i as u64);
+            let basis = random_circuit(n, 100, 0xfeed + i as u64);
+            let (mut first, mut second) = (InverseTableau::new(n), InverseTableau::new(n));
+            physical.iter().for_each(|&g| apply(&mut first, g));
+            basis.iter().for_each(|&g| change_basis(&mut first, g));
+            basis.iter().for_each(|&g| change_basis(&mut second, g));
+            physical.iter().for_each(|&g| apply(&mut second, g));
+            assert_eq!(first, second, "n = {n}");
         }
     }
 }

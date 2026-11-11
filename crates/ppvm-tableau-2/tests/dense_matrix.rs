@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Physical gates against dense matrices: row `ix_q` must equal `C† X_q C` and
+//! Gates against dense matrices: row `ix_q` must equal `C† X_q C` and
 //! `iz_q` must equal `C† Z_q C`, with `C` the product of textbook gate matrices.
 //! No Pauli code is shared with the tableau.
 
@@ -144,6 +144,31 @@ fn apply(t: &mut InverseTableau, gate: Gate) {
     }
 }
 
+type Rule1 = fn(bool, bool) -> ([bool; 2], bool);
+type Rule2 = fn([bool; 4]) -> ([bool; 4], bool);
+
+/// `gate` as a change of basis on virtual qubits, `C ← C·V`.
+fn change_basis(t: &mut InverseTableau, gate: Gate) {
+    use ppvm_pauli_kernels::heisenberg as rules;
+    let one: [Rule1; 10] = [
+        rules::x,
+        rules::y,
+        rules::z,
+        rules::h,
+        rules::s,
+        rules::s_dag,
+        rules::sqrt_x,
+        rules::sqrt_x_dag,
+        rules::sqrt_y,
+        rules::sqrt_y_dag,
+    ];
+    let two: [Rule2; 3] = [rules::cnot, rules::cz, rules::cy];
+    match gate {
+        Gate::One(g, v) => t.change_basis1(v, one[g]),
+        Gate::Two(g, a, b) => t.change_basis2(a, b, two[g]),
+    }
+}
+
 fn matrix(gate: Gate, n: usize) -> Mat {
     let u = gate_matrices();
     match gate {
@@ -249,7 +274,8 @@ fn key(t: &InverseTableau) -> u64 {
         })
 }
 
-/// Every gate on every two-qubit Clifford. Visiting the whole group also
+/// Every gate, physical and as a change of basis, on every two-qubit
+/// Clifford. Visiting the whole group also
 /// checks that the tableaux reached are exactly its 11520 elements.
 #[test]
 fn every_gate_on_every_two_qubit_clifford() {
@@ -265,6 +291,15 @@ fn every_gate_on_every_two_qubit_clifford() {
             apply(&mut next, gate);
             let next_cliff = matrix(gate, n).mul(&cliff);
             assert_rows_match(&next, &next_cliff, &paulis, &format!("{gate:?}"));
+            let mut rebased = t.clone();
+            change_basis(&mut rebased, gate);
+            let rebased_cliff = cliff.mul(&matrix(gate, n));
+            assert_rows_match(
+                &rebased,
+                &rebased_cliff,
+                &paulis,
+                &format!("basis {gate:?}"),
+            );
             if seen.insert(key(&next)) {
                 queue.push_back((next, next_cliff));
             }
@@ -273,7 +308,8 @@ fn every_gate_on_every_two_qubit_clifford() {
     assert_eq!(seen.len(), 11520);
 }
 
-/// Random three-qubit circuits, covering two-qubit gates on non-adjacent qubits.
+/// Random three-qubit circuits mixing physical gates and changes of basis,
+/// covering two-qubit gates on non-adjacent qubits.
 #[test]
 fn random_three_qubit_circuits() {
     let n = 3;
@@ -288,8 +324,13 @@ fn random_three_qubit_circuits() {
             seed ^= seed >> 7;
             seed ^= seed << 17;
             let gate = gates[seed as usize % gates.len()];
-            apply(&mut t, gate);
-            cliff = matrix(gate, n).mul(&cliff);
+            if seed >> 63 == 0 {
+                apply(&mut t, gate);
+                cliff = matrix(gate, n).mul(&cliff);
+            } else {
+                change_basis(&mut t, gate);
+                cliff = cliff.mul(&matrix(gate, n));
+            }
         }
         assert_rows_match(&t, &cliff, &paulis, &format!("round {round}"));
     }

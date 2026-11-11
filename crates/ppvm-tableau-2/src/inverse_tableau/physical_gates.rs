@@ -192,11 +192,12 @@ impl InverseTableau {
         }
     }
 
-    /// Replace each row in `rows` by its image's product of old rows: in place
+    /// Replace each row of `qubits` by its image's product of old rows: in place
     /// when the pattern allows it, else with the fused pass. The choice depends
     /// only on the images, which are constants for a given gate.
     #[inline(always)]
-    fn rewrite_rows<const M: usize>(&mut self, rows: [usize; M], images: &[Image<M>; M]) {
+    fn rewrite_rows<const M: usize>(&mut self, qubits: &[usize], images: &[Image<M>; M]) {
+        let rows = self.qubit_rows(qubits);
         let mut phases = self.initial_phases(rows, images);
         let in_place = {
             let changed = changed_rows(images);
@@ -206,7 +207,7 @@ impl InverseTableau {
             }
             all
         };
-        let (x, z) = self.rows_mut(rows);
+        let (x, z) = self.qubit_rows_mut(qubits);
         if in_place {
             multiply_in_place(x, z, images, &mut phases);
         } else {
@@ -223,8 +224,7 @@ impl ApplyGateRule for InverseTableau {
 
     fn apply1(&mut self, q: usize, rule: impl Fn(bool, bool) -> ([bool; 2], bool)) {
         let images = [rule(true, false), rule(false, true)].map(Image::new);
-        let rows = [q, self.n + q];
-        self.rewrite_rows(rows, &images);
+        self.rewrite_rows(&[q], &images);
     }
 
     fn apply2(&mut self, a: usize, b: usize, rule: impl Fn([bool; 4]) -> ([bool; 4], bool)) {
@@ -235,8 +235,7 @@ impl ApplyGateRule for InverseTableau {
             rule([false, false, false, true]),
         ]
         .map(Image::new);
-        let rows = [a, self.n + a, b, self.n + b];
-        self.rewrite_rows(rows, &images);
+        self.rewrite_rows(&[a, b], &images);
     }
 
     fn apply_sign1(&mut self, q: usize, rule: impl Fn(bool, bool) -> ([bool; 2], bool)) {

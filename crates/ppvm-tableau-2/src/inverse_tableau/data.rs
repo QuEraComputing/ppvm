@@ -101,23 +101,40 @@ impl InverseTableau {
         )
     }
 
-    /// The X words and the Z words of distinct rows, mutably.
-    ///
-    /// Panics unless every row is in range and no row repeats: that is what
-    /// makes the ranges disjoint, so this is the one place that checks it.
+    /// The rows of `qubits` in generator order: `ix_q`, `iz_q` per qubit. `M`
+    /// is twice the number of qubits.
     #[inline(always)]
-    pub(super) fn rows_mut<const R: usize>(
-        &mut self,
-        rows: [usize; R],
-    ) -> ([&mut [BitWord]; R], [&mut [BitWord]; R]) {
-        for (i, &r) in rows.iter().enumerate() {
-            assert!(r < 2 * self.n, "row {r} out of range");
-            assert!(!rows[..i].contains(&r), "row {r} repeated");
+    pub(super) fn qubit_rows<const M: usize>(&self, qubits: &[usize]) -> [usize; M] {
+        let mut rows = [0; M];
+        for (k, &q) in qubits.iter().enumerate() {
+            rows[2 * k] = q;
+            rows[2 * k + 1] = self.n + q;
         }
+        rows
+    }
+
+    /// The X words and the Z words of the rows of distinct qubits, in the
+    /// order of [`qubit_rows`](Self::qubit_rows), mutably.
+    ///
+    /// Panics unless every qubit is in range and no qubit repeats: distinct
+    /// qubits own distinct rows, which makes the ranges disjoint, so this is
+    /// the one place that checks it.
+    #[inline(always)]
+    pub(super) fn qubit_rows_mut<const M: usize>(
+        &mut self,
+        qubits: &[usize],
+    ) -> ([&mut [BitWord]; M], [&mut [BitWord]; M]) {
+        assert_eq!(M, 2 * qubits.len());
+        for (i, &q) in qubits.iter().enumerate() {
+            assert!(q < self.n, "qubit {q} out of range");
+            assert!(!qubits[..i].contains(&q), "qubit {q} repeated");
+        }
+        let rows: [usize; M] = self.qubit_rows(qubits);
         let (xs, zs) = (rows.map(|r| self.x_at(r)), rows.map(|r| self.z_at(r)));
         let (stride, words) = (self.stride, self.words.as_mut_ptr());
-        // SAFETY: distinct rows in range own disjoint `stride`-word ranges of
-        // `words`, and the slices borrow `self` mutably for their lifetime.
+        // SAFETY: distinct qubits in range own distinct rows, whose
+        // `stride`-word ranges of `words` are disjoint; the slices borrow
+        // `self` mutably for their lifetime.
         unsafe {
             (
                 xs.map(|x| std::slice::from_raw_parts_mut(words.add(x), stride)),

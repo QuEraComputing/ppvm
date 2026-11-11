@@ -142,6 +142,8 @@ mod tests {
             batched.measure_many(&qubits, coins(7), &mut outcomes);
             let mut coin = coins(7);
             let mut expected = Vec::new();
+            // `&mut coin` is needed: `coin` is reused across iterations.
+            #[allow(clippy::needless_borrows_for_generic_args)]
             for &q in &qubits {
                 expected.push(single.measure(q, &mut coin));
             }

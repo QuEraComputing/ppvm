@@ -20,13 +20,15 @@ use ppvm_traits_2::Clifford;
 use stim_parser::instructions::{GateName, MeasureName};
 use stim_parser::prelude::{Instruction, Target};
 
+/// One gate, or one measurement instruction over `targets[at..at + len]`
+/// (kept together so they run as one `measure_many`).
 #[derive(Clone, Copy)]
 enum Op {
     One(GateName, usize),
     Two(GateName, usize, usize),
-    Measure(usize),
+    Measure { at: usize, len: usize },
     Reset(usize),
-    MeasureReset(usize),
+    MeasureReset { at: usize, len: usize },
 }
 
 fn qubits(targets: &[Target]) -> Vec<usize> {
@@ -36,8 +38,9 @@ fn qubits(targets: &[Target]) -> Vec<usize> {
         .collect()
 }
 
-/// Flatten the program into ops, unrolling `REPEAT` blocks.
-fn lower(instructions: &[Instruction], ops: &mut Vec<Op>) {
+/// Flatten the program into ops, unrolling `REPEAT` blocks. Measurement
+/// targets go to `targets`.
+fn lower(instructions: &[Instruction], ops: &mut Vec<Op>, targets: &mut Vec<usize>) {
     for instruction in instructions {
         match instruction {
             Instruction::Gate(g) => {
@@ -52,16 +55,18 @@ fn lower(instructions: &[Instruction], ops: &mut Vec<Op>) {
                     name => ops.extend(qs.iter().map(|&q| Op::One(name, q))),
                 }
             }
-            Instruction::Measure(m) => match m.name {
-                MeasureName::M | MeasureName::MZ => {
-                    ops.extend(m.targets.iter().map(|&q| Op::Measure(q)))
-                }
-                MeasureName::MR => ops.extend(m.targets.iter().map(|&q| Op::MeasureReset(q))),
-                other => panic!("unsupported measurement {other:?}"),
-            },
+            Instruction::Measure(m) => {
+                let (at, len) = (targets.len(), m.targets.len());
+                targets.extend_from_slice(&m.targets);
+                ops.push(match m.name {
+                    MeasureName::M | MeasureName::MZ => Op::Measure { at, len },
+                    MeasureName::MR => Op::MeasureReset { at, len },
+                    other => panic!("unsupported measurement {other:?}"),
+                });
+            }
             Instruction::Repeat { count, body, .. } => {
                 let mut block = Vec::new();
-                lower(body, &mut block);
+                lower(body, &mut block, targets);
                 for _ in 0..*count {
                     ops.extend_from_slice(&block);
                 }
@@ -102,16 +107,20 @@ fn main() {
     let shots: usize = args.next().map_or(1000, |s| s.parse().expect("shots"));
     let program = stim_parser::parse(&std::fs::read_to_string(&path).expect("read circuit"))
         .unwrap_or_else(|e| panic!("parse error: {e:?}"));
-    let mut ops = Vec::new();
-    lower(&program.instructions, &mut ops);
+    let (mut ops, mut targets) = (Vec::new(), Vec::new());
+    lower(&program.instructions, &mut ops, &mut targets);
     let n = 1 + ops
         .iter()
-        .map(|op| match *op {
-            Op::Two(_, a, b) => a.max(b),
-            Op::One(_, q) | Op::Measure(q) | Op::Reset(q) | Op::MeasureReset(q) => q,
+        .flat_map(|op| match *op {
+            Op::Two(_, a, b) => vec![a, b],
+            Op::One(_, q) | Op::Reset(q) => vec![q],
+            Op::Measure { at, len } | Op::MeasureReset { at, len } => {
+                targets[at..at + len].to_vec()
+            }
         })
         .max()
         .expect("empty circuit");
+    let mut outcomes = vec![false; targets.len()];
 
     let mut seed = 0x9e37_79b9_7f4a_7c15u64;
     let mut coin = move || {
@@ -132,23 +141,36 @@ fn main() {
             match op {
                 Op::One(name, q) => apply_one(&mut t, name, q),
                 Op::Two(name, a, b) => apply_two(&mut t, name, a, b),
-                Op::Measure(q) => parity ^= t.measure(q, &mut flip),
+                Op::Measure { at, len } => {
+                    let out = &mut outcomes[..len];
+                    t.measure_many(&targets[at..at + len], &mut flip, out);
+                    parity ^= out.iter().fold(false, |p, &m| p ^ m);
+                }
                 Op::Reset(q) => t.reset(q, &mut flip),
-                Op::MeasureReset(q) => {
-                    let m = t.measure(q, &mut flip);
-                    parity ^= m;
-                    if m {
-                        t.x(q);
+                Op::MeasureReset { at, len } => {
+                    let out = &mut outcomes[..len];
+                    t.measure_many(&targets[at..at + len], &mut flip, out);
+                    for (&q, &m) in targets[at..at + len].iter().zip(out.iter()) {
+                        parity ^= m;
+                        if m {
+                            t.x(q);
+                        }
                     }
                 }
             }
         }
     }
     let elapsed = start.elapsed().as_secs_f64();
-    let measurements = ops
-        .iter()
-        .filter(|op| matches!(op, Op::Measure(_) | Op::MeasureReset(_)))
-        .count();
+    let count = |reset: bool| -> usize {
+        ops.iter()
+            .map(|op| match *op {
+                Op::Measure { len, .. } | Op::MeasureReset { len, .. } => len,
+                Op::Reset(_) => usize::from(reset),
+                _ => 0,
+            })
+            .sum()
+    };
+    let measurements = count(false);
     println!(
         "{path}: {n} qubits, {} ops ({measurements} measurements) per shot, {shots} shots",
         ops.len()
@@ -157,11 +179,6 @@ fn main() {
         "{:.1} µs/shot, {:.0} shots/s, {:.1}% of measurements and resets random (parity {parity})",
         elapsed / shots as f64 * 1e6,
         shots as f64 / elapsed,
-        100.0 * random as f64
-            / (shots
-                * ops
-                    .iter()
-                    .filter(|op| !matches!(op, Op::One(..) | Op::Two(..)))
-                    .count()) as f64,
+        100.0 * random as f64 / (shots * count(true)) as f64,
     );
 }

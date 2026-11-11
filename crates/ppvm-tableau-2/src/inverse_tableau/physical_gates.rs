@@ -4,7 +4,7 @@
 //! Physical gates, `C ← G·C`: they mix whole rows.
 
 use ppvm_pauli_kernels::{row_product, word_product};
-use ppvm_traits_2::ApplyGateRule;
+use ppvm_traits_2::{ApplyGateRule, CliffordBatch};
 
 use super::InverseTableau;
 use super::bitword::{BitWord, ZERO};
@@ -249,6 +249,10 @@ impl ApplyGateRule for InverseTableau {
         }
     }
 }
+
+/// The default loops are right here: gates on different qubits touch disjoint
+/// rows, so a batch has no shared work to fuse.
+impl CliffordBatch for InverseTableau {}
 
 #[cfg(test)]
 mod tests {

@@ -58,6 +58,22 @@ impl InverseTableau {
         outcome
     }
 
+    /// Measure `Z_q` for each of `qubits` in order, collapsing after each, and
+    /// write the outcomes to `outcomes`. `coin` is called once per random
+    /// outcome. Same result as calling [`measure`](Self::measure) in order;
+    /// a batch can share setup across its random targets.
+    pub fn measure_many(
+        &mut self,
+        qubits: &[usize],
+        mut coin: impl FnMut() -> bool,
+        outcomes: &mut [bool],
+    ) {
+        assert_eq!(qubits.len(), outcomes.len());
+        for (&q, outcome) in qubits.iter().zip(outcomes) {
+            *outcome = self.measure(q, &mut coin);
+        }
+    }
+
     /// Reset qubit `q` to `|0⟩`: measure it, then flip it if it was `|1⟩`.
     pub fn reset(&mut self, q: usize, coin: impl FnOnce() -> bool) {
         if self.measure(q, coin) {
@@ -99,6 +115,38 @@ mod tests {
                 t.measure(k % n, || k % 3 == 0);
                 assert_canonical_commutation(&t);
             }
+        }
+    }
+
+    /// `measure_many` equals measuring one qubit at a time with the same coins.
+    #[test]
+    fn measure_many_matches_measure() {
+        for (i, n) in SIZES.into_iter().enumerate() {
+            let mut start = InverseTableau::new(n);
+            random_circuit(n, 150, 0xba7c + i as u64)
+                .into_iter()
+                .for_each(|g| apply(&mut start, g));
+            // Every qubit, then a repeat, so later targets see earlier collapses.
+            let qubits: Vec<usize> = (0..n).rev().chain([0]).collect();
+            let coins = |seed: u64| {
+                let mut s = seed | 1;
+                move || {
+                    s ^= s << 13;
+                    s ^= s >> 7;
+                    s ^= s << 17;
+                    s & 1 == 1
+                }
+            };
+            let (mut batched, mut single) = (start.clone(), start);
+            let mut outcomes = vec![false; qubits.len()];
+            batched.measure_many(&qubits, coins(7), &mut outcomes);
+            let mut coin = coins(7);
+            let expected: Vec<bool> = qubits
+                .iter()
+                .map(|&q| single.measure(q, &mut coin))
+                .collect();
+            assert_eq!(outcomes, expected, "n = {n}");
+            assert_eq!(batched, single, "n = {n}");
         }
     }
 

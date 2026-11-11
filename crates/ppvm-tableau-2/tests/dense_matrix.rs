@@ -3,7 +3,8 @@
 
 //! Gates against dense matrices: row `ix_q` must equal `C† X_q C` and
 //! `iz_q` must equal `C† Z_q C`, with `C` the product of textbook gate matrices.
-//! No Pauli code is shared with the tableau.
+//! Measurements are checked against a state vector. No Pauli code is shared
+//! with the tableau.
 
 use std::collections::{HashSet, VecDeque};
 
@@ -333,5 +334,146 @@ fn random_three_qubit_circuits() {
             }
         }
         assert_rows_match(&t, &cliff, &paulis, &format!("round {round}"));
+    }
+}
+
+/// Row `ix_q` (or `iz_q`) as a signed Pauli matrix.
+fn row_matrix(t: &InverseTableau, q: usize, z: bool, paulis: &Paulis) -> Mat {
+    let (code, negative) = row_code(t, q, z);
+    let mut m = paulis.table[code].clone();
+    if negative {
+        m.a.iter_mut().for_each(|e| *e = -*e);
+    }
+    m
+}
+
+/// `⟨0…0| C⁻¹ P C |0…0⟩` for the Pauli string `code`, from the rows alone:
+/// `P = i^#Y · ∏ X_q^x Z_q^z`, so `C⁻¹ P C = i^#Y · ∏ ix_q^x iz_q^z`.
+fn tableau_expectation(t: &InverseTableau, code: usize, paulis: &Paulis) -> C {
+    let n = t.num_qubits();
+    let mut m = Mat::identity(n);
+    let mut phase = c(1.0, 0.0);
+    for q in 0..n {
+        let (x, z) = ((code >> q) & 1 == 1, (code >> (n + q)) & 1 == 1);
+        if x {
+            m = m.mul(&row_matrix(t, q, false, paulis));
+        }
+        if z {
+            m = m.mul(&row_matrix(t, q, true, paulis));
+        }
+        if x && z {
+            phase *= c(0.0, 1.0);
+        }
+    }
+    phase * m.a[0]
+}
+
+fn apply_to_state(m: &Mat, v: &[C]) -> Vec<C> {
+    (0..m.d)
+        .map(|i| (0..m.d).map(|j| m.a[i * m.d + j] * v[j]).sum())
+        .collect()
+}
+
+fn state_expectation(v: &[C], p: &Mat) -> C {
+    let pv = apply_to_state(p, v);
+    v.iter().zip(&pv).map(|(a, b)| a.conj() * b).sum()
+}
+
+/// Probability that qubit `q` is `|1⟩`.
+fn probability_one(v: &[C], q: usize) -> f64 {
+    v.iter()
+        .enumerate()
+        .filter(|(i, _)| (i >> q) & 1 == 1)
+        .map(|(_, a)| a.norm_sqr())
+        .sum()
+}
+
+/// Project onto outcome `m` of qubit `q` and renormalize.
+fn project(v: &mut [C], q: usize, m: bool) {
+    v.iter_mut()
+        .enumerate()
+        .filter(|(i, _)| ((i >> q) & 1 == 1) != m)
+        .for_each(|(_, a)| *a = C::default());
+    let norm = v.iter().map(|a| a.norm_sqr()).sum::<f64>().sqrt();
+    v.iter_mut().for_each(|a| *a /= norm);
+}
+
+/// Measure `q` on both the tableau and the state vector, forcing `forced` when
+/// the outcome is random. The tableau must call the coin exactly when the
+/// state vector says the outcome is random.
+fn measure_both(t: &mut InverseTableau, v: &mut [C], q: usize, forced: bool) -> bool {
+    let p1 = probability_one(v, q);
+    let random = p1 > 1e-9 && p1 < 1.0 - 1e-9;
+    if random {
+        assert!(
+            (p1 - 0.5).abs() < 1e-9,
+            "random outcome must be 50/50, got {p1}"
+        );
+    }
+    let mut called = false;
+    let m = t.measure(q, || {
+        called = true;
+        forced
+    });
+    assert_eq!(called, random, "coin called iff the outcome is random");
+    if !random {
+        assert_eq!(m, p1 > 0.5, "deterministic outcome");
+    }
+    project(v, q, m);
+    m
+}
+
+/// Random three-qubit circuits with measurements and resets: after every step,
+/// all 64 Pauli expectations from the tableau match the state vector.
+#[test]
+fn measurements_match_the_state_vector() {
+    let n = 3;
+    let gates = all_gates(n);
+    let paulis = Paulis::new(n);
+    let x = gate_matrices()[0];
+    let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+    let mut next = move || {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        seed as usize
+    };
+    for round in 0..30 {
+        let mut t = InverseTableau::new(n);
+        let mut v = vec![C::default(); 1 << n];
+        v[0] = c(1.0, 0.0);
+        for step in 0..60 {
+            let (q, forced) = (next() % n, next() % 2 == 1);
+            match next() % 10 {
+                0..7 => {
+                    let gate = gates[next() % gates.len()];
+                    apply(&mut t, gate);
+                    v = apply_to_state(&matrix(gate, n), &v);
+                }
+                7..9 => {
+                    measure_both(&mut t, &mut v, q, forced);
+                }
+                _ => {
+                    let m = measure_both(&mut t, &mut v, q, forced);
+                    let mut t_reset = t.clone();
+                    t_reset.reset(q, || unreachable!("qubit was just measured"));
+                    if m {
+                        t.x(q);
+                        v = apply_to_state(&single(x, q, n), &v);
+                    }
+                    assert_eq!(t, t_reset, "reset = measure + conditional X");
+                }
+            }
+            for code in 0..1usize << (2 * n) {
+                let (from_rows, from_state) = (
+                    tableau_expectation(&t, code, &paulis),
+                    state_expectation(&v, &paulis.table[code]),
+                );
+                assert!(
+                    (from_rows - from_state).norm() < 1e-9,
+                    "round {round} step {step}: Pauli {code:#b}: tableau {from_rows}, state {from_state}"
+                );
+            }
+        }
     }
 }

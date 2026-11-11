@@ -11,12 +11,14 @@
 //! - `bitword`: the storage word; the only code that knows its width.
 //! - `physical`: physical gates `C ← G·C`, which mix rows.
 //! - `virtual_side`: changes of basis `C ← C·V`, which rewrite columns.
+//! - `measure`: Z measurement and reset of the stabilizer state.
 //!
 //! Where rows sit in the arena is decided only by `offsets` (used by `x_at`,
 //! `z_at` and `row_offsets`).
 
 mod bitword;
 mod data;
+mod measure;
 mod physical;
 #[cfg(test)]
 mod test_support;

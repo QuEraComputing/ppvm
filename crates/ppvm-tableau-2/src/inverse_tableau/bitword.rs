@@ -32,3 +32,17 @@ pub(super) fn bit_position(i: usize) -> (usize, BitWord) {
 pub(super) fn mask_if(b: bool) -> BitWord {
     ZERO.wrapping_sub(BitWord::from(b))
 }
+
+/// Indices of the set bits of a packed bit string, ascending.
+pub(super) fn set_bits(words: &[BitWord]) -> impl Iterator<Item = usize> + '_ {
+    words.iter().enumerate().flat_map(|(w, &word)| {
+        let mut rest = word;
+        std::iter::from_fn(move || {
+            (rest != ZERO).then(|| {
+                let b = rest.trailing_zeros() as usize;
+                rest &= rest - 1;
+                w * BITWORD_BITS + b
+            })
+        })
+    })
+}

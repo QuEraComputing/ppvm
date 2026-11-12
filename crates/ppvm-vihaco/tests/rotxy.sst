@@ -1,15 +1,41 @@
-device circuit.n_qubits 1;
+sst v1
+.section(root):
+    .section(ppvm):
+    .header(ppvm):
+        circuit.n_qubits 1;
+        metadata {
+            strings: ["main", "rotxy.sst"],
+            functions: [
+                {
+                    name: 0, // main
+                    signature: { params: [], ret: [] },
+                    local_count: 0,
+                    start_address: 0,
+                    end_address: 7,
+                    file: 1,
+                },
+            ],
+            labels: [],
+            constants: [],
+            main_function: 0, // main
+            source_symbols: [],
+            extra: {},
+        };
+    .header(ppvm).
+    .text(ppvm):
+        fn @main() {
+            // R(axis_angle = π/2, θ = π) == RY(π), so |0> is sent to |1>.
+            // Stack order for `circuit.r`: qubit, then axis_angle, then theta.
+            execution::program::const_u64 0
+            execution::program::const_f64 1.5707963267948966
+            execution::program::const_f64 3.141592653589793
+            circuit::circuit::r
 
-fn @main() {
-    // R(axis_angle = π/2, θ = π) == RY(π), so |0> is sent to |1>.
-    // Stack order for `circuit.r`: qubit, then axis_angle, then theta.
-    cpu::cpu.const u64, 0
-    cpu::cpu.const f64, 1.5707963267948966
-    cpu::cpu.const f64, 3.141592653589793
-    circuit::circuit.r
+            execution::program::const_u64 0
+            circuit::circuit::measure
 
-    cpu::cpu.const u64, 0
-    circuit::circuit.measure
-
-    cpu::cpu.ret 0
-}
+            execution::program::ret 0
+        }
+    .text(ppvm).
+    .section(ppvm).
+.section(root).

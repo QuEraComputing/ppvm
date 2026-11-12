@@ -49,3 +49,18 @@ debug = "line-tables-only"
 
 [[example]]
 name = "symbolic"
+
+# TODO: drop once vihaco#170 (program::breakpoint) is released.
+[patch.crates-io]
+vihaco = { git = "https://github.com/QuEraComputing/vihaco", branch = "feat/program-breakpoint-span" }
+vihaco-abi = { git = "https://github.com/QuEraComputing/vihaco", branch = "feat/program-breakpoint-span" }
+vihaco-abi-derive = { git = "https://github.com/QuEraComputing/vihaco", branch = "feat/program-breakpoint-span" }
+vihaco-bytecode = { git = "https://github.com/QuEraComputing/vihaco", branch = "feat/program-breakpoint-span" }
+vihaco-cpu = { git = "https://github.com/QuEraComputing/vihaco", branch = "feat/program-breakpoint-span" }
+vihaco-module = { git = "https://github.com/QuEraComputing/vihaco", branch = "feat/program-breakpoint-span" }
+vihaco-parser = { git = "https://github.com/QuEraComputing/vihaco", branch = "feat/program-breakpoint-span" }
+vihaco-parser-derive = { git = "https://github.com/QuEraComputing/vihaco", branch = "feat/program-breakpoint-span" }
+vihaco-runtime = { git = "https://github.com/QuEraComputing/vihaco", branch = "feat/program-breakpoint-span" }
+vihaco-runtime-derive = { git = "https://github.com/QuEraComputing/vihaco", branch = "feat/program-breakpoint-span" }
+vihaco-stdlib = { git = "https://github.com/QuEraComputing/vihaco", branch = "feat/program-breakpoint-span" }
+vihaco-syntax = { git = "https://github.com/QuEraComputing/vihaco", branch = "feat/program-breakpoint-span" }

@@ -1,65 +1,103 @@
-device circuit.n_qubits 1;
+sst v1
+.section(root):
+    .section(ppvm):
+    .header(ppvm):
+        circuit.n_qubits 1;
+        metadata {
+            strings: ["main", "arithmetic.sst", "check_div", "check_rem", "check_mul", "check_add", "fail_sub", "fail_div", "fail_rem", "fail_mul", "fail_add", "fail", "success"],
+            functions: [
+                {
+                    name: 0, // main
+                    signature: { params: [], ret: [] },
+                    local_count: 0,
+                    start_address: 0,
+                    end_address: 41,
+                    file: 1,
+                },
+            ],
+            labels: [
+                { name: 2, address: 6 }, // check_div
+                { name: 3, address: 12 }, // check_rem
+                { name: 4, address: 18 }, // check_mul
+                { name: 5, address: 24 }, // check_add
+                { name: 6, address: 30 }, // fail_sub
+                { name: 7, address: 31 }, // fail_div
+                { name: 8, address: 32 }, // fail_rem
+                { name: 9, address: 33 }, // fail_mul
+                { name: 10, address: 34 }, // fail_add
+                { name: 11, address: 35 }, // fail
+                { name: 12, address: 38 }, // success
+            ],
+            constants: [],
+            main_function: 0, // main
+            source_symbols: [],
+            extra: {},
+        };
+    .header(ppvm).
+    .text(ppvm):
+    // Binary arithmetic pushes operands in source order: lhs, then rhs.
+    // The CPU pops rhs first and lhs second before applying the operation.
+        fn @main() {
+            execution::program::const_u64 10
+            execution::program::const_u64 3
+            cpu::cpu::sub_u64
+            execution::program::const_u64 7
+            cpu::cpu::eq_u64
+            execution::program::cond_br @check_div, @fail_sub
 
-// Binary arithmetic pushes operands in source order: lhs, then rhs.
-// The CPU pops rhs first and lhs second before applying the operation.
-fn @main() {
-    cpu::cpu.const u64, 10
-    cpu::cpu.const u64, 3
-    cpu::cpu.sub u64
-    cpu::cpu.const u64, 7
-    cpu::cpu.eq u64
-    cpu::cpu.cond_br @check_div, @fail_sub
+        label @check_div
+            execution::program::const_u64 10
+            execution::program::const_u64 3
+            cpu::cpu::div_u64
+            execution::program::const_u64 3
+            cpu::cpu::eq_u64
+            execution::program::cond_br @check_rem, @fail_div
 
-cpu::cpu.label @check_div
-    cpu::cpu.const u64, 10
-    cpu::cpu.const u64, 3
-    cpu::cpu.div u64
-    cpu::cpu.const u64, 3
-    cpu::cpu.eq u64
-    cpu::cpu.cond_br @check_rem, @fail_div
+        label @check_rem
+            execution::program::const_u64 10
+            execution::program::const_u64 3
+            cpu::cpu::rem_u64
+            execution::program::const_u64 1
+            cpu::cpu::eq_u64
+            execution::program::cond_br @check_mul, @fail_rem
 
-cpu::cpu.label @check_rem
-    cpu::cpu.const u64, 10
-    cpu::cpu.const u64, 3
-    cpu::cpu.rem u64
-    cpu::cpu.const u64, 1
-    cpu::cpu.eq u64
-    cpu::cpu.cond_br @check_mul, @fail_rem
+        label @check_mul
+            execution::program::const_u64 10
+            execution::program::const_u64 3
+            cpu::cpu::mul_u64
+            execution::program::const_u64 30
+            cpu::cpu::eq_u64
+            execution::program::cond_br @check_add, @fail_mul
 
-cpu::cpu.label @check_mul
-    cpu::cpu.const u64, 10
-    cpu::cpu.const u64, 3
-    cpu::cpu.mul u64
-    cpu::cpu.const u64, 30
-    cpu::cpu.eq u64
-    cpu::cpu.cond_br @check_add, @fail_mul
+        label @check_add
+            execution::program::const_u64 10
+            execution::program::const_u64 3
+            cpu::cpu::add_u64
+            execution::program::const_u64 13
+            cpu::cpu::eq_u64
+            execution::program::cond_br @success, @fail_add
 
-cpu::cpu.label @check_add
-    cpu::cpu.const u64, 10
-    cpu::cpu.const u64, 3
-    cpu::cpu.add u64
-    cpu::cpu.const u64, 13
-    cpu::cpu.eq u64
-    cpu::cpu.cond_br @success, @fail_add
+        label @fail_sub
+            execution::program::br @fail
+        label @fail_div
+            execution::program::br @fail
+        label @fail_rem
+            execution::program::br @fail
+        label @fail_mul
+            execution::program::br @fail
+        label @fail_add
+            execution::program::br @fail
 
-cpu::cpu.label @fail_sub
-    cpu::cpu.br @fail
-cpu::cpu.label @fail_div
-    cpu::cpu.br @fail
-cpu::cpu.label @fail_rem
-    cpu::cpu.br @fail
-cpu::cpu.label @fail_mul
-    cpu::cpu.br @fail
-cpu::cpu.label @fail_add
-    cpu::cpu.br @fail
+        label @fail
+            execution::program::const_u64 0
+            circuit::circuit::x
+            execution::program::br @success
 
-cpu::cpu.label @fail
-    cpu::cpu.const u64, 0
-    circuit::circuit.x
-    cpu::cpu.br @success
-
-cpu::cpu.label @success
-    cpu::cpu.const u64, 0
-    circuit::circuit.measure
-    cpu::cpu.ret 0
-}
+        label @success
+            execution::program::const_u64 0
+            circuit::circuit::measure
+            execution::program::ret 0
+        }
+    .text(ppvm).
+    .section(ppvm).
+.section(root).

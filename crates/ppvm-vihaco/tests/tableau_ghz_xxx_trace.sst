@@ -1,20 +1,46 @@
-device circuit.n_qubits 3;
+sst v1
+.section(root):
+    .section(ppvm):
+    .header(ppvm):
+        circuit.n_qubits 3;
+        metadata {
+            strings: ["main", "tableau_ghz_xxx_trace.sst", "X{3}"],
+            functions: [
+                {
+                    name: 0, // main
+                    signature: { params: [], ret: [] },
+                    local_count: 0,
+                    start_address: 0,
+                    end_address: 11,
+                    file: 1,
+                },
+            ],
+            labels: [],
+            constants: [],
+            main_function: 0, // main
+            source_symbols: [],
+            extra: {},
+        };
+    .header(ppvm).
+    .text(ppvm):
+        fn @main() {
+            // Forward GHZ prep: H(0); CNOT(0, 1); CNOT(1, 2) → (|000⟩+|111⟩)/√2.
+            execution::program::const_u64 0
+            circuit::circuit::h
 
-fn @main() {
-    // Forward GHZ prep: H(0); CNOT(0, 1); CNOT(1, 2) → (|000⟩+|111⟩)/√2.
-    cpu::cpu.const u64, 0
-    circuit::circuit.h
+            execution::program::const_u64 0
+            execution::program::const_u64 1
+            circuit::circuit::cnot
 
-    cpu::cpu.const u64, 0
-    cpu::cpu.const u64, 1
-    circuit::circuit.cnot
+            execution::program::const_u64 1
+            execution::program::const_u64 2
+            circuit::circuit::cnot
 
-    cpu::cpu.const u64, 1
-    cpu::cpu.const u64, 2
-    circuit::circuit.cnot
-
-    // `X{3}` matches exactly the Pauli word XXX. ⟨GHZ|XXX|GHZ⟩ = 1.
-    cpu::cpu.const str, "X{3}"
-    circuit::circuit.trace
-    cpu::cpu.ret 0
-}
+            // `X{3}` matches exactly the Pauli word XXX. ⟨GHZ|XXX|GHZ⟩ = 1.
+            execution::program::const_string "X{3}"
+            circuit::circuit::trace
+            execution::program::ret 0
+        }
+    .text(ppvm).
+    .section(ppvm).
+.section(root).

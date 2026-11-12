@@ -4,13 +4,12 @@
 //! Running a compiled program for many shots, optionally across threads.
 //!
 //! Each shot runs on a fresh [`PPVM`] so shots are fully independent; the
-//! module is compiled once and cloned into each shot's machine. With the `rayon` feature,
+//! module is compiled once and borrowed by each shot's machine. With the `rayon` feature,
 //! [`run_shots`] parallelizes across shots when the global pool (sized once by
 //! [`set_global_threads`]) has more than one thread and there are enough shots
 //! to amortize the overhead.
 
-use crate::PPVMModule;
-use crate::composite::PPVM;
+use crate::composite::{PPVM, PPVMModule};
 use crate::measurements::MeasurementResult;
 use rand::{RngExt, SeedableRng, rngs::SmallRng};
 
@@ -41,12 +40,13 @@ fn shot_seed(base: Option<u64>, index: usize) -> Option<u64> {
 
 /// Run a single shot on a fresh machine and return both records.
 fn run_one_shot(module: &PPVMModule, seed: Option<u64>) -> eyre::Result<ShotRecord> {
-    let mut machine = PPVM::default();
-    machine.load(module)?;
-    machine.run_with_seed(seed)?;
+    let mut machine = PPVM::new(&module.extra, seed)?;
+    // The module is only borrowed, so all shots share one compiled program.
+    vihaco::execute(module, &mut machine, &[])?;
+    let (measurements, traces) = machine.into_records();
     Ok(ShotRecord {
-        measurements: machine.measurement_record(),
-        traces: machine.trace_record(),
+        measurements,
+        traces,
     })
 }
 
@@ -133,13 +133,60 @@ mod tests {
     use crate::measurements::MeasurementOutcome;
 
     /// Measures q0 in |0>: every shot is deterministically `0`.
-    const DETERMINISTIC: &str = "device circuit.n_qubits 1;\nfn @main() { cpu::cpu.const u64, 0\n circuit::circuit.measure\n cpu::cpu.ret 0 }\n";
+    const DETERMINISTIC: &[&str] = &[
+        "execution::program::const_u64 0",
+        "circuit::circuit::measure",
+        "execution::program::ret 0",
+    ];
 
     /// Prepares |+> with H, then measures q0: each shot is a random 0/1.
-    const RANDOM: &str = "device circuit.n_qubits 1;\nfn @main() { cpu::cpu.const u64, 0\n circuit::circuit.h\n cpu::cpu.const u64, 0\n circuit::circuit.measure\n cpu::cpu.ret 0 }\n";
+    const RANDOM: &[&str] = &[
+        "execution::program::const_u64 0",
+        "circuit::circuit::h",
+        "execution::program::const_u64 0",
+        "circuit::circuit::measure",
+        "execution::program::ret 0",
+    ];
 
-    fn module(src: &str) -> PPVMModule {
-        compile_program(src).unwrap()
+    /// Wrap `main`'s instructions in a 1-qubit SST program with its metadata.
+    fn module(main: &[&str]) -> PPVMModule {
+        let body = main.join("\n            ");
+        let src = format!(
+            r#"sst v1
+.section(root):
+    .section(ppvm):
+    .header(ppvm):
+        circuit.n_qubits 1;
+        metadata {{
+            strings: ["main", "shots.sst"],
+            functions: [
+                {{
+                    name: 0,
+                    signature: {{ params: [], ret: [] }},
+                    local_count: 0,
+                    start_address: 0,
+                    end_address: {len},
+                    file: 1,
+                }},
+            ],
+            labels: [],
+            constants: [],
+            main_function: 0,
+            source_symbols: [],
+            extra: {{}},
+        }};
+    .header(ppvm).
+    .text(ppvm):
+        fn @main() {{
+            {body}
+        }}
+    .text(ppvm).
+    .section(ppvm).
+.section(root).
+"#,
+            len = main.len(),
+        );
+        compile_program(&src).unwrap()
     }
 
     #[test]

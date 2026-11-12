@@ -1,13 +1,39 @@
-device circuit.n_qubits 1;
-device circuit.backend paulisum;
-device circuit.observable Z;
-
-// Leakage is GeneralizedTableau-only. PauliSum has no leakage_channel,
-// so this program must fail at execute with a backend-rejection error.
-fn @main() {
-    cpu::cpu.const u64, 0
-    cpu::cpu.const f64, 0.0
-    cpu::cpu.const f64, 1.0
-    circuit::circuit.leakage
-    cpu::cpu.ret 0
-}
+sst v1
+.section(root):
+    .section(ppvm):
+    .header(ppvm):
+        circuit.n_qubits 1;
+        circuit.backend paulisum;
+        circuit.observable Z;
+        metadata {
+            strings: ["main", "paulisum_leakage_error.sst"],
+            functions: [
+                {
+                    name: 0, // main
+                    signature: { params: [], ret: [] },
+                    local_count: 0,
+                    start_address: 0,
+                    end_address: 5,
+                    file: 1,
+                },
+            ],
+            labels: [],
+            constants: [],
+            main_function: 0, // main
+            source_symbols: [],
+            extra: {},
+        };
+    .header(ppvm).
+    .text(ppvm):
+    // Leakage is GeneralizedTableau-only. PauliSum has no leakage_channel,
+    // so this program must fail at execute with a backend-rejection error.
+        fn @main() {
+            execution::program::const_u64 0
+            execution::program::const_f64 0.0
+            execution::program::const_f64 1.0
+            circuit::circuit::leakage
+            execution::program::ret 0
+        }
+    .text(ppvm).
+    .section(ppvm).
+.section(root).

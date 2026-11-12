@@ -4,6 +4,7 @@
 .DS_Store
 .vscode/
 .uv/
+.worktrees/
 *__pycache__*
 profile.json.gz
 

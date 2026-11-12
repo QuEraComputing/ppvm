@@ -15,7 +15,7 @@ pub struct Cli {
     #[arg(short, long, global = true, default_value_t = 1, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..))]
     threads: usize,
 
-    /// A .sst/.ssb file to open in the TUI (when no subcommand is given).
+    /// A .sst file to open in the TUI (when no subcommand is given).
     #[arg(value_name = "FILE")]
     file: Option<String>,
 
@@ -36,24 +36,24 @@ enum Commands {
         #[arg(short, long, value_enum, default_value = "pretty")]
         format: commands::Format,
     },
-    /// Compile a .sst file to bytecode
-    Dump {
-        /// Input .sst file
-        #[arg(value_name = "FILE")]
-        file: String,
-
-        /// Output file (optional, defaults to <file_name>.ssb)
-        #[arg(short, long)]
-        output: Option<String>,
-
-        /// Overwrite the output file if it already exists
-        #[arg(short, long)]
-        force: bool,
-    },
-
-    /// Run a .sst or .ssb program
+    // TODO: bytecode (.ssb) is disabled until vihaco ships codecs for its own dialects.
+    // /// Compile a .sst file to bytecode
+    // Dump {
+    //     /// Input .sst file
+    //     #[arg(value_name = "FILE")]
+    //     file: String,
+    //
+    //     /// Output file (optional, defaults to <file_name>.ssb)
+    //     #[arg(short, long)]
+    //     output: Option<String>,
+    //
+    //     /// Overwrite the output file if it already exists
+    //     #[arg(short, long)]
+    //     force: bool,
+    // },
+    /// Run a .sst program
     Run {
-        /// Input file (.sst source or .ssb bytecode)
+        /// Input .sst file
         #[arg(value_name = "FILE")]
         file: String,
 
@@ -78,13 +78,13 @@ enum Commands {
         format: commands::MeasurementFormat,
     },
 
-    /// Step through a program interactively, pausing at `cpu::cpu.breakpoint` instructions
+    /// Run a program interactively, pausing at breakpoints
     Debug {
-        /// Input file (.sst source or .ssb bytecode)
+        /// Input .sst file
         #[arg(value_name = "FILE")]
         file: String,
 
-        /// Pause before the first instruction so any program can be stepped
+        /// Pause before the first instruction
         #[arg(short, long)]
         break_at_start: bool,
     },
@@ -103,13 +103,14 @@ fn main() -> Result<()> {
         Some(Commands::Parse { file, format }) => {
             commands::parse(&file, format)?;
         }
-        Some(Commands::Dump {
-            file,
-            output,
-            force,
-        }) => {
-            commands::dump(&file, output.as_deref(), force)?;
-        }
+        // TODO: bytecode (.ssb) is disabled until vihaco ships codecs for its own dialects.
+        // Some(Commands::Dump {
+        //     file,
+        //     output,
+        //     force,
+        // }) => {
+        //     commands::dump(&file, output.as_deref(), force)?;
+        // }
         Some(Commands::Run {
             file,
             shots,

@@ -2362,6 +2362,7 @@ dependencies = [
  "ppvm-pauli-word-2",
  "ppvm-phased-pauli-word-2",
  "ppvm-traits-2",
+ "rand 0.10.3",
  "stim-parser",
 ]
 

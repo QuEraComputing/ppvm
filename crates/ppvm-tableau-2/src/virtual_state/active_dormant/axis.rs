@@ -3,7 +3,7 @@
 
 //! Paulis on the active axes, and the rotation that collapses onto one axis.
 
-use ppvm_pauli_kernels::heisenberg;
+use ppvm_traits_2::{ApplyGateRule, Clifford};
 
 /// A Pauli on the active axes, unsigned: bit `j` of `x` / `z` is the X / Z
 /// factor on axis `j`, and both set is Y.
@@ -26,6 +26,31 @@ impl AxisPauli {
     fn set(&mut self, j: usize, [x, z]: [bool; 2]) {
         self.x = self.x & !(1 << j) | u64::from(x) << j;
         self.z = self.z & !(1 << j) | u64::from(z) << j;
+    }
+}
+
+/// An [`AxisPauli`] with a sign, so the gate rules can run on it.
+struct Signed {
+    p: AxisPauli,
+    negative: bool,
+}
+
+impl ApplyGateRule for Signed {
+    type B = bool;
+
+    fn apply1(&mut self, q: usize, rule: impl Fn(bool, bool) -> ([bool; 2], bool)) {
+        let [x, z] = self.p.get(q);
+        let (bits, flip) = rule(x, z);
+        self.p.set(q, bits);
+        self.negative ^= flip;
+    }
+
+    fn apply2(&mut self, a: usize, b: usize, rule: impl Fn([bool; 4]) -> ([bool; 4], bool)) {
+        let ([xa, za], [xb, zb]) = (self.p.get(a), self.p.get(b));
+        let ([xa, za, xb, zb], flip) = rule([xa, za, xb, zb]);
+        self.p.set(a, [xa, za]);
+        self.p.set(b, [xb, zb]);
+        self.negative ^= flip;
     }
 }
 
@@ -104,44 +129,35 @@ impl Rotation {
         v
     }
 
-    /// `V† p V` and whether it picks up a sign, by running the gate rules on
-    /// `p`'s bits in gate order.
-    pub fn conjugate(&self, mut p: AxisPauli) -> (AxisPauli, bool) {
-        let mut negative = false;
-        let mut two =
-            |p: &mut AxisPauli, c: usize, t: usize, rule: fn([bool; 4]) -> ([bool; 4], bool)| {
-                let ([xc, zc], [xt, zt]) = (p.get(c), p.get(t));
-                let ([xc, zc, xt, zt], flip) = rule([xc, zc, xt, zt]);
-                p.set(c, [xc, zc]);
-                p.set(t, [xt, zt]);
-                negative ^= flip;
-            };
-        let p_ = self.pivot;
+    /// Apply the gates of `V` to `c`, in order.
+    pub(crate) fn apply_gates(&self, c: &mut impl Clifford) {
+        let p = self.pivot;
         for t in bits(self.fan_out) {
-            two(&mut p, p_, t, heisenberg::cnot);
+            c.cnot(p, t);
         }
-        for c in bits(self.fan_in) {
-            two(&mut p, c, p_, heisenberg::cnot);
+        for ctrl in bits(self.fan_in) {
+            c.cnot(ctrl, p);
         }
         for t in bits(self.cz) {
-            two(&mut p, p_, t, heisenberg::cz);
+            c.cz(p, t);
         }
-        let one = |p: &mut AxisPauli, rule: fn(bool, bool) -> ([bool; 2], bool)| {
-            let [x, z] = p.get(p_);
-            let (bits, flip) = rule(x, z);
-            p.set(p_, bits);
-            flip
-        };
-        for (on, rule) in [
-            (self.s, heisenberg::s as fn(bool, bool) -> ([bool; 2], bool)),
-            (self.h, heisenberg::h),
-            (self.x, heisenberg::x),
-        ] {
-            if on {
-                negative ^= one(&mut p, rule);
-            }
+        if self.s {
+            c.s(p);
         }
-        (p, negative)
+        if self.h {
+            c.h(p);
+        }
+        if self.x {
+            c.x(p);
+        }
+    }
+
+    /// `V† p V` and whether it picks up a sign, by running the gate rules on
+    /// `p` in gate order.
+    pub fn conjugate(&self, p: AxisPauli) -> (AxisPauli, bool) {
+        let mut signed = Signed { p, negative: false };
+        self.apply_gates(&mut signed);
+        (signed.p, signed.negative)
     }
 }
 

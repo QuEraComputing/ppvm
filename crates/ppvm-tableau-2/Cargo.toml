@@ -9,6 +9,7 @@ repository.workspace = true
 num-complex = "0.4.6"
 ppvm-pauli-kernels = { path = "../ppvm-pauli-kernels" }
 ppvm-traits-2 = { path = "../ppvm-traits-2" }
+rand = "0.10.1"
 
 [dev-dependencies]
 ppvm-pauli-word-2 = { path = "../ppvm-pauli-word-2" }

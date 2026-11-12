@@ -161,8 +161,8 @@ impl TranslationGroup {
         let mut out = vec![0u8; codes.len()];
         with_width!(codes.len(), C => {
             let w = word_from_codes::<C>(codes).map_err(|e| PyValueError::new_err(e.to_string()))?;
-            let canon = self.inner.canonicalize(&w);
-            codes_from_word(&canon, &mut out);
+            let canon = self.inner.canonicalize(&w.to_pauli_word(codes.len()));
+            codes_from_word(&ppvm_lindblad::Word::from_pauli_word(&canon), &mut out);
             PyResult::Ok(())
         })?;
         Ok(out.into_pyarray(py))
@@ -205,12 +205,14 @@ pub fn canonicalize_basis_arr_complex<'py>(
             .map(|c| Complex::new(c.re, c.im))
             .collect();
 
+        let mut general = to_general(&basis_words, n_q);
         core_sym::canonicalize_pauli_sum_complex(
-            &mut basis_words,
+            &mut general,
             &mut coeffs_vec,
             &group.inner,
             k_slice,
         );
+        basis_words = from_general(&general);
 
         let out_coeffs: Vec<Complex64> = coeffs_vec
             .iter()
@@ -249,7 +251,7 @@ pub fn check_momentum_sector_arr<'py>(
             .iter()
             .map(|c| Complex::new(c.re, c.im))
             .collect();
-        core_sym::check_momentum_sector(&basis_words, &coeffs_vec, &group.inner, k_slice, tol)
+        core_sym::check_momentum_sector(&to_general(&basis_words, n_q), &coeffs_vec, &group.inner, k_slice, tol)
             .map_err(|e| PyValueError::new_err(format!("{e}")))
     })
 }
@@ -283,9 +285,29 @@ pub fn canonicalize_basis_arr<'py>(
         let mut basis_words = decode_basis::<C>(&basis_view, n_q)?;
         let mut coeffs_vec = coeffs_slice.to_vec();
 
-        core_sym::canonicalize_pauli_sum(&mut basis_words, &mut coeffs_vec, &group.inner);
+        let mut general = to_general(&basis_words, n_q);
+        core_sym::canonicalize_pauli_sum(&mut general, &mut coeffs_vec, &group.inner);
+        basis_words = from_general(&general);
 
         let basis_arr = encode_basis(py, &basis_words, n_q)?;
         Ok((basis_arr, coeffs_vec.into_pyarray(py)))
     })
+}
+
+/// `ppvm_pauli_sum` symmetry routines take the general word type; the Lindblad words
+/// store only their bit planes.
+fn to_general<const C: usize>(
+    words: &[ppvm_lindblad::Word<C>],
+    n_qubits: usize,
+) -> Vec<ppvm_lindblad::GeneralWord<C>> {
+    words.iter().map(|w| w.to_pauli_word(n_qubits)).collect()
+}
+
+fn from_general<const C: usize>(
+    words: &[ppvm_lindblad::GeneralWord<C>],
+) -> Vec<ppvm_lindblad::Word<C>> {
+    words
+        .iter()
+        .map(ppvm_lindblad::Word::from_pauli_word)
+        .collect()
 }

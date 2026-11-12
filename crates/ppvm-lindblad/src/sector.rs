@@ -92,10 +92,15 @@ impl<'a> Sector<'a> {
         &self,
         q: &Word<C>,
     ) -> Option<(Word<C>, Complex<f64>, usize)> {
-        let (rep, idx, orbit_size) = self
-            .group
-            .canonicalize_in_sector_indexed(q, &self.characters)?;
-        Some((rep, self.characters.value(idx), orbit_size))
+        let (rep, idx, orbit_size) = self.group.canonicalize_in_sector_indexed(
+            &q.to_pauli_word(self.group.n_qubits()),
+            &self.characters,
+        )?;
+        Some((
+            Word::from_pauli_word(&rep),
+            self.characters.value(idx),
+            orbit_size,
+        ))
     }
 
     /// Number of **distinct** members of `w`'s translation orbit, or
@@ -110,7 +115,10 @@ impl<'a> Sector<'a> {
     #[inline]
     pub fn orbit_size<const C: usize>(&self, w: &Word<C>) -> Option<usize> {
         self.group
-            .canonicalize_in_sector_indexed(w, &self.characters)
+            .canonicalize_in_sector_indexed(
+                &w.to_pauli_word(self.group.n_qubits()),
+                &self.characters,
+            )
             .map(|(_, _, orbit_size)| orbit_size)
     }
 }
@@ -124,6 +132,6 @@ impl<'a> Sector<'a> {
 /// same rep, both are kept (caller should run a merge afterwards).
 pub fn canonicalize_basis_to_rep<const C: usize>(basis: &mut [Word<C>], group: &TranslationGroup) {
     for w in basis.iter_mut() {
-        *w = group.canonicalize(w);
+        *w = Word::from_pauli_word(&group.canonicalize(&w.to_pauli_word(group.n_qubits())));
     }
 }

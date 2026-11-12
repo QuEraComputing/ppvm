@@ -3,11 +3,12 @@
 
 //! Basis-level `L*` operators: in-basis generator and off-basis leakage.
 
-use crate::Error;
+use crate::candidates::{CandidateBuffer, CandidateProposer, StreamingProposer};
 use crate::sector::Sector;
 use crate::spec::LindbladSpec;
 use crate::truncate::{cap_map_to_room, order_by_desc_mag};
 use crate::word::{Word, word_hash};
+use crate::{Error, ShortlistScoreProposer};
 use fxhash::{FxBuildHasher, FxHashMap, FxHashSet};
 use num::Complex;
 use rayon::prelude::*;
@@ -15,6 +16,63 @@ use rayon::prelude::*;
 /// Chunk size for the leakage accumulation loops: candidates are folded
 /// into the live map (and the room-cap applied) once per chunk.
 const CHUNK_SIZE: usize = 4096;
+
+/// Reusable scratch for adaptive real-coefficient evolution.
+///
+/// Keep one workspace per trajectory. It retains candidate lookup and source-order
+/// storage, generator connections and exponential scratch. Candidate words occupy
+/// the main state array's tail; streaming fallback retains its generation buffers.
+#[derive(Default)]
+pub struct PcStepWorkspace<const C: usize = { crate::W_CHUNKS }> {
+    // The shortlist strategy also owns the streaming scratch used by the default path.
+    pub(crate) proposer: ShortlistScoreProposer<C>,
+    pub(crate) generator: Option<crate::mf_expm::RealCache>,
+    pub(crate) taylor: Vec<f64>,
+    pub(crate) coefficient_auxiliary: Vec<f64>,
+}
+
+impl<const C: usize> PcStepWorkspace<C> {
+    /// Requested vector, shortlist-index and generator capacities retained between
+    /// steps. Excludes the main state, the protected-word hash set, and metadata
+    /// owned by a separately supplied candidate proposer.
+    pub fn allocation_bytes(&self) -> [(&'static str, usize); 12] {
+        let [terms, order, index] = self.proposer.allocation_bytes();
+        [
+            ("shortlist_terms", terms),
+            ("source_order", order),
+            ("shortlist_index", index),
+            ("candidate_words", 0),
+            ("candidate_rates", 0),
+            (
+                "candidate_state",
+                self.proposer.streaming.indexed.state.capacity(),
+            ),
+            (
+                "candidate_free",
+                self.proposer.streaming.indexed.free.capacity() * 4,
+            ),
+            ("candidate_rank", 0),
+            (
+                "generation",
+                self.proposer
+                    .streaming
+                    .outputs
+                    .iter()
+                    .map(|v| v.capacity() * std::mem::size_of::<(Word<C>, f64)>())
+                    .sum(),
+            ),
+            (
+                "generator",
+                self.generator.as_ref().map_or(0, |p| p.allocation_bytes()),
+            ),
+            ("numeric_scratch", self.taylor.capacity() * 8),
+            (
+                "coefficient_auxiliary",
+                self.coefficient_auxiliary.capacity() * 8,
+            ),
+        ]
+    }
+}
 
 /// Build a `word → row` map for a basis assumed to contain unique Pauli
 /// words; debug-asserts the uniqueness invariant.
@@ -69,61 +127,12 @@ impl<const C: usize> LindbladSpec<C> {
                 b: coeffs.len(),
             });
         }
-        // Hash-only membership tables: storing 8-byte `u64` keys instead
-        // of 48-byte Words shrinks the in-basis structure ~6×, keeping it
-        // in L3 (and often L2) at basis sizes where the full-Word version
-        // would spill to DRAM.
-        let in_basis: FxHashMap<u64, ()> = basis.iter().map(|w| (word_hash(w), ())).collect();
-        let protected_set: FxHashMap<u64, ()> =
-            protected.iter().map(|w| (word_hash(w), ())).collect();
-
-        let order = order_by_desc_mag(coeffs);
-        let room = max_basis.saturating_sub(basis.len());
-        let n_qubits = self.n_qubits();
-        let mut merged: FxHashMap<Word<C>, f64> = FxHashMap::default();
-        for chunk_indices in order.chunks(CHUNK_SIZE) {
-            let local: Vec<Vec<(Word<C>, f64)>> = chunk_indices
-                .par_iter()
-                .map_init(
-                    || {
-                        (
-                            Vec::<u32>::with_capacity(n_qubits),
-                            Vec::<u32>::with_capacity(128),
-                            FxHashMap::<Word<C>, Complex<f64>>::with_capacity_and_hasher(
-                                128,
-                                FxBuildHasher::default(),
-                            ),
-                        )
-                    },
-                    |(s1, s2, lm), &i| {
-                        let p = &basis[i];
-                        let c = coeffs[i];
-                        let terms = self.compute_action_terms(p, s1, s2, lm);
-                        let mut out = Vec::with_capacity(terms.len());
-                        for (w, v) in terms.iter() {
-                            let h = word_hash(w);
-                            if !in_basis.contains_key(&h) && !protected_set.contains_key(&h) {
-                                out.push((*w, c * *v));
-                            }
-                        }
-                        out
-                    },
-                )
-                .collect();
-            for v in local {
-                for (k, val) in v {
-                    *merged.entry(k).or_insert(0.0) += val;
-                }
-            }
-            cap_map_to_room(&mut merged, room);
-        }
-        // Rate-based admission: keep only candidates whose leakage rate
-        // exceeds `tau_add`. `tau_add = 0` admits everything except exact
-        // zeros.
-        Ok(merged
-            .into_iter()
-            .filter(|(_, c)| c.abs() > tau_add)
-            .collect())
+        let mut words = Vec::new();
+        let mut numeric = Vec::new();
+        let mut buffer = CandidateBuffer::separate(basis, coeffs, &mut words, &mut numeric);
+        let mut proposer = StreamingProposer::default();
+        proposer.propose(self, &mut buffer, protected, max_basis)?;
+        Ok(proposer.indexed.selected_rates(&buffer, tau_add).collect())
     }
 
     /// Sparse generator matrix in COO form: returns `(row, col, val)`
@@ -327,5 +336,56 @@ impl<const C: usize> LindbladSpec<C> {
             cap_map_to_room(&mut merged, room);
         }
         Ok(merged.into_iter().filter(|(_, c)| c.norm() > 0.0).collect())
+    }
+}
+
+#[cfg(test)]
+mod tail_tests {
+    use super::*;
+    use crate::word_from_codes;
+
+    #[test]
+    fn tail_leakage_preserves_multiple_chunk_caps_and_source_order() {
+        let n = 7;
+        let mut h = Vec::new();
+        for site in 0..n - 1 {
+            for symbol in ['X', 'Y'] {
+                let mut term = vec!['I'; n];
+                term[site] = symbol;
+                term[site + 1] = symbol;
+                h.push((term.into_iter().collect(), 0.3));
+            }
+        }
+        let reference = LindbladSpec::<2>::new(n, &h, &[]).unwrap();
+        let tail = LindbladSpec::<2>::new(n, &h, &[]).unwrap();
+        let basis: Vec<_> = (0..14000)
+            .filter(|i| i % 3 != 0)
+            .map(|i| {
+                word_from_codes::<2>(
+                    &(0..n)
+                        .map(|q| ((i >> (2 * q)) & 3) as u8)
+                        .collect::<Vec<_>>(),
+                )
+                .unwrap()
+            })
+            .collect();
+        let coefficients: Vec<_> = (0..basis.len()).map(|i| (i as f64).sin()).collect();
+        for room in [0, 100, 2000] {
+            let expected = reference
+                .leakage_reference_with_prune(&basis, &coefficients, &[], basis.len() + room, 0.0)
+                .unwrap();
+            for threads in [1, 2, 6] {
+                let pool = rayon::ThreadPoolBuilder::new()
+                    .num_threads(threads)
+                    .build()
+                    .unwrap();
+                let actual = pool
+                    .install(|| {
+                        tail.leakage_with_prune(&basis, &coefficients, &[], basis.len() + room, 0.0)
+                    })
+                    .unwrap();
+                assert_eq!(actual, expected, "room={room}, threads={threads}");
+            }
+        }
     }
 }

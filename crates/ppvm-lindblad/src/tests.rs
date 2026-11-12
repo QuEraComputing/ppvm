@@ -5,6 +5,34 @@ use super::*;
 use fxhash::FxHashMap;
 use num::Complex;
 
+/// `ppvm_pauli_sum` symmetry merges on the crate's compact words, via the general word type.
+fn canonicalize_pauli_sum_complex(
+    basis: &mut Vec<Word<2>>,
+    coeffs: &mut Vec<Complex<f64>>,
+    group: &ppvm_pauli_sum::symmetry::TranslationGroup,
+    k: &[i32],
+) {
+    let mut words: Vec<_> = basis
+        .iter()
+        .map(|w| w.to_pauli_word(group.n_qubits()))
+        .collect();
+    ppvm_pauli_sum::symmetry::canonicalize_pauli_sum_complex(&mut words, coeffs, group, k);
+    *basis = words.iter().map(Word::from_pauli_word).collect();
+}
+
+fn canonicalize_pauli_sum(
+    basis: &mut Vec<Word<2>>,
+    coeffs: &mut Vec<f64>,
+    group: &ppvm_pauli_sum::symmetry::TranslationGroup,
+) {
+    let mut words: Vec<_> = basis
+        .iter()
+        .map(|w| w.to_pauli_word(group.n_qubits()))
+        .collect();
+    ppvm_pauli_sum::symmetry::canonicalize_pauli_sum(&mut words, coeffs, group);
+    *basis = words.iter().map(Word::from_pauli_word).collect();
+}
+
 /// Test-only full-space complex predictor-corrector step, UNTRUNCATED:
 /// adds every nonzero leakage string (two hops) and applies the exact
 /// in-basis exponential to the complex coefficient vector. Reference
@@ -125,8 +153,6 @@ fn assert_orbit_rep_matches_projection(
     dt: f64,
     n_steps: usize,
 ) {
-    use ppvm_pauli_sum::symmetry::canonicalize_pauli_sum_complex;
-
     let spec = <LindbladSpec>::new(n, h_terms, &[]).unwrap();
     let group = ppvm_pauli_sum::symmetry::TranslationGroup::chain_1d(n);
     let basis_full: Vec<Word> = seed
@@ -178,7 +204,7 @@ fn assert_orbit_rep_matches_projection(
         let cf_val = mf
             .get(w)
             .copied()
-            .unwrap_or_else(|| panic!("rep {w} in orbit-rep but not in full-basis"));
+            .unwrap_or_else(|| panic!("rep {w:?} in orbit-rep but not in full-basis"));
         max_diff = max_diff.max((cm - cf_val).norm());
     }
     assert!(
@@ -326,7 +352,7 @@ fn complex_full_matches_real_at_kzero() {
 /// bit-identical up to FP noise.
 #[test]
 fn pc_step_matches_symmetry_merged_on_small_chain() {
-    use ppvm_pauli_sum::symmetry::{TranslationGroup, canonicalize_pauli_sum};
+    use ppvm_pauli_sum::symmetry::TranslationGroup;
 
     let n = 4usize;
     let dt = 0.05f64;
@@ -482,7 +508,7 @@ fn pc_step_is_bit_identical_across_thread_counts() {
 /// duplicate columns. The cap binds.
 #[test]
 fn pc_step_orbit_rep_is_bit_identical_across_thread_counts() {
-    use ppvm_pauli_sum::symmetry::{TranslationGroup, canonicalize_pauli_sum_complex};
+    use ppvm_pauli_sum::symmetry::TranslationGroup;
 
     let n = 12usize;
     let lincomb: Vec<(String, Complex<f64>)> = (0..n)
@@ -577,5 +603,32 @@ fn action_term_order_is_independent_of_scratch_capacity() {
             as_bits(&reference),
             "term order changed with scratch capacity {grow_to}"
         );
+    }
+}
+
+#[test]
+fn compact_word_is_two_planes_and_hashes_and_orders_like_pauli_word() {
+    use std::hash::{BuildHasher, Hash, Hasher};
+    assert_eq!(std::mem::size_of::<Word<2>>(), 32);
+    let fx = |h: &dyn Fn(&mut fxhash::FxHasher)| {
+        let mut state = fxhash::FxBuildHasher::default().build_hasher();
+        h(&mut state);
+        state.finish()
+    };
+    let words: Vec<Word<2>> = (0..400u64)
+        .map(|i| {
+            let codes: Vec<u8> = (0..100)
+                .map(|q| ((i.wrapping_mul(0x9e37_79b9_7f4a_7c15) >> (q % 61)) & 3) as u8)
+                .collect();
+            word_from_codes::<2>(&codes).unwrap()
+        })
+        .collect();
+    for a in &words {
+        let pa = a.to_pauli_word(100);
+        assert_eq!(fx(&|s| a.hash(s)), fx(&|s| pa.hash(s)));
+        assert_eq!(Word::from_pauli_word(&pa), *a);
+        for b in words.iter().take(40) {
+            assert_eq!(a.cmp(b), pa.cmp(&b.to_pauli_word(100)));
+        }
     }
 }

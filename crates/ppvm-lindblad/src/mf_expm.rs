@@ -7,7 +7,7 @@
 //!
 //! The in-basis-restricted generator's per-column action is computed ONCE
 //! per expm call (via
-//! [`build_mf_cols`] / [`build_orbit_rep_cols`]), stored row-major, and
+//! [`build_row_cache`], [`build_mf_cols`] or [`build_orbit_rep_cols`]), stored row-major, and
 //! reused across every Krylov/Taylor matvec
 //! by [`CsrOp`] (a [`quspin_types::LinearOperator`]) fed to
 //! [`quspin_expm::ExpmOp::from_parts`]. Each matvec is then a cheap,
@@ -20,12 +20,17 @@
 //! [`LinearOperator::dot`] runs.
 //!
 //! `μ`, the trace, and the column 1-norm of `A − μ·I` are computed in the
-//! same single action pass as the cache, and turned into an `apply` by the
-//! shared [`expm_apply_cached`] tail. The `(m, s)` Taylor partition is
+//! same action pass as the cache. Real steps apply the exponential in place
+//! with retained work buffers; orbit steps return complex coefficients. The `(m, s)` Taylor partition is
 //! picked with the tolerance-matched tables in [`crate::expm`]: a relaxed
 //! `tol=1e-6` table when the PC prunes coarsely (`drop_tol ≥ 1e-4`), else the
 //! double-precision table (keeping the exact-reference test paths bit-exact).
+//!
+//! Hamiltonians with Hermitian Pauli jumps admit direct row construction.
+//! General dissipators use column actions and stable counting-sort assembly.
+//! Both store explicit coefficients in the same CSR representation.
 
+use crate::compact_index::CompactBasisIndex;
 use crate::scalar::Coeff;
 use crate::sector::Sector;
 use crate::{LindbladSpec, Word, build_basis_index, expm};
@@ -241,7 +246,7 @@ where
 fn build_mf_cols<const C: usize>(
     spec: &LindbladSpec<C>,
     basis: &[Word<C>],
-    index: &FxHashMap<Word<C>, u32>,
+    index: &CompactBasisIndex<'_, C>,
 ) -> (BlockCsr<f64>, PerCol<f64>) {
     build_block_csr(spec, basis.len(), |c, (s1, s2, lm), rows, vals| {
         let p = &basis[c];
@@ -253,7 +258,7 @@ fn build_mf_cols<const C: usize>(
             if w == p {
                 diag = *v;
             }
-            if let Some(&row) = index.get(w) {
+            if let Some(row) = index.get(w) {
                 rows.push(row);
                 vals.push(*v);
             }
@@ -492,14 +497,212 @@ where
     v
 }
 
-/// Compute `exp(dt · M) · coeffs` for the in-basis-restricted generator
-/// `M`, matrix-free, via `quspin-expm`. Returns a fresh `Vec<f64>` of length
-/// `basis.len()`.
-///
-/// ONE action pass builds the CSR cache `mat` (reused across every matvec)
-/// and, in the same pass, the `(raw, diag)` data the `μ`/1-norm selection
-/// needs; [`expm_apply_cached`] does the rest.
-pub(crate) fn expm_apply_mf<const C: usize>(
+pub(crate) enum RealCache {
+    Coefficients(BlockCsr<f64>),
+    Units(crate::unit_expm::UnitCache),
+}
+
+impl RealCache {
+    pub(crate) fn allocation_bytes(&self) -> usize {
+        match self {
+            Self::Coefficients(cache) => cache.allocation_bytes(),
+            Self::Units(cache) => cache.allocation_bytes(),
+        }
+    }
+}
+
+impl BlockCsr<f64> {
+    pub(crate) fn allocation_bytes(&self) -> usize {
+        self.ranges.capacity() * std::mem::size_of::<CsrRange<f64>>()
+            + self
+                .ranges
+                .iter()
+                .map(|r| r.offsets.capacity() * 4 + r.cols.capacity() * 4 + r.vals.capacity() * 8)
+                .sum::<usize>()
+    }
+}
+
+pub(crate) fn real_bounds(per_col: &[(f64, f64)]) -> (f64, f64) {
+    let mu = per_col.iter().map(|(_, diagonal)| *diagonal).sum::<f64>() / per_col.len() as f64;
+    let norm = per_col
+        .iter()
+        .map(|&(raw, diagonal)| raw - diagonal.abs() + (diagonal - mu).abs())
+        .fold(0.0_f64, f64::max);
+    (mu, norm)
+}
+
+/// Build explicit row coefficients in reusable arrays. No coupling-magnitude restriction is imposed.
+pub(crate) fn build_row_cache<const C: usize>(
+    spec: &LindbladSpec<C>,
+    basis: &[Word<C>],
+    previous: Option<BlockCsr<f64>>,
+) -> (BlockCsr<f64>, (f64, f64)) {
+    let dim = basis.len();
+    let shift = range_shift(dim);
+    let rows = 1 << shift;
+    let direct = crate::direct_expm::DirectOp {
+        spec,
+        basis,
+        index: CompactBasisIndex::new(basis),
+    };
+    // A Hamiltonian commutator has zero diagonal for arbitrary coupling strengths.
+    let diagonal = spec
+        .pauli_plan
+        .as_ref()
+        .is_none_or(|plan| plan.has_diagonal_noise());
+    let mut ranges = previous.map(|cache| cache.ranges).unwrap_or_default();
+    ranges.resize_with(dim.div_ceil(rows), || CsrRange {
+        offsets: Vec::new(),
+        cols: Vec::new(),
+        vals: Vec::new(),
+    });
+    let metadata: Vec<_> = ranges
+        .par_iter_mut()
+        .enumerate()
+        .map_init(
+            crate::direct_expm::ActionScratch::new,
+            |scratch, (block, range)| {
+                let first = block * rows;
+                let length = rows.min(dim - first);
+                range.cols.clear();
+                range.vals.clear();
+                range.offsets.clear();
+                range.offsets.reserve_exact(length + 1);
+                range.offsets.push(0);
+                let mut per_col = if diagonal {
+                    Vec::with_capacity(length)
+                } else {
+                    Vec::new()
+                };
+                let mut norm = 0.0_f64;
+                for row in first..first + length {
+                    let value = direct.gather_row(row, scratch, true);
+                    norm = norm.max(value.0);
+                    if diagonal {
+                        per_col.push(value);
+                    }
+                    let required = range.cols.len() + scratch.row.len();
+                    if required > range.cols.capacity() || required > range.vals.capacity() {
+                        let capacity = required.next_power_of_two();
+                        range.cols.reserve_exact(capacity - range.cols.len());
+                        range.vals.reserve_exact(capacity - range.vals.len());
+                    }
+                    for &(column, value) in &scratch.row {
+                        range.cols.push(column);
+                        range.vals.push(value);
+                    }
+                    range.offsets.push(
+                        u32::try_from(range.cols.len()).expect("CSR range exceeds u32 entries"),
+                    );
+                }
+                (per_col, norm)
+            },
+        )
+        .collect();
+    let mut per_col = Vec::new();
+    let mut norm = 0.0_f64;
+    for (columns, bound) in metadata {
+        per_col.extend(columns);
+        norm = norm.max(bound);
+    }
+    let bounds = if diagonal {
+        real_bounds(&per_col)
+    } else {
+        (0.0, norm)
+    };
+    (
+        BlockCsr {
+            ranges,
+            range_shift: shift,
+            dim,
+        },
+        bounds,
+    )
+}
+
+fn select_real_expm(t_norm: f64, drop_tol: f64) -> (u32, u32, f64) {
+    if drop_tol >= 1e-4 {
+        let (m, s) = expm::select_ms_loose(t_norm);
+        (m, s, 1e-6)
+    } else {
+        let (m, s) = expm::select_ms(t_norm);
+        (m, s, 1e-12)
+    }
+}
+
+/// Apply the general real-coefficient exponential to the main coefficient vector.
+pub(crate) fn expm_apply_inplace<const C: usize>(
+    spec: &LindbladSpec<C>,
+    basis: &[Word<C>],
+    dt: f64,
+    coefficients: &mut [f64],
+    drop_tol: f64,
+    workspace: &mut crate::PcStepWorkspace<C>,
+) {
+    if basis.is_empty() {
+        return;
+    }
+    if let Some(plan) = &spec.pauli_plan {
+        let previous = match workspace.generator.take() {
+            Some(RealCache::Units(cache)) => Some(cache),
+            _ => None,
+        };
+        let (cache, bounds) = crate::unit_expm::UnitCache::build(plan, basis, previous);
+        let (mu, bound) = bounds;
+        let (m, s, tol) = select_real_expm(dt.abs() * bound, drop_tol);
+        workspace.taylor.resize(2 * basis.len(), 0.0);
+        quspin_expm::ExpmOp::from_parts(
+            crate::unit_expm::UnitOp {
+                cache: &cache,
+                plan,
+            },
+            dt,
+            mu,
+            s as usize,
+            m as usize,
+            tol,
+        )
+        .apply_into(
+            ndarray::ArrayViewMut1::from(coefficients),
+            &mut workspace.taylor,
+        )
+        .expect("expm apply");
+        workspace.generator = Some(RealCache::Units(cache));
+        return;
+    }
+    let reusable_rows = spec.supports_row_gather();
+    let (mat, bounds) = if reusable_rows {
+        build_row_cache(
+            spec,
+            basis,
+            match workspace.generator.take() {
+                Some(RealCache::Coefficients(cache)) => Some(cache),
+                _ => None,
+            },
+        )
+    } else {
+        // General jump actions need column assembly; stale row buffers have no consumer in that build.
+        workspace.generator = None;
+        let index = CompactBasisIndex::new(basis);
+        let (mat, per_col) = build_mf_cols(spec, basis, &index);
+        (mat, real_bounds(&per_col))
+    };
+    let (mu, bound) = bounds;
+    let (m, s, tol) = select_real_expm(dt.abs() * bound, drop_tol);
+    workspace.taylor.resize(2 * basis.len(), 0.0);
+    quspin_expm::ExpmOp::from_parts(CsrOp { mat: &mat }, dt, mu, s as usize, m as usize, tol)
+        .apply_into(
+            ndarray::ArrayViewMut1::from(coefficients),
+            &mut workspace.taylor,
+        )
+        .expect("expm apply");
+    if reusable_rows {
+        workspace.generator = Some(RealCache::Coefficients(mat));
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn expm_apply_mf_reference<const C: usize>(
     spec: &LindbladSpec<C>,
     basis: &[Word<C>],
     dt: f64,
@@ -509,24 +712,10 @@ pub(crate) fn expm_apply_mf<const C: usize>(
     if basis.is_empty() {
         return Vec::new();
     }
-    let index = build_basis_index(basis);
+    let index = CompactBasisIndex::new(basis);
     let (mat, per_col) = build_mf_cols(spec, basis, &index);
-
-    // Pick the Taylor backward-error tolerance to match the basis truncation:
-    // when the PC prunes coarsely (drop_tol >= 1e-4) a double-precision exp is
-    // ~10 orders more accurate than the state it acts on, so the relaxed
-    // (tol=1e-6, still >=100x tighter than the cut) table is used — it admits a
-    // lower-degree Taylor polynomial and cuts the SpMV count with no effect on
-    // the truncated result. At tight/zero drop_tol we keep double precision so
-    // the exact-reference paths (orbit-rep / merged) still agree bit-for-bit.
-    expm_apply_cached(&mat, &per_col, dt, coeffs, |t_norm| {
-        if drop_tol >= 1e-4 {
-            let (m, s) = expm::select_ms_loose(t_norm);
-            (m, s, 1e-6)
-        } else {
-            let (m, s) = expm::select_ms(t_norm);
-            (m, s, 1e-12)
-        }
+    expm_apply_cached(&mat, &per_col, dt, coeffs, |norm| {
+        select_real_expm(norm, drop_tol)
     })
 }
 
@@ -576,8 +765,8 @@ pub(crate) fn expm_apply_mf_cxvec(
     }
     let re: Vec<f64> = b.iter().map(|z| z.re).collect();
     let im: Vec<f64> = b.iter().map(|z| z.im).collect();
-    let re_out = expm_apply_mf(spec, basis, dt, &re, drop_tol);
-    let im_out = expm_apply_mf(spec, basis, dt, &im, drop_tol);
+    let re_out = expm_apply_mf_reference(spec, basis, dt, &re, drop_tol);
+    let im_out = expm_apply_mf_reference(spec, basis, dt, &im, drop_tol);
     re_out
         .into_iter()
         .zip(im_out)

@@ -673,7 +673,7 @@ chore: restore lockfile consistency</code></pre>
       ppvm</code>.
     </p>
     <ul>
-      <li>Python &ge; 3.10 required (<code>.python-version</code> pins 3.12 for dev). The wheel is built against PyO3's <code>abi3-py310</code> stable ABI, so one <code>cp310-abi3</code> wheel per platform loads on 3.10+.</li>
+      <li>Python &ge; 3.11 required (<code>.python-version</code> pins 3.12 for dev). The wheel is built against PyO3's <code>abi3-py311</code> stable ABI, so one <code>cp311-abi3</code> wheel per platform loads on 3.11+.</li>
       <li><code>uv</code> manages the venv and deps and triggers the maturin build on <code>uv sync</code>.</li>
       <li><code>ppvm-python/pyproject.toml</code> sets <code>build-backend = "maturin"</code> with <code>[tool.maturin]</code> <code>manifest-path</code> &rarr; the crate, <code>python-source = "src"</code>, and <code>module-name = "ppvm._core"</code>.</li>
       <li>Plain <code>cargo build</code> also links the cdylib (a <code>build.rs</code> in <code>ppvm-python-native</code> adds the macOS <code>-undefined dynamic_lookup</code> flag), so the Rust-only workflows work without maturin.</li>

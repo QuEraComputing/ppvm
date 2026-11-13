@@ -14,15 +14,17 @@
 //! Spans are zeroed before comparison: `print` doesn't know the source
 //! position the AST originated from, so re-parsed spans reflect the
 //! printed layout, not the generated one.
+//!
+//! The printed form is re-parsed without the fusion stage: `parse` would merge
+//! adjacent compatible instructions, while the printer emits one per line.
 
 use std::sync::Arc;
 
 use proptest::prelude::*;
-use stim_parser::diagnostics::{LineMap, Span};
+use stim_parser::diagnostics::{FailFast, LineMap, Span};
 use stim_parser::prelude::{
     AnnotationKind, AnnotationOp, Axis, ExtendedInstruction, ExtendedProgram, GateName, GateOp,
-    Instruction, MeasureName, MeasureOp, NoiseName, NoiseOp, Program, Target, parse,
-    parse_extended,
+    Instruction, MeasureName, MeasureOp, NoiseName, NoiseOp, Pipeline, Program, Target,
 };
 
 // ---- generators --------------------------------------------------------
@@ -544,9 +546,14 @@ proptest! {
     fn raw_print_parse_roundtrip(mut prog in program()) {
         zero_spans_raw(&mut prog.instructions);
         let printed = format!("{prog}");
-        let mut reparsed = parse(&printed).unwrap_or_else(|e| {
-            panic!("reparse failed for generated program: {e}\n--printed--\n{printed}")
-        });
+        let mut sink = FailFast::new();
+        let mut reparsed = Pipeline::new(&printed)
+            .parse(&mut sink)
+            .and_then(|p| p.validate(&mut sink))
+            .map(|p| p.finish())
+            .unwrap_or_else(|_| {
+                panic!("reparse failed: {:?}\n--printed--\n{printed}", sink.into_items())
+            });
         zero_spans_raw(&mut reparsed.instructions);
         prop_assert_eq!(prog, reparsed, "raw print/parse not inverse on:\n{}", printed);
     }
@@ -557,9 +564,15 @@ proptest! {
     fn extended_print_parse_roundtrip(mut prog in ext_program()) {
         zero_spans_ext(&mut prog.instructions);
         let printed = format!("{prog}");
-        let mut reparsed = parse_extended(&printed).unwrap_or_else(|e| {
-            panic!("reparse_extended failed for generated program: {e}\n--printed--\n{printed}")
-        });
+        let mut sink = FailFast::new();
+        let mut reparsed = Pipeline::new(&printed)
+            .parse(&mut sink)
+            .and_then(|p| p.validate(&mut sink))
+            .and_then(|p| p.lower(&mut sink))
+            .map(|p| p.finish())
+            .unwrap_or_else(|_| {
+                panic!("reparse failed: {:?}\n--printed--\n{printed}", sink.into_items())
+            });
         zero_spans_ext(&mut reparsed.instructions);
         prop_assert_eq!(prog, reparsed, "extended print/parse not inverse on:\n{}", printed);
     }

@@ -83,6 +83,43 @@ impl<I, R> Default for MeasureScratch<I, R> {
     }
 }
 
+/// How [`GeneralizedTableau::collapse_with_scratch`] picks the outcome.
+#[derive(Clone, Copy, Debug)]
+enum OutcomeChoice {
+    /// Draw the outcome from the tableau's RNG (ordinary measurement).
+    Sample,
+    /// Use the given outcome (post-selection). Rejected if its probability
+    /// is below `tol`.
+    Forced { outcome: bool, tol: f64 },
+}
+
+/// Why [`GeneralizedTableau::project`] refused to project. The tableau is
+/// left as it was before the call.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ProjectError {
+    /// The qubit has been lost, so there is no Z outcome to project onto.
+    LostQubit { addr0: usize },
+    /// The requested outcome has probability below `tol`.
+    ImpossibleOutcome { outcome: bool, prob: f64, tol: f64 },
+}
+
+impl std::fmt::Display for ProjectError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LostQubit { addr0 } => {
+                write!(f, "cannot project qubit {addr0}: the qubit has been lost")
+            }
+            Self::ImpossibleOutcome { outcome, prob, tol } => write!(
+                f,
+                "cannot project onto outcome {}: its probability {prob:e} is below tol = {tol:e}",
+                *outcome as u8
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ProjectError {}
+
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> LossyMeasure
     for GeneralizedTableau<T, I, C>
 where
@@ -169,6 +206,31 @@ where
         stab_anticomm_bits: I,
         destab_anticomm_bits: I,
     ) -> Option<bool> {
+        let (outcome, _) = self
+            .collapse_with_scratch(
+                addr0,
+                scratch,
+                phase_decomp,
+                stab_anticomm_bits,
+                destab_anticomm_bits,
+                OutcomeChoice::Sample,
+            )
+            .expect("sampling an outcome cannot fail");
+        Some(outcome)
+    }
+
+    /// Shared body of `measure` and [`project`](Self::project): collapse
+    /// `addr0` onto the outcome picked by `choice`, record it, and return it
+    /// with its probability. A rejected `Forced` outcome mutates nothing.
+    fn collapse_with_scratch(
+        &mut self,
+        addr0: usize,
+        scratch: &mut MeasureScratch<I, T::Coeff>,
+        phase_decomp: u8,
+        stab_anticomm_bits: I,
+        destab_anticomm_bits: I,
+        choice: OutcomeChoice,
+    ) -> Result<(bool, f64), ProjectError> {
         if stab_anticomm_bits == I::zero() {
             // Case b (fast path): Z is already a stabilizer. Overlap + filter in place.
 
@@ -194,7 +256,7 @@ where
             // Gate-time truncation drops branches without renormalizing, so
             // divide by ⟨ψ|ψ⟩ rather than assuming it is 1.
             let prob_1 = 0.5 - 0.5 * z_overlap_re / norm_sqr;
-            let outcome = self.tableau.rng.random::<f64>() < prob_1;
+            let (outcome, prob) = self.choose_outcome(prob_1, choice)?;
 
             debug_assert!(
                 phase_decomp == 0 || phase_decomp == 2,
@@ -213,7 +275,7 @@ where
 
             // Case-b doesn't mutate destabilizers, so the cached mask remains valid.
             self.measurement_record.push(Some(outcome));
-            Some(outcome)
+            Ok((outcome, prob))
         } else {
             // Case a: Z is not a stabilizer — sort-merge instead of HashMap.
             let mut by_idx: Vec<(I, Complex<T::Coeff>)> =
@@ -301,7 +363,16 @@ where
                 .map(|(_, c)| c.norm_sqr().to_f64().unwrap_or(0.0))
                 .sum();
             let prob_1 = 0.5 - 0.5 * z_overlap_re / norm_sqr;
-            let outcome = self.tableau.rng.random::<f64>() < prob_1;
+            let (outcome, prob) = match self.choose_outcome(prob_1, choice) {
+                Ok(chosen) => chosen,
+                Err(err) => {
+                    // Restore the coefficients drained into `by_idx` (possibly re-sorted).
+                    for (idx, coeff) in by_idx {
+                        self.coefficients.unsafe_insert(idx, coeff);
+                    }
+                    return Err(err);
+                }
+            };
 
             // PROJECTION: partition A (k-bit=0) and B (k-bit=1), transform B, merge.
             let q_idx = stab_anticomm_bits.trailing_zeros() as usize;
@@ -379,8 +450,27 @@ where
                 .update_tableau_according_to_outcome(addr0, q_idx, outcome);
             scratch.odd_phase_mask = None;
             self.measurement_record.push(Some(outcome));
-            Some(outcome)
+            Ok((outcome, prob))
         }
+    }
+
+    /// Pick the outcome given `prob_1 = P(1)`; returns it with its probability.
+    fn choose_outcome(
+        &mut self,
+        prob_1: f64,
+        choice: OutcomeChoice,
+    ) -> Result<(bool, f64), ProjectError> {
+        let outcome = match choice {
+            OutcomeChoice::Sample => self.tableau.rng.random::<f64>() < prob_1,
+            OutcomeChoice::Forced { outcome, .. } => outcome,
+        };
+        let prob = if outcome { prob_1 } else { 1.0 - prob_1 };
+        if let OutcomeChoice::Forced { tol, .. } = choice
+            && (prob.is_nan() || prob < tol)
+        {
+            return Err(ProjectError::ImpossibleOutcome { outcome, prob, tol });
+        }
+        Ok((outcome, prob))
     }
 
     pub fn project_case_a(
@@ -550,6 +640,34 @@ where
         } else {
             bit
         }
+    }
+
+    /// Post-selected Z measurement: collapse qubit `addr0` onto `outcome`,
+    /// record it like [`measure`](LossyMeasure::measure), and return its
+    /// probability. Chaining it gives `P(z) = Π_i P(z_i | z_<i)`.
+    ///
+    /// `tol` must be positive and finite. Returns a [`ProjectError`], leaving
+    /// the tableau untouched, if the qubit is lost or `P(outcome) < tol`.
+    pub fn project(&mut self, addr0: usize, outcome: bool, tol: f64) -> Result<f64, ProjectError> {
+        debug_assert!(
+            tol > 0.0 && tol.is_finite(),
+            "tol must be positive and finite, got {tol}"
+        );
+        if self.qubit_status[addr0] == QubitStatus::Lost {
+            return Err(ProjectError::LostQubit { addr0 });
+        }
+        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) =
+            self.compute_decomposition(addr0, Pauli::Z);
+        let mut scratch = MeasureScratch::new();
+        let (_, prob) = self.collapse_with_scratch(
+            addr0,
+            &mut scratch,
+            phase_decomp,
+            stab_anticomm_bits,
+            destab_anticomm_bits,
+            OutcomeChoice::Forced { outcome, tol },
+        )?;
+        Ok(prob)
     }
 }
 

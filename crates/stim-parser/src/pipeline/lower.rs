@@ -21,6 +21,7 @@ use crate::diagnostics::{Aborted, DiagnosticSink, Span};
 use crate::instructions::{GateName, NoiseName};
 
 use super::emit_skip;
+use super::fuse::Fusable;
 
 type TagExtra<'src> = extra::Err<Rich<'src, char>>;
 
@@ -74,30 +75,36 @@ fn parse_structured_tag(src: &str) -> Option<StructuredTag> {
 }
 
 /// Lower a vanilla [`Program`] into an [`ExtendedProgram`], forwarding every
-/// recoverable error to the sink.
+/// recoverable error to the sink. Also returns the spans of the instructions
+/// it skipped.
 pub(crate) fn lower(
     program: Program,
     sink: &mut dyn DiagnosticSink,
-) -> Result<ExtendedProgram, Aborted> {
+) -> Result<(ExtendedProgram, Vec<Span>), Aborted> {
     let line_map = Arc::clone(&program.line_map);
-    let instructions = lower_slice(program.instructions, sink)?;
-    Ok(ExtendedProgram {
+    let mut skipped = Vec::new();
+    let instructions = lower_slice(program.instructions, sink, &mut skipped)?;
+    let program = ExtendedProgram {
         instructions,
         line_map,
-    })
+    };
+    Ok((program, skipped))
 }
 
 /// Lower a (possibly nested) list of instructions. Lowered instructions are
-/// pushed; recoverable errors are skipped; an aborting sink short-circuits the
-/// whole walk.
+/// pushed; recoverable errors are skipped (and recorded in `skipped`); an
+/// aborting sink short-circuits the whole walk.
 fn lower_slice(
     src: Vec<Instruction>,
     sink: &mut dyn DiagnosticSink,
+    skipped: &mut Vec<Span>,
 ) -> Result<Vec<ExtendedInstruction>, Aborted> {
     let mut out = Vec::with_capacity(src.len());
-    for instr in src {
-        if let Some(lowered) = lower_one(instr, sink)? {
-            out.push(lowered);
+    for mut instr in src {
+        let span = *instr.span_mut();
+        match lower_one(instr, sink, skipped)? {
+            Some(lowered) => out.push(lowered),
+            None => skipped.push(span),
         }
     }
     Ok(out)
@@ -111,6 +118,7 @@ fn lower_slice(
 fn lower_one(
     instr: Instruction,
     sink: &mut dyn DiagnosticSink,
+    skipped: &mut Vec<Span>,
 ) -> Result<Option<ExtendedInstruction>, Aborted> {
     match instr {
         Instruction::Gate(op) => lower_gate(op, sink),
@@ -141,7 +149,7 @@ fn lower_one(
             body,
             span,
         } => {
-            let body = lower_slice(body, sink)?;
+            let body = lower_slice(body, sink, skipped)?;
             Ok(Some(ExtendedInstruction::Repeat {
                 tag,
                 count,

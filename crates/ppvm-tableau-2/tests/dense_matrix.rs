@@ -10,7 +10,7 @@ use std::collections::{HashSet, VecDeque};
 
 use num_complex::Complex64 as C;
 use ppvm_tableau_2::{ActiveDormant, DenseState, GeneralizedTableau, InverseTableau, VirtualState};
-use ppvm_traits_2::{Clifford, Pauli, RotationOne, RotationTwo, TGate};
+use ppvm_traits_2::{Clifford, Measure, Pauli, RotationOne, RotationTwo, TGate};
 
 /// A dense `2^n × 2^n` matrix; basis index bit `q` is qubit `q`.
 #[derive(Clone)]
@@ -583,7 +583,7 @@ fn rotations_match_the_state_vector() {
                         "round {round} step {step}: P(1) simulator {}, state {p1}",
                         w1 / (w0 + w1)
                     );
-                    let outcome = s.measure(a);
+                    let outcome = s.measure(a).expect("no loss");
                     assert!(
                         (if outcome { p1 } else { 1.0 - p1 }) > 1e-9,
                         "round {round} step {step}: sampled an impossible outcome"

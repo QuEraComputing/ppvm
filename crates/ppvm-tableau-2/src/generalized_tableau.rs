@@ -8,7 +8,8 @@ use rand::{RngExt, SeedableRng};
 
 use num_complex::Complex64;
 use ppvm_traits_2::{
-    ApplyGateRule, Clifford, CliffordBatch, Pauli, RotationOne, RotationTwo, TGate,
+    ApplyGateRule, Clifford, CliffordBatch, Measure, Pauli, Reset, ResetState, RotationOne,
+    RotationTwo, TGate,
 };
 
 use crate::{InverseTableau, VirtualState};
@@ -54,22 +55,6 @@ impl<V: VirtualState> GeneralizedTableau<V> {
 
     pub fn state(&self) -> &V {
         &self.state
-    }
-
-    /// Measure `Z_q` and collapse; returns the outcome (`true` for `|1⟩`).
-    pub fn measure(&mut self, q: usize) -> bool {
-        let mut view = self.tableau.virtual_view();
-        let [w0, w1] = self.state.z_weights(&mut view, q);
-        let m = self.rng.random::<f64>() * (w0 + w1) < w1;
-        self.state.collapse(&mut view, q, m);
-        m
-    }
-
-    /// Reset qubit `q` to `|0⟩`: measure it, then flip it if it was `|1⟩`.
-    pub fn reset(&mut self, q: usize) {
-        if self.measure(q) {
-            self.x(q);
-        }
     }
 
     /// `|ψ⟩ ← (a·I + b·∏ Z_q) |ψ⟩` over `qubits`, which must be distinct.
@@ -171,6 +156,34 @@ impl<V: VirtualState> ApplyGateRule for GeneralizedTableau<V> {
 
 impl<V: VirtualState> CliffordBatch for GeneralizedTableau<V> {}
 
+/// Measure `Z_q` and collapse; `Some(true)` for `|1⟩`. Every qubit is live
+/// until loss is modelled, so the outcome is never `None`.
+impl<V: VirtualState> Measure for GeneralizedTableau<V> {
+    fn measure(&mut self, q: usize) -> Option<bool> {
+        let mut view = self.tableau.virtual_view();
+        let [w0, w1] = self.state.z_weights(&mut view, q);
+        let m = self.rng.random::<f64>() * (w0 + w1) < w1;
+        self.state.collapse(&mut view, q, m);
+        Some(m)
+    }
+}
+
+/// Measure, then flip the qubit if it was `|1⟩`.
+impl<V: VirtualState> ResetState for GeneralizedTableau<V> {
+    fn reset_state(&mut self, q: usize) {
+        if self.measure(q) == Some(true) {
+            self.x(q);
+        }
+    }
+}
+
+/// No loss or leakage yet, so a full reset is a state reset.
+impl<V: VirtualState> Reset for GeneralizedTableau<V> {
+    fn reset(&mut self, q: usize) {
+        self.reset_state(q);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,7 +199,7 @@ mod tests {
             let mut s = Sim::new_with_seed(2, seed);
             s.h(0);
             s.cnot(0, 1);
-            let (a, b) = (s.measure(0), s.measure(1));
+            let (a, b) = (s.measure(0).unwrap(), s.measure(1).unwrap());
             assert_eq!(a, b);
             ones += usize::from(a);
         }
@@ -208,7 +221,7 @@ mod tests {
             }
             for q in 0..3 {
                 s.reset(q);
-                assert!(!s.measure(q));
+                assert_eq!(s.measure(q), Some(false));
             }
         }
     }
@@ -218,6 +231,6 @@ mod tests {
     fn x_flips_the_outcome() {
         let mut s = Sim::new_with_seed(1, 0);
         s.x(0);
-        assert!(s.measure(0));
+        assert_eq!(s.measure(0), Some(true));
     }
 }

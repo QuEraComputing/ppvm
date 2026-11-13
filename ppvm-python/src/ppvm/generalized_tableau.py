@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import enum
+import math
 from collections.abc import Iterable
 from dataclasses import InitVar, dataclass, field
 from typing import Literal, overload
@@ -201,6 +202,38 @@ class GeneralizedTableau(
             A list of ``MeasurementResult`` outcomes, one per target.
         """
         return [_BY_VALUE[v] for v in self._interface.measure_many(_normalize_targets(targets))]
+
+    def project(self, addr0: int, outcome: MeasurementResult, *, tol: float = 1e-12) -> float:
+        """Post-select a Z measurement of the specified qubit onto ``outcome``.
+
+        Collapses the state as `measure` would have on ``outcome`` and records
+        it. Chaining it gives exact bitstring probabilities:
+
+        ```python
+        p = 1.0
+        for q, bit in enumerate(bits):
+            p *= tab.project(q, MeasurementResult(bit))
+        ```
+
+        Args:
+            addr0: The index of the target qubit.
+            outcome: ``ZERO`` or ``ONE``.
+            tol: Smallest probability accepted for ``outcome``; must be
+                positive and finite.
+
+        Returns:
+            The probability of measuring ``outcome`` before the projection.
+
+        Raises:
+            ValueError: If ``outcome`` is ``LOST`` or ``tol`` is invalid, or,
+                leaving the state unchanged, if the qubit is lost or the
+                probability of ``outcome`` is below ``tol``.
+        """
+        if outcome not in (MeasurementResult.ZERO, MeasurementResult.ONE):
+            raise ValueError(f"can only project onto ZERO or ONE, got {outcome!r}")
+        if not (tol > 0 and math.isfinite(tol)):
+            raise ValueError(f"tol must be positive and finite, got {tol}")
+        return self._interface.project(addr0, bool(outcome), tol)
 
     def current_measurement_record(self) -> list[MeasurementResult]:
         """Return all measurement outcomes recorded so far.

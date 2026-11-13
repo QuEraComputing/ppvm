@@ -55,6 +55,14 @@ macro_rules! create_interface {
                     .collect()
             }
 
+            /// Post-selected Z measurement; `ProjectError` becomes `ValueError`.
+            #[pyo3(signature = (addr0, outcome, tol = 1e-12))]
+            pub fn project(&mut self, addr0: usize, outcome: bool, tol: f64) -> PyResult<f64> {
+                self.inner
+                    .project(addr0, outcome, tol)
+                    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+            }
+
             pub fn current_measurement_record(&self) -> Vec<i64> {
                 self.inner
                     .current_measurement_record()

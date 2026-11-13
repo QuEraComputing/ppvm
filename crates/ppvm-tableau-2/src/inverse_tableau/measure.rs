@@ -7,9 +7,9 @@
 use ppvm_pauli_kernels::{Bits, heisenberg};
 use ppvm_traits_2::Clifford;
 
-use super::InverseTableau;
 use super::bitword::{BitWord, ZERO, set_bits};
 use super::transposed::TransposedTableau;
+use super::{InverseTableau, QubitMask};
 
 /// Random targets a batch needs before `measure_many` transposes. Measured at
 /// 118 qubits: a batch of ~48 small collapses (the d=7 surface code) is faster
@@ -176,6 +176,41 @@ impl InverseTableau {
                 *outcome = measure_on(self, q, &mut coin, &mut targets);
             }
         }
+    }
+
+    /// Collapse `O = C⁻¹ Z_q C` onto outcome `m` on `|χ⟩ = |φ⟩ ⊗ |0…0⟩`, where
+    /// `φ` lives on the `active` qubits and `O` has an X or Y on a dormant one.
+    ///
+    /// Stim's collapse with the pivot `p` restricted to dormant qubits: `p` is
+    /// the lowest of them, `CX(p, v)` clears every other X (active ones too),
+    /// and `CZ(p, c)` clears the Z on every active `c`. Both are trivial on
+    /// `χ`, since `p` is in `|0⟩`, so `φ` is unchanged. What is left is
+    /// `±X_p` or `±Y_p` times Z's on dormant qubits, which act as `+1`, so the
+    /// final gates are those of [`measure`](Self::measure).
+    pub fn collapse_dormant(&mut self, q: usize, active: &QubitMask, m: bool) {
+        let o = self.iz(q);
+        let pivot = o.x_outside(active).next().expect("no dormant X in O");
+        let cx_targets: Vec<usize> = o.x_support().filter(|&v| v != pivot).collect();
+        let cz_targets: Vec<usize> = o.z_inside(active).collect();
+        // Pivot bits and sign of O after the CXs and CZs, from row iz_q alone.
+        // The CXs leave the other qubits' Z bits and clear their X bits.
+        let (mut pivot_bits, mut negative) = ([true, o.z_bit(pivot)], o.negative);
+        for &v in &cx_targets {
+            let ([px, pz, _, _], flip) =
+                heisenberg::cnot([pivot_bits[0], pivot_bits[1], true, o.z_bit(v)]);
+            pivot_bits = [px, pz];
+            negative ^= flip;
+        }
+        for _ in &cz_targets {
+            let ([px, pz, _, _], flip) =
+                heisenberg::cz([pivot_bits[0], pivot_bits[1], false, true]);
+            pivot_bits = [px, pz];
+            negative ^= flip;
+        }
+        let has_y = pivot_bits[1];
+        self.fan_out(pivot, &cx_targets, &cz_targets, |x, z| {
+            collapse_last(has_y, m != negative, x, z)
+        });
     }
 
     /// Reset qubit `q` to `|0⟩`: measure it, then flip it if it was `|1⟩`.

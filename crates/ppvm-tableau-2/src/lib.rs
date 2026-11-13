@@ -15,7 +15,7 @@ mod inverse_tableau;
 mod virtual_state;
 
 pub use generalized_tableau::GeneralizedTableau;
-pub use inverse_tableau::{InverseTableau, OwnedRow, RowRef, VirtualView};
+pub use inverse_tableau::{InverseTableau, OwnedRow, QubitMask, RowRef, VirtualView};
 pub use virtual_state::{
     ActiveDormant, ActiveState, AxisPauli, DenseState, Rotation, VirtualState,
 };

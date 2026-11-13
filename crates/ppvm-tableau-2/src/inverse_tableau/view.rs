@@ -5,8 +5,33 @@
 
 use ppvm_pauli_kernels::row_product;
 
-use super::bitword::{BitWord, ZERO};
+use super::bitword::{BITWORD_BITS, BitWord, ZERO, bit_position, get_bit, mask_if};
 use super::{InverseTableau, RowRef};
+
+/// A set of qubits as packed bits, e.g. the active virtual qubits, so rows
+/// can be classified against it word by word.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct QubitMask {
+    pub(super) words: Vec<BitWord>,
+}
+
+impl QubitMask {
+    /// The empty set over `n` qubits.
+    pub fn new(n: usize) -> Self {
+        Self {
+            words: vec![ZERO; n.div_ceil(BITWORD_BITS)],
+        }
+    }
+
+    pub fn contains(&self, q: usize) -> bool {
+        get_bit(&self.words, q)
+    }
+
+    pub fn set(&mut self, q: usize, member: bool) {
+        let (w, m) = bit_position(q);
+        self.words[w] = self.words[w] & !m | m & mask_if(member);
+    }
+}
 
 /// An owned row, e.g. a product of rows: its X words, Z words and sign.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -104,5 +129,10 @@ impl VirtualView<'_> {
     /// [`InverseTableau::measure`]; the collapse is a change of basis only.
     pub fn measure(&mut self, q: usize, coin: impl FnOnce() -> bool) -> bool {
         self.t.measure(q, coin)
+    }
+
+    /// See [`InverseTableau::collapse_dormant`].
+    pub fn collapse_dormant(&mut self, q: usize, active: &QubitMask, m: bool) {
+        self.t.collapse_dormant(q, active, m);
     }
 }

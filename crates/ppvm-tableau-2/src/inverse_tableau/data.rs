@@ -5,7 +5,9 @@
 
 use super::bitword::{
     BITWORD_BITS, BitWord, TOP_BIT, ZERO, bit_position, flip_bit, get_bit, mask_if, set_bits,
+    set_bits_of,
 };
+use super::view::QubitMask;
 
 /// The inverse tableau of an `n`-qubit Clifford.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -42,6 +44,16 @@ impl<'a> RowRef<'a> {
     /// Qubits where the row has an X or Y, ascending.
     pub fn x_support(&self) -> impl Iterator<Item = usize> + 'a {
         set_bits(self.x)
+    }
+
+    /// Qubits outside `mask` where the row has an X or Y, ascending.
+    pub fn x_outside(&self, mask: &'a QubitMask) -> impl Iterator<Item = usize> + 'a {
+        set_bits_of(self.x.iter().zip(&mask.words).map(|(&x, &m)| x & !m))
+    }
+
+    /// Qubits in `mask` where the row has a Z or Y, ascending.
+    pub fn z_inside(&self, mask: &'a QubitMask) -> impl Iterator<Item = usize> + 'a {
+        set_bits_of(self.z.iter().zip(&mask.words).map(|(&z, &m)| z & m))
     }
 }
 

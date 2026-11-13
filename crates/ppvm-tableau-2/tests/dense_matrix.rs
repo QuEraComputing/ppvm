@@ -9,7 +9,7 @@
 use std::collections::{HashSet, VecDeque};
 
 use num_complex::Complex64 as C;
-use ppvm_tableau_2::{ActiveDormant, DenseState, GeneralizedTableau, InverseTableau};
+use ppvm_tableau_2::{ActiveDormant, DenseState, GeneralizedTableau, InverseTableau, VirtualState};
 use ppvm_traits_2::{Clifford, Pauli, RotationOne, RotationTwo, TGate};
 
 /// A dense `2^n × 2^n` matrix; basis index bit `q` is qubit `q`.
@@ -521,9 +521,10 @@ fn rotation(p: &Mat, theta: f64) -> Mat {
     m
 }
 
-/// Random three-qubit circuits of Cliffords, `T`, `T†` and one- and two-qubit
-/// Pauli rotations: after every gate, all 64 Pauli expectations of
-/// `C |χ⟩` match the state vector.
+/// Random three-qubit circuits of Cliffords, `T`, `T†`, one- and two-qubit
+/// Pauli rotations and measurements: after every step, all 64 Pauli
+/// expectations of `C |χ⟩` match the state vector, and before every
+/// measurement the outcome weights match the Born probabilities.
 #[test]
 fn rotations_match_the_state_vector() {
     let n = 3;
@@ -538,7 +539,7 @@ fn rotations_match_the_state_vector() {
         seed ^= seed << 17;
         seed as usize
     };
-    let mut max_axes = 0;
+    let (mut max_axes, mut retired) = (0, 0);
     for round in 0..40 {
         let mut s = Sim::new_with_seed(n, round);
         let mut v = vec![C::default(); 1 << n];
@@ -547,7 +548,8 @@ fn rotations_match_the_state_vector() {
             let (a, theta) = (next() % n, (next() % 1000) as f64 * 0.00628);
             let b = (a + 1 + next() % (n - 1)) % n;
             let (pa, pb) = (axes[next() % 4], axes[next() % 4]);
-            let m = match next() % 8 {
+            let axes_before = s.state().active().len();
+            let m = match next() % 10 {
                 0..3 => {
                     let gate = gates[next() % gates.len()];
                     apply(&mut s, gate);
@@ -565,12 +567,32 @@ fn rotations_match_the_state_vector() {
                     s.rotate_1(pa, a, theta);
                     rotation(&paulis.table[pauli_code(pa, a, n)], theta)
                 }
-                _ => {
+                7 => {
                     s.rotate_2(pa, pb, a, b, theta);
                     let code = pauli_code(pa, a, n) | pauli_code(pb, b, n);
                     rotation(&paulis.table[code], theta)
                 }
+                _ => {
+                    let [w0, w1] = s
+                        .state()
+                        .clone()
+                        .z_weights(&mut s.tableau().clone().virtual_view(), a);
+                    let p1 = probability_one(&v, a);
+                    assert!(
+                        (w1 / (w0 + w1) - p1).abs() < 1e-9,
+                        "round {round} step {step}: P(1) simulator {}, state {p1}",
+                        w1 / (w0 + w1)
+                    );
+                    let outcome = s.measure(a);
+                    assert!(
+                        (if outcome { p1 } else { 1.0 - p1 }) > 1e-9,
+                        "round {round} step {step}: sampled an impossible outcome"
+                    );
+                    project(&mut v, a, outcome);
+                    Mat::identity(n)
+                }
             };
+            retired += axes_before.saturating_sub(s.state().active().len());
             v = apply_to_state(&m, &v);
             max_axes = max_axes.max(s.state().active().len());
             let chi = virtual_state(&s);
@@ -587,4 +609,5 @@ fn rotations_match_the_state_vector() {
         }
     }
     assert_eq!(max_axes, n, "the circuits activate every qubit");
+    assert!(retired > 0, "measurements retire active axes");
 }

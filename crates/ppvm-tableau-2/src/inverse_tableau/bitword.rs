@@ -37,7 +37,12 @@ pub(super) fn mask_if(b: bool) -> BitWord {
 
 /// Indices of the set bits of a packed bit string, ascending.
 pub(super) fn set_bits(words: &[BitWord]) -> impl Iterator<Item = usize> + '_ {
-    words.iter().enumerate().flat_map(|(w, &word)| {
+    set_bits_of(words.iter().copied())
+}
+
+/// [`set_bits`] over words computed on the fly (e.g. masked).
+pub(super) fn set_bits_of(words: impl Iterator<Item = BitWord>) -> impl Iterator<Item = usize> {
+    words.enumerate().flat_map(|(w, word)| {
         let mut rest = word;
         std::iter::from_fn(move || {
             (rest != ZERO).then(|| {

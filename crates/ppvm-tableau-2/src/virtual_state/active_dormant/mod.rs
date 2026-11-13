@@ -53,14 +53,32 @@ impl<S: ActiveState + Default> VirtualState for ActiveDormant<S> {
         }
     }
 
-    fn rotate(
-        &mut self,
-        _t: &mut VirtualView<'_>,
-        _qubits: &[usize],
-        _a: Complex64,
-        _b: Complex64,
-    ) {
-        todo!("localization and the Pauli rotation on φ (step 7c)")
+    /// Localization: if `O` has X/Y on dormant qubits, CX from the lowest of
+    /// them (in `|0⟩`, so `χ` is unchanged) clears the others, and it becomes
+    /// active. Then `O` acts as `±P` on the active axes and as `+1` elsewhere.
+    fn rotate(&mut self, t: &mut VirtualView<'_>, qubits: &[usize], a: Complex64, b: Complex64) {
+        debug_assert_eq!(self.active.len(), self.phi.num_axes());
+        let mut o = t.iz_product(qubits);
+        let dormant_x: Vec<usize> = o
+            .row()
+            .x_support()
+            .filter(|v| !self.active.contains(v))
+            .collect();
+        if let Some((&pivot, rest)) = dormant_x.split_first() {
+            t.fan_out(pivot, rest, &[], |x, z| ([x, z], false));
+            assert!(self.active.len() < 64, "at most 64 active axes");
+            self.active.push(pivot);
+            self.phi.activate();
+            o = t.iz_product(qubits);
+        }
+        let o = o.row();
+        let mut p = AxisPauli { x: 0, z: 0 };
+        for (j, &v) in self.active.iter().enumerate() {
+            p.x |= u64::from(o.x_bit(v)) << j;
+            p.z |= u64::from(o.z_bit(v)) << j;
+        }
+        debug_assert_eq!(o.x_support().count(), p.x.count_ones() as usize);
+        self.phi.rotate(p, a, if o.negative { -b } else { b });
     }
 
     /// Deterministic if `O` has no X/Y, else 50/50 (a dormant pivot).

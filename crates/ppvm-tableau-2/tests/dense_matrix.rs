@@ -9,8 +9,8 @@
 use std::collections::{HashSet, VecDeque};
 
 use num_complex::Complex64 as C;
-use ppvm_tableau_2::InverseTableau;
-use ppvm_traits_2::Clifford;
+use ppvm_tableau_2::{ActiveDormant, DenseState, GeneralizedTableau, InverseTableau};
+use ppvm_traits_2::{Clifford, Pauli, RotationOne, RotationTwo, TGate};
 
 /// A dense `2^n × 2^n` matrix; basis index bit `q` is qubit `q`.
 #[derive(Clone)]
@@ -123,7 +123,7 @@ enum Gate {
     Two(usize, usize, usize),
 }
 
-fn apply(t: &mut InverseTableau, gate: Gate) {
+fn apply(t: &mut impl Clifford, gate: Gate) {
     match gate {
         Gate::One(g, q) => match g {
             0 => t.x(q),
@@ -347,9 +347,14 @@ fn row_matrix(t: &InverseTableau, q: usize, z: bool, paulis: &Paulis) -> Mat {
     m
 }
 
-/// `⟨0…0| C⁻¹ P C |0…0⟩` for the Pauli string `code`, from the rows alone:
-/// `P = i^#Y · ∏ X_q^x Z_q^z`, so `C⁻¹ P C = i^#Y · ∏ ix_q^x iz_q^z`.
+/// `⟨0…0| C⁻¹ P C |0…0⟩` for the Pauli string `code`, from the rows alone.
 fn tableau_expectation(t: &InverseTableau, code: usize, paulis: &Paulis) -> C {
+    conjugated(t, code, paulis).a[0]
+}
+
+/// `C⁻¹ P C` for the Pauli string `code`, from the rows alone:
+/// `P = i^#Y · ∏ X_q^x Z_q^z`, so `C⁻¹ P C = i^#Y · ∏ ix_q^x iz_q^z`.
+fn conjugated(t: &InverseTableau, code: usize, paulis: &Paulis) -> Mat {
     let n = t.num_qubits();
     let mut m = Mat::identity(n);
     let mut phase = c(1.0, 0.0);
@@ -365,7 +370,8 @@ fn tableau_expectation(t: &InverseTableau, code: usize, paulis: &Paulis) -> C {
             phase *= c(0.0, 1.0);
         }
     }
-    phase * m.a[0]
+    m.a.iter_mut().for_each(|e| *e *= phase);
+    m
 }
 
 fn apply_to_state(m: &Mat, v: &[C]) -> Vec<C> {
@@ -476,4 +482,109 @@ fn measurements_match_the_state_vector() {
             }
         }
     }
+}
+
+type Sim = GeneralizedTableau<ActiveDormant<DenseState>>;
+
+/// `|χ⟩ = |φ⟩ ⊗ |0…0⟩` as a vector over all virtual qubits.
+fn virtual_state(s: &Sim) -> Vec<C> {
+    let (active, phi) = (s.state().active(), s.state().phi().amplitudes());
+    let mut chi = vec![C::default(); 1 << s.num_qubits()];
+    for (alpha, &amp) in phi.iter().enumerate() {
+        let i: usize = (0..active.len())
+            .map(|j| ((alpha >> j) & 1) << active[j])
+            .sum();
+        chi[i] = amp;
+    }
+    chi
+}
+
+/// Code (`x | z << n`) of the Pauli `axis` on qubit `q`.
+fn pauli_code(axis: Pauli, q: usize, n: usize) -> usize {
+    let (x, z) = match axis {
+        Pauli::I => (0, 0),
+        Pauli::X => (1, 0),
+        Pauli::Y => (1, 1),
+        Pauli::Z => (0, 1),
+    };
+    x << q | z << (n + q)
+}
+
+/// `exp(−i θ/2 P) = cos(θ/2)·I − i sin(θ/2)·P`.
+fn rotation(p: &Mat, theta: f64) -> Mat {
+    let (s, co) = (theta / 2.0).sin_cos();
+    let mut m = p.clone();
+    for (k, e) in m.a.iter_mut().enumerate() {
+        let identity = f64::from(u8::from(k % (p.d + 1) == 0));
+        *e = c(co * identity, 0.0) + c(0.0, -s) * *e;
+    }
+    m
+}
+
+/// Random three-qubit circuits of Cliffords, `T`, `T†` and one- and two-qubit
+/// Pauli rotations: after every gate, all 64 Pauli expectations of
+/// `C |χ⟩` match the state vector.
+#[test]
+fn rotations_match_the_state_vector() {
+    let n = 3;
+    let gates = all_gates(n);
+    let paulis = Paulis::new(n);
+    let axes = [Pauli::I, Pauli::X, Pauli::Y, Pauli::Z];
+    let w = C::from_polar(1.0, std::f64::consts::FRAC_PI_4);
+    let mut seed = 0x2545_f491_4f6c_dd1du64;
+    let mut next = move || {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        seed as usize
+    };
+    let mut max_axes = 0;
+    for round in 0..40 {
+        let mut s = Sim::new_with_seed(n, round);
+        let mut v = vec![C::default(); 1 << n];
+        v[0] = c(1.0, 0.0);
+        for step in 0..40 {
+            let (a, theta) = (next() % n, (next() % 1000) as f64 * 0.00628);
+            let b = (a + 1 + next() % (n - 1)) % n;
+            let (pa, pb) = (axes[next() % 4], axes[next() % 4]);
+            let m = match next() % 8 {
+                0..3 => {
+                    let gate = gates[next() % gates.len()];
+                    apply(&mut s, gate);
+                    matrix(gate, n)
+                }
+                3 => {
+                    s.t(a);
+                    single([[c(1.0, 0.0), c(0.0, 0.0)], [c(0.0, 0.0), w]], a, n)
+                }
+                4 => {
+                    s.t_dag(a);
+                    single([[c(1.0, 0.0), c(0.0, 0.0)], [c(0.0, 0.0), w.conj()]], a, n)
+                }
+                5 | 6 => {
+                    s.rotate_1(pa, a, theta);
+                    rotation(&paulis.table[pauli_code(pa, a, n)], theta)
+                }
+                _ => {
+                    s.rotate_2(pa, pb, a, b, theta);
+                    let code = pauli_code(pa, a, n) | pauli_code(pb, b, n);
+                    rotation(&paulis.table[code], theta)
+                }
+            };
+            v = apply_to_state(&m, &v);
+            max_axes = max_axes.max(s.state().active().len());
+            let chi = virtual_state(&s);
+            for code in 0..1usize << (2 * n) {
+                let (from_sim, from_state) = (
+                    state_expectation(&chi, &conjugated(s.tableau(), code, &paulis)),
+                    state_expectation(&v, &paulis.table[code]),
+                );
+                assert!(
+                    (from_sim - from_state).norm() < 1e-9,
+                    "round {round} step {step}: Pauli {code:#b}: simulator {from_sim}, state {from_state}"
+                );
+            }
+        }
+    }
+    assert_eq!(max_axes, n, "the circuits activate every qubit");
 }

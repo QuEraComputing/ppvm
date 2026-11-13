@@ -4,7 +4,7 @@
 //! The tableau's storage: rows, signs, and where rows sit in the arena.
 
 use super::bitword::{
-    BITWORD_BITS, BitWord, TOP_BIT, ZERO, bit_position, flip_bit, get_bit, mask_if,
+    BITWORD_BITS, BitWord, TOP_BIT, ZERO, bit_position, flip_bit, get_bit, mask_if, set_bits,
 };
 
 /// The inverse tableau of an `n`-qubit Clifford.
@@ -28,7 +28,7 @@ pub struct RowRef<'a> {
     pub negative: bool,
 }
 
-impl RowRef<'_> {
+impl<'a> RowRef<'a> {
     /// X bit of the row at qubit `q`.
     pub fn x_bit(&self, q: usize) -> bool {
         get_bit(self.x, q)
@@ -37,6 +37,11 @@ impl RowRef<'_> {
     /// Z bit of the row at qubit `q`.
     pub fn z_bit(&self, q: usize) -> bool {
         get_bit(self.z, q)
+    }
+
+    /// Qubits where the row has an X or Y, ascending.
+    pub fn x_support(&self) -> impl Iterator<Item = usize> + 'a {
+        set_bits(self.x)
     }
 }
 

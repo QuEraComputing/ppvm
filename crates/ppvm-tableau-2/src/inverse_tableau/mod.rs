@@ -29,4 +29,4 @@ mod view;
 mod virtual_gates;
 
 pub use data::{InverseTableau, RowRef};
-pub use view::VirtualView;
+pub use view::{OwnedRow, VirtualView};

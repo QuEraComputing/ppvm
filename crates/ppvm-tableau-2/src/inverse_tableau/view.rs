@@ -3,7 +3,28 @@
 
 //! [`VirtualView`]: the part of the tableau a virtual state may use.
 
+use ppvm_pauli_kernels::row_product;
+
+use super::bitword::{BitWord, ZERO};
 use super::{InverseTableau, RowRef};
+
+/// An owned row, e.g. a product of rows: its X words, Z words and sign.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OwnedRow {
+    x: Vec<BitWord>,
+    z: Vec<BitWord>,
+    negative: bool,
+}
+
+impl OwnedRow {
+    pub fn row(&self) -> RowRef<'_> {
+        RowRef {
+            x: &self.x,
+            z: &self.z,
+            negative: self.negative,
+        }
+    }
+}
 
 /// The virtual side of an [`InverseTableau`]: row reads and changes of basis
 /// `C ← C·V`, but no physical gates. A virtual state gets this view, so it can
@@ -31,6 +52,26 @@ impl VirtualView<'_> {
     /// Row `iz_q = C⁻¹ Z_q C`.
     pub fn iz(&self, q: usize) -> RowRef<'_> {
         self.t.iz(q)
+    }
+
+    /// `O = C⁻¹ (∏ Z_q) C = ∏ iz_q` over `qubits`, which must be distinct. The
+    /// `Z_q` commute, so `O` is a Hermitian Pauli string with sign ±1.
+    pub fn iz_product(&self, qubits: &[usize]) -> OwnedRow {
+        let stride = self.t.stride;
+        let (mut x, mut z) = (vec![ZERO; stride], vec![ZERO; stride]);
+        // Power of `i` in front of the product of the bare rows.
+        let mut phase = 0u8;
+        for &q in qubits {
+            let r = self.t.iz(q);
+            let k = row_product(&mut x, &mut z, r.x, r.z) + 2 * u8::from(r.negative);
+            phase = phase.wrapping_add(k);
+        }
+        debug_assert_eq!(phase % 2, 0, "product of commuting rows is Hermitian");
+        OwnedRow {
+            x,
+            z,
+            negative: phase % 4 == 2,
+        }
     }
 
     /// See [`InverseTableau::change_basis1`].

@@ -54,6 +54,13 @@ class MeasurementResult(enum.IntEnum):
 # refcount. Shared with ``GeneralizedTableauSum``.
 _BY_VALUE = (MeasurementResult.ZERO, MeasurementResult.ONE, MeasurementResult.LOST)
 
+# The Rust-side form of each outcome: `Option<bool>`, `None` = lost.
+_TO_RUST = {
+    MeasurementResult.ZERO: False,
+    MeasurementResult.ONE: True,
+    MeasurementResult.LOST: None,
+}
+
 
 @dataclass(frozen=True)
 class GeneralizedTableau(
@@ -201,6 +208,35 @@ class GeneralizedTableau(
             A list of ``MeasurementResult`` outcomes, one per target.
         """
         return [_BY_VALUE[v] for v in self._interface.measure_many(_normalize_targets(targets))]
+
+    def project(self, addr0: int, outcome: MeasurementResult, *, tol: float = 1e-12) -> float:
+        """Post-select a measurement of the specified qubit onto ``outcome``.
+
+        Collapses the state as `measure` would have on ``outcome`` and records
+        it. ``LOST`` has probability 1 on a lost qubit and 0 on a live one.
+        Chaining it gives exact bitstring probabilities:
+
+        ```python
+        p = 1.0
+        for q, bit in enumerate(bits):
+            p *= tab.project(q, MeasurementResult(bit))
+        ```
+
+        Args:
+            addr0: The index of the target qubit.
+            outcome: The outcome to project onto.
+            tol: Smallest probability accepted for ``outcome``, in ``(0, 1]``.
+
+        Returns:
+            The probability of measuring ``outcome`` before the projection.
+
+        Raises:
+            ValueError: If ``tol`` is invalid, or, leaving the state unchanged,
+                if the probability of ``outcome`` is below ``tol``.
+        """
+        if not 0 < tol <= 1:
+            raise ValueError(f"tol must be in (0, 1], got {tol}")
+        return self._interface.project(addr0, _TO_RUST[outcome], tol)
 
     def current_measurement_record(self) -> list[MeasurementResult]:
         """Return all measurement outcomes recorded so far.

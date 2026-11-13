@@ -10,7 +10,7 @@ use std::collections::{HashSet, VecDeque};
 
 use num_complex::Complex64 as C;
 use ppvm_tableau_2::{ActiveDormant, DenseState, GeneralizedTableau, InverseTableau, VirtualState};
-use ppvm_traits_2::{Clifford, Measure, Pauli, RotationOne, RotationTwo, TGate};
+use ppvm_traits_2::{Clifford, Measure, Pauli, RotXY, RotationOne, RotationTwo, TGate, U3Gate};
 
 /// A dense `2^n × 2^n` matrix; basis index bit `q` is qubit `q`.
 #[derive(Clone)]
@@ -522,7 +522,7 @@ fn rotation(p: &Mat, theta: f64) -> Mat {
 }
 
 /// Random three-qubit circuits of Cliffords, `T`, `T†`, one- and two-qubit
-/// Pauli rotations and measurements: after every step, all 64 Pauli
+/// Pauli rotations, `U3`, `R(φ, θ)` and measurements: after every step, all 64 Pauli
 /// expectations of `C |χ⟩` match the state vector, and before every
 /// measurement the outcome weights match the Born probabilities.
 #[test]
@@ -549,7 +549,11 @@ fn rotations_match_the_state_vector() {
             let b = (a + 1 + next() % (n - 1)) % n;
             let (pa, pb) = (axes[next() % 4], axes[next() % 4]);
             let axes_before = s.state().active().len();
-            let m = match next() % 10 {
+            let (phi, lambda) = (
+                (next() % 1000) as f64 * 0.00628,
+                (next() % 1000) as f64 * 0.00628,
+            );
+            let m = match next() % 12 {
                 0..3 => {
                     let gate = gates[next() % gates.len()];
                     apply(&mut s, gate);
@@ -571,6 +575,23 @@ fn rotations_match_the_state_vector() {
                     s.rotate_2(pa, pb, a, b, theta);
                     let code = pauli_code(pa, a, n) | pauli_code(pb, b, n);
                     rotation(&paulis.table[code], theta)
+                }
+                8 => {
+                    s.u3(a, theta, phi, lambda);
+                    let (sn, co) = (theta / 2.0).sin_cos();
+                    let e = |x: f64| C::from_polar(1.0, x);
+                    let u = [
+                        [c(co, 0.0), -e(lambda) * sn],
+                        [e(phi) * sn, e(phi + lambda) * co],
+                    ];
+                    single(u, a, n)
+                }
+                9 => {
+                    // R(φ, θ) = cos(θ/2)·I − i sin(θ/2)·(cos φ·X + sin φ·Y).
+                    s.r(a, phi, theta);
+                    let (sn, co) = (theta / 2.0).sin_cos();
+                    let off = |x: f64| c(0.0, -sn) * C::from_polar(1.0, x);
+                    single([[c(co, 0.0), off(-phi)], [off(phi), c(co, 0.0)]], a, n)
                 }
                 _ => {
                     let [w0, w1] = s

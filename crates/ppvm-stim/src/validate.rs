@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use stim_parser::diagnostics::LineMap;
+use stim_parser::diagnostics::{LineMap, Span};
 use stim_parser::prelude::{
     ExtendedInstruction, ExtendedProgram, GateName, GateOp, MeasureName, MeasureOp, MppOp,
     NoiseName, NoiseOp, PauliFactor, Target,
@@ -25,6 +25,28 @@ pub enum ExecError {
     },
     #[error("invalid 'MPP' Pauli product at line {line}: {message}")]
     InvalidPauliProduct { line: usize, message: String },
+}
+
+/// `" in the instruction fused from lines 2-3"`, or `""` for a single line.
+fn fused_from((line, last_line): (usize, usize)) -> String {
+    if line == last_line {
+        String::new()
+    } else {
+        format!(" in the instruction fused from lines {line}-{last_line}")
+    }
+}
+
+/// First and last source line of a (possibly fused) instruction.
+fn line_range(span: Span, line_map: &LineMap) -> (usize, usize) {
+    let last = span.end.saturating_sub(1).max(span.start);
+    (line_map.line_of(span.start), line_map.line_of(last))
+}
+
+fn fmt_target(t: Target) -> String {
+    match t {
+        Target::Qubit(q) => q.to_string(),
+        Target::Rec(k) => format!("rec[-{k}]"),
+    }
 }
 
 pub fn validate(program: &ExtendedProgram) -> Result<(), ExecError> {
@@ -51,9 +73,9 @@ fn validate_slice(
                 span,
                 ..
             }) => {
-                let line = span.line(line_map);
-                check_gate_supported(*name, line)?;
-                check_record_controls(*name, targets, *measurements, line)?;
+                let lines = line_range(*span, line_map);
+                check_gate_supported(*name, lines.0)?;
+                check_record_controls(*name, targets, *measurements, lines)?;
             }
             ExtendedInstruction::Noise(NoiseOp { name, span, .. }) => {
                 check_noise_supported(*name, span.line(line_map))?;
@@ -78,12 +100,12 @@ fn validate_slice(
                 span,
                 ..
             }) => {
-                let line = span.line(line_map);
+                let lines = line_range(*span, line_map);
                 if let Some(&p) = args.first() {
-                    check_probability(p, "MPP", line)?;
+                    check_probability(p, "MPP", lines.0)?;
                 }
                 for product in products {
-                    check_mpp_distinct_qubits(product, line)?;
+                    check_mpp_distinct_qubits(product, lines)?;
                 }
                 *measurements = measurements.saturating_add(products.len());
             }
@@ -156,40 +178,49 @@ fn check_record_controls(
     name: GateName,
     targets: &[Target],
     measurements: usize,
-    line: usize,
+    lines: (usize, usize),
 ) -> Result<(), ExecError> {
     use GateName::*;
-    if !targets.iter().any(|t| matches!(t, Target::Rec(_))) {
+    let Some(&rec) = targets.iter().find(|t| matches!(t, Target::Rec(_))) else {
         return Ok(());
-    }
+    };
     let controlled = matches!(name, CX | ZCX | CNot | CY | ZCY | CZ | ZCZ);
+    let fused = fused_from(lines);
     if !controlled {
         return Err(ExecError::InvalidRecordControl {
             name: name.canonical_name().to_string(),
-            line,
-            message: "measurement-record controls (rec[-k]) are only valid on CX/CNOT, CY and CZ"
-                .to_string(),
+            line: lines.0,
+            message: format!(
+                "{}{fused} is not allowed: measurement-record controls (rec[-k]) are only \
+                 valid on CX/CNOT, CY and CZ",
+                fmt_target(rec)
+            ),
         });
     }
     // Targets come in (control, target) pairs; the target may never be a record,
     // and a control may never look back past the start of the record.
-    for pair in targets.as_chunks::<2>().0 {
-        if matches!(pair[1], Target::Rec(_)) {
+    for &[control, target] in targets.as_chunks::<2>().0 {
+        if matches!(target, Target::Rec(_)) {
             return Err(ExecError::InvalidRecordControl {
                 name: name.canonical_name().to_string(),
-                line,
-                message: "measurement record cannot be a gate target".to_string(),
+                line: lines.0,
+                message: format!(
+                    "measurement record cannot be a gate target (pair '{} {}'{fused})",
+                    fmt_target(control),
+                    fmt_target(target)
+                ),
             });
         }
-        if let Target::Rec(k) = pair[0]
+        if let Target::Rec(k) = control
             && k > measurements
         {
             return Err(ExecError::InvalidRecordControl {
                 name: name.canonical_name().to_string(),
-                line,
+                line: lines.0,
                 message: format!(
                     "rec[-{k}] looks back before the start of the measurement record \
-                     ({measurements} measurement(s) recorded so far)"
+                     ({measurements} measurement(s) recorded so far; pair 'rec[-{k}] {}'{fused})",
+                    fmt_target(target)
                 ),
             });
         }
@@ -204,16 +235,25 @@ fn check_record_controls(
 /// CX-ladder gadget in the executor assumes one factor per qubit, so a repeat
 /// would silently misbehave. We reject all repeats with a single clear error
 /// rather than emulate the folding.
-fn check_mpp_distinct_qubits(product: &[PauliFactor], line: usize) -> Result<(), ExecError> {
+fn check_mpp_distinct_qubits(
+    product: &[PauliFactor],
+    lines: (usize, usize),
+) -> Result<(), ExecError> {
     for (i, factor) in product.iter().enumerate() {
         if product[..i].iter().any(|prev| prev.qubit == factor.qubit) {
             return Err(ExecError::InvalidPauliProduct {
-                line,
+                line: lines.0,
                 message: format!(
-                    "qubit {} appears more than once; MPP products must act on distinct qubits. \
-                     If you have a use case for repeated Paulis in a product, please open an \
-                     issue at https://github.com/QuEraComputing/ppvm/issues",
-                    factor.qubit
+                    "qubit {} appears more than once in {}{}; MPP products must act on \
+                     distinct qubits. If you have a use case for repeated Paulis in a product, \
+                     please open an issue at https://github.com/QuEraComputing/ppvm/issues",
+                    factor.qubit,
+                    product
+                        .iter()
+                        .map(|f| format!("{}{}", f.axis.as_char(), f.qubit))
+                        .collect::<Vec<_>>()
+                        .join("*"),
+                    fused_from(lines)
                 ),
             });
         }

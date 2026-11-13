@@ -214,3 +214,67 @@ fn valid_leakage_accepted() {
     let prog = parse_extended("I_ERROR[leakage](0.5, 0.5) 0").expect("parse_extended");
     assert_eq!(validate(&prog), Ok(()));
 }
+
+// ---- fused instructions: quote the operand and name the line range --------
+
+/// The `(line, message)` of a record-control or Pauli-product error.
+fn line_and_message(e: &ExecError) -> (usize, &str) {
+    match e {
+        ExecError::InvalidRecordControl { line, message, .. }
+        | ExecError::InvalidPauliProduct { line, message } => (*line, message),
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
+fn single_line_error_has_no_fused_note() {
+    let e = err_from_src("M 0\nCX rec[-2] 1");
+    let (line, message) = line_and_message(&e);
+    assert_eq!(line, 2);
+    assert!(message.contains("pair 'rec[-2] 1'"), "{message}");
+    assert!(!message.contains("fused"), "{message}");
+}
+
+#[test]
+fn lookback_error_in_fused_run() {
+    let e = err_from_src("M 0\nCX rec[-1] 0\nCX rec[-5] 1");
+    let (line, message) = line_and_message(&e);
+    assert_eq!(line, 2);
+    assert!(
+        message.contains("pair 'rec[-5] 1' in the instruction fused from lines 2-3"),
+        "{message}"
+    );
+}
+
+#[test]
+fn record_target_error_in_fused_run() {
+    let e = err_from_src("M 0\nCX rec[-1] 0\nCX 1 rec[-1]");
+    let (line, message) = line_and_message(&e);
+    assert_eq!(line, 2);
+    assert!(
+        message.contains("pair '1 rec[-1]' in the instruction fused from lines 2-3"),
+        "{message}"
+    );
+}
+
+#[test]
+fn record_on_uncontrolled_gate_in_fused_run() {
+    let e = err_from_src("M 0\nH 1\nH rec[-1]");
+    let (line, message) = line_and_message(&e);
+    assert_eq!(line, 2);
+    assert!(
+        message.starts_with("rec[-1] in the instruction fused from lines 2-3 is not allowed"),
+        "{message}"
+    );
+}
+
+#[test]
+fn mpp_error_in_fused_run() {
+    let e = err_from_src("MPP X0\nMPP X1*X1");
+    let (line, message) = line_and_message(&e);
+    assert_eq!(line, 1);
+    assert!(
+        message.contains("in X1*X1 in the instruction fused from lines 1-2;"),
+        "{message}"
+    );
+}

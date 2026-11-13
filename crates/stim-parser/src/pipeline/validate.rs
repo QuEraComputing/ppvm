@@ -19,31 +19,38 @@ use crate::syntax::{RawSyntaxNode, RawSyntaxTree, RawTarget};
 
 use super::emit_skip;
 
-/// Walk the raw syntactic tree and build the validated [`Program`].
+/// Walk the raw syntactic tree and build the validated [`Program`]. Also
+/// returns the spans of the nodes it skipped.
 pub(crate) fn validate(
     tree: RawSyntaxTree,
     line_map: &Arc<LineMap>,
     sink: &mut dyn DiagnosticSink,
-) -> Result<Program, Aborted> {
-    let instructions = validate_slice(tree, line_map, sink)?;
-    Ok(Program {
+) -> Result<(Program, Vec<Span>), Aborted> {
+    let mut skipped = Vec::new();
+    let instructions = validate_slice(tree, line_map, sink, &mut skipped)?;
+    let program = Program {
         instructions,
         line_map: Arc::clone(line_map),
-    })
+    };
+    Ok((program, skipped))
 }
 
 /// Validate a (possibly nested) list of raw nodes into instructions. Valid
-/// instructions are pushed; recoverable errors are skipped; an aborting sink
-/// short-circuits the whole walk.
+/// instructions are pushed; recoverable errors are skipped (and recorded in
+/// `skipped`); an aborting sink short-circuits the whole walk.
 fn validate_slice(
     nodes: Vec<RawSyntaxNode>,
     line_map: &Arc<LineMap>,
     sink: &mut dyn DiagnosticSink,
+    skipped: &mut Vec<Span>,
 ) -> Result<Vec<Instruction>, Aborted> {
     let mut out = Vec::with_capacity(nodes.len());
     for node in nodes {
-        if let Some(instruction) = validate_node(node, line_map, sink)? {
-            out.push(instruction);
+        let (RawSyntaxNode::Instruction { span, .. } | RawSyntaxNode::Repeat { span, .. }) = &node;
+        let span: Span = (*span).into();
+        match validate_node(node, line_map, sink, skipped)? {
+            Some(instruction) => out.push(instruction),
+            None => skipped.push(span),
         }
     }
     Ok(out)
@@ -58,6 +65,7 @@ fn validate_node(
     node: RawSyntaxNode,
     line_map: &Arc<LineMap>,
     sink: &mut dyn DiagnosticSink,
+    skipped: &mut Vec<Span>,
 ) -> Result<Option<Instruction>, Aborted> {
     match node {
         RawSyntaxNode::Instruction {
@@ -181,7 +189,7 @@ fn validate_node(
             span,
         } => {
             let span: Span = span.into();
-            let body = validate_slice(body, line_map, sink)?;
+            let body = validate_slice(body, line_map, sink, skipped)?;
             Ok(Some(Instruction::Repeat {
                 tag,
                 count,
@@ -399,7 +407,7 @@ mod tests {
     /// return the produced program.
     fn ok_program(nodes: Vec<RawSyntaxNode>, line_map: &Arc<LineMap>) -> Program {
         let mut sink = FailFast::new();
-        let program = validate(nodes, line_map, &mut sink).expect("validation should succeed");
+        let (program, _) = validate(nodes, line_map, &mut sink).expect("validation should succeed");
         assert!(!sink.saw_error(), "expected no diagnostics");
         program
     }
@@ -410,7 +418,7 @@ mod tests {
     /// resulting program is empty (asserted here as a guard).
     fn collect_errors(nodes: Vec<RawSyntaxNode>, line_map: &Arc<LineMap>) -> Vec<Diagnostic> {
         let mut sink = Collect::new();
-        let program = validate(nodes, line_map, &mut sink).expect("Collect never aborts");
+        let (program, _) = validate(nodes, line_map, &mut sink).expect("Collect never aborts");
         assert!(
             program.instructions.is_empty(),
             "collect_errors expects every input node to be invalid"
@@ -689,7 +697,7 @@ mod tests {
 
         // Collect skips the bad instruction but keeps the good one.
         let mut sink = Collect::new();
-        let prog = validate(
+        let (prog, skipped) = validate(
             vec![
                 instr("FROBNICATE", vec![], vec!["0"], (0, 10)),
                 instr("H", vec![], vec!["0"], (0, 1)),
@@ -699,6 +707,7 @@ mod tests {
         )
         .expect("Collect never aborts");
         assert_eq!(prog.instructions.len(), 1);
+        assert_eq!(skipped, vec![Span::new(0, 10)]);
         assert!(matches!(
             &prog.instructions[0],
             Instruction::Gate(GateOp {

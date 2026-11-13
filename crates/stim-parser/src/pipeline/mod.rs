@@ -1,10 +1,18 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Typestate lowering pipeline: Source → Parsed → Validated → Lowered.
+//! Typestate lowering pipeline:
+//!
+//! ```text
+//! Source ─parse─▶ Parsed ─validate─▶ Validated ─fuse─▶ Fused<Program>
+//!                                        │
+//!                                        └─lower─▶ Lowered ─fuse─▶ Fused<ExtendedProgram>
+//! ```
+//!
 //! Each transition consumes `self` and returns the next state type, so
 //! illegal orderings do not compile.
 
+mod fuse;
 mod lower;
 mod validate;
 
@@ -52,12 +60,17 @@ pub struct Parsed {
     pub(crate) line_map: Arc<LineMap>,
 }
 // Once a Program exists it owns the LineMap, so the later states need only
-// hold the program.
+// hold the program and the spans of skipped nodes.
 pub struct Validated {
     pub(crate) program: Program,
+    pub(crate) skipped: Vec<Span>,
 }
 pub struct Lowered {
     pub(crate) program: ExtendedProgram,
+    pub(crate) skipped: Vec<Span>,
+}
+pub struct Fused<P> {
+    pub(crate) program: P,
 }
 
 impl<'a> Pipeline<Source<'a>> {
@@ -97,9 +110,9 @@ impl Pipeline<Parsed> {
     /// forwarding every recoverable error to the sink.
     pub fn validate(self, sink: &mut dyn DiagnosticSink) -> Result<Pipeline<Validated>, Aborted> {
         let Parsed { tree, line_map } = self.state;
-        let program = validate::validate(tree, &line_map, sink)?;
+        let (program, skipped) = validate::validate(tree, &line_map, sink)?;
         Ok(Pipeline {
-            state: Validated { program },
+            state: Validated { program, skipped },
         })
     }
 }
@@ -109,10 +122,29 @@ impl Pipeline<Validated> {
     /// [`ExtendedInstruction`] variants, forwarding every recoverable error to
     /// the sink.
     pub fn lower(self, sink: &mut dyn DiagnosticSink) -> Result<Pipeline<Lowered>, Aborted> {
-        let program = lower::lower(self.state.program, sink)?;
+        let Validated {
+            program,
+            mut skipped,
+        } = self.state;
+        let (program, lower_skipped) = lower::lower(program, sink)?;
+        skipped.extend(lower_skipped);
         Ok(Pipeline {
-            state: Lowered { program },
+            state: Lowered { program, skipped },
         })
+    }
+
+    /// Stage 4: fusion. Merges consecutive compatible instructions, as Stim
+    /// does (`H 0` / `H 1` becomes `H 0 1`).
+    pub fn fuse(self) -> Pipeline<Fused<Program>> {
+        let Validated { program, skipped } = self.state;
+        Pipeline {
+            state: Fused {
+                program: Program {
+                    instructions: fuse::fuse(program.instructions, skipped),
+                    ..program
+                },
+            },
+        }
     }
 
     pub fn finish(self) -> Program {
@@ -121,7 +153,27 @@ impl Pipeline<Validated> {
 }
 
 impl Pipeline<Lowered> {
+    /// Stage 4: fusion. Merges consecutive compatible instructions, as Stim
+    /// does (`H 0` / `H 1` becomes `H 0 1`).
+    pub fn fuse(self) -> Pipeline<Fused<ExtendedProgram>> {
+        let Lowered { program, skipped } = self.state;
+        Pipeline {
+            state: Fused {
+                program: ExtendedProgram {
+                    instructions: fuse::fuse(program.instructions, skipped),
+                    ..program
+                },
+            },
+        }
+    }
+
     pub fn finish(self) -> ExtendedProgram {
+        self.state.program
+    }
+}
+
+impl<P> Pipeline<Fused<P>> {
+    pub fn finish(self) -> P {
         self.state.program
     }
 }

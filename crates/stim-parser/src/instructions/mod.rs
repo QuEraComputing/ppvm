@@ -403,6 +403,14 @@ impl NoiseName {
     pub fn canonical_name(self) -> &'static str {
         canonical_name(EntryKind::Noise(self))
     }
+
+    /// Correlated errors are one joint event over all targets, so never fused.
+    pub(crate) fn is_fusable(self) -> bool {
+        !matches!(
+            self,
+            NoiseName::CorrelatedError | NoiseName::ElseCorrelatedError
+        )
+    }
 }
 
 impl MeasureName {

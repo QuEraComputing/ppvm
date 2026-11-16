@@ -1,6 +1,7 @@
-"""Running the timing tools: ppvm's `run_stim` and reference binaries with
-the same CLI (`<tool> <circuit> <shots>`, printing `<x> µs/shot` or
-`<x> us/shot`), such as `stim_driver` built against a Stim checkout."""
+"""Running the timing tools: a ppvm example (`run_stim`, `run_clifft`) and
+reference binaries with the same CLI (`<tool> <circuit> <shots>`, printing
+`<x> µs/shot` or `<x> us/shot`), such as `stim_driver` built against a Stim
+checkout."""
 
 import pathlib
 import re
@@ -10,10 +11,10 @@ import sys
 HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parents[3]
 OUT = REPO / "target" / "stim-compare"
-RUN_STIM = REPO / "target" / "release" / "examples" / "run_stim"
+EXAMPLES = REPO / "target" / "release" / "examples"
 
 
-def build_ppvm() -> None:
+def build_ppvm(example: str = "run_stim") -> None:
     subprocess.run(
         [
             "cargo",
@@ -23,18 +24,18 @@ def build_ppvm() -> None:
             "-p",
             "ppvm-tableau-2",
             "--example",
-            "run_stim",
+            example,
         ],
         cwd=REPO,
         check=True,
     )
 
 
-def tools(references: list[str]) -> dict[str, list[str]]:
-    """`ppvm`, then the `NAME=PATH` references in order."""
+def tools(references: list[str], example: str = "run_stim") -> dict[str, list[str]]:
+    """`ppvm` (the example), then the `NAME=PATH` references in order."""
     if not references:
         sys.exit("give at least one --reference NAME=PATH (see README.md)")
-    found = {"ppvm": [str(RUN_STIM)]}
+    found = {"ppvm": [str(EXAMPLES / example)]}
     for reference in references:
         name, path = reference.split("=", 1)
         found[name] = [path]

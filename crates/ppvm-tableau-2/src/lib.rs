@@ -10,6 +10,7 @@
 //!   keeps amplitudes only for the active virtual qubits.
 //! - `generalized_tableau`: [`GeneralizedTableau`], the simulator.
 
+mod display;
 mod generalized_tableau;
 mod inverse_tableau;
 mod virtual_state;

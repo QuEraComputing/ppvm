@@ -21,7 +21,7 @@ use num_complex::Complex64;
 use ppvm_traits_2::{Clifford, Pauli};
 
 use crate::{InverseTableau, VirtualState};
-use status::Status;
+use status::QubitStatus;
 
 /// The state `|ψ⟩ = C |χ⟩`: the Clifford `C` as an [`InverseTableau`], and the
 /// virtual state `|χ⟩` in the representation `V`.
@@ -33,7 +33,7 @@ use status::Status;
 pub struct GeneralizedTableau<V: VirtualState> {
     tableau: InverseTableau,
     state: V,
-    status: Status,
+    status: Vec<QubitStatus>,
     rng: SmallRng,
 }
 
@@ -52,7 +52,7 @@ impl<V: VirtualState> GeneralizedTableau<V> {
         Self {
             tableau: InverseTableau::new(n),
             state: V::new(n),
-            status: Status::new(n),
+            status: vec![QubitStatus::Live; n],
             rng,
         }
     }
@@ -71,23 +71,28 @@ impl<V: VirtualState> GeneralizedTableau<V> {
 
     /// Whether `q` is lost: gates skip it and measuring it gives `None`.
     pub fn is_lost(&self, q: usize) -> bool {
-        self.status.is_lost(q)
+        self.status[q] == QubitStatus::Lost
     }
 
     /// Whether `q` is leaked: gates skip it and measuring it gives the pinned bit.
     pub fn is_leaked(&self, q: usize) -> bool {
-        self.status.is_leaked(q)
+        self.status[q] == QubitStatus::Leaked
+    }
+
+    /// Whether `q` is lost or leaked, so gates skip it.
+    fn is_inactive(&self, q: usize) -> bool {
+        self.status[q].is_inactive()
     }
 
     /// `|ψ⟩ ← (a·I + b·∏ Z_q) |ψ⟩` over `qubits`, which must be distinct.
     /// Inactive qubits are dropped, as gates skip them.
     fn rotate_z(&mut self, qubits: &[usize], a: Complex64, b: Complex64) {
         let live: Vec<usize>;
-        let qubits = if self.status.any() {
+        let qubits = if qubits.iter().any(|&q| self.is_inactive(q)) {
             live = qubits
                 .iter()
                 .copied()
-                .filter(|&q| !self.status.is_inactive(q))
+                .filter(|&q| !self.is_inactive(q))
                 .collect();
             if live.is_empty() {
                 return;

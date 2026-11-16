@@ -8,9 +8,12 @@
 
 use rand::RngExt;
 
-use ppvm_traits_2::{Clifford, LossChannel, ResetLossChannel};
+use ppvm_traits_2::{
+    Clifford, LeakageChannel, LossChannel, ResetLeakageChannel, ResetLossChannel, ResetState,
+};
 
 use super::GeneralizedTableau;
+use super::status::QubitStatus;
 use crate::VirtualState;
 
 impl<V: VirtualState> GeneralizedTableau<V> {
@@ -20,14 +23,14 @@ impl<V: VirtualState> GeneralizedTableau<V> {
         if self.sample_z(q) {
             self.tableau.x(q);
         }
-        self.status.set_lost(q);
+        self.status[q] = QubitStatus::Lost;
     }
 }
 
 /// With probability `p`, lose `q`. A lost qubit stays lost.
 impl<V: VirtualState> LossChannel<f64> for GeneralizedTableau<V> {
     fn loss_channel(&mut self, q: usize, p: f64) {
-        if !self.status.is_lost(q) && self.rng.random::<f64>() < p {
+        if !self.is_lost(q) && self.rng.random::<f64>() < p {
             self.lose(q);
         }
     }
@@ -36,8 +39,38 @@ impl<V: VirtualState> LossChannel<f64> for GeneralizedTableau<V> {
 /// Bring a lost qubit back as live; it is already in `|0⟩`.
 impl<V: VirtualState> ResetLossChannel for GeneralizedTableau<V> {
     fn reset_loss_channel(&mut self, q: usize) {
-        if self.status.is_lost(q) {
-            self.status.set_live(q);
+        if self.is_lost(q) {
+            self.status[q] = QubitStatus::Live;
+        }
+    }
+}
+
+/// With probability `p0` pin `q` to `|0⟩` and mark it leaked, with `p1` to
+/// `|1⟩`. Lost and leaked qubits are left alone.
+impl<V: VirtualState> LeakageChannel<f64> for GeneralizedTableau<V> {
+    fn leakage_channel(&mut self, q: usize, p0: f64, p1: f64) {
+        debug_assert!(p0 >= 0.0 && p1 >= 0.0 && p0 + p1 <= 1.0 + 1e-9);
+        if self.is_inactive(q) {
+            return;
+        }
+        let r = self.rng.random::<f64>();
+        if r >= p0 + p1 {
+            return;
+        }
+        let pin = r >= p0;
+        if self.sample_z(q) != pin {
+            self.tableau.x(q);
+        }
+        self.status[q] = QubitStatus::Leaked;
+    }
+}
+
+/// Bring a leaked qubit back as live `|0⟩`. Live and lost qubits are untouched.
+impl<V: VirtualState> ResetLeakageChannel for GeneralizedTableau<V> {
+    fn reset_leakage_channel(&mut self, q: usize) {
+        if self.is_leaked(q) {
+            self.status[q] = QubitStatus::Live;
+            self.reset_state(q);
         }
     }
 }
@@ -132,5 +165,72 @@ mod tests {
         assert_eq!(s.measure(0), Some(false));
         s.x(0);
         assert_eq!(s.measure(0), Some(true));
+    }
+
+    /// `leakage_channel(p0, p1)` pins to `|0⟩` with `p0` and `|1⟩` with `p1`,
+    /// whatever the state. Gates skip a leaked qubit, so it keeps reading the
+    /// pinned bit.
+    #[test]
+    fn leakage_pins_with_the_branch_probabilities() {
+        let (p0, p1, shots) = (0.2, 0.3, 20_000);
+        let (mut zeros, mut ones) = (0, 0);
+        for seed in 0..shots {
+            let mut s = Sim::new_with_seed(1, seed as u64);
+            s.h(0);
+            s.leakage_channel(0, p0, p1);
+            if s.is_leaked(0) {
+                let m = s.measure(0).unwrap();
+                s.x(0);
+                s.h(0);
+                s.rx(0, 1.0);
+                assert_eq!(s.measure(0), Some(m), "gates skip a leaked qubit");
+                if m {
+                    ones += 1;
+                } else {
+                    zeros += 1;
+                }
+            }
+        }
+        assert!(within(zeros, shots, p0), "{zeros} of {shots}");
+        assert!(within(ones, shots, p1), "{ones} of {shots}");
+    }
+
+    /// Leakage reduction returns a leaked qubit as live `|0⟩`; it leaves a
+    /// lost qubit lost.
+    #[test]
+    fn reset_leakage_revives_only_leaked_qubits() {
+        let mut s = Sim::new_with_seed(2, 0);
+        s.leakage_channel(0, 0.0, 1.0);
+        assert_eq!(s.measure(0), Some(true));
+        s.reset_leakage_channel(0);
+        assert!(!s.is_leaked(0));
+        assert_eq!(s.measure(0), Some(false));
+        s.x(0);
+        assert_eq!(s.measure(0), Some(true));
+        s.loss_channel(1, 1.0);
+        s.reset_leakage_channel(1);
+        assert!(s.is_lost(1));
+    }
+
+    /// Loss overwrites leakage: the pinned `|1⟩` is reset to `|0⟩`.
+    #[test]
+    fn loss_overwrites_leakage() {
+        let mut s = Sim::new_with_seed(1, 0);
+        s.leakage_channel(0, 0.0, 1.0);
+        s.loss_channel(0, 1.0);
+        assert!(s.is_lost(0) && !s.is_leaked(0));
+        assert_eq!(s.measure(0), None);
+        s.reset_loss_channel(0);
+        assert_eq!(s.measure(0), Some(false));
+    }
+
+    /// A full reset brings a leaked qubit back as live `|0⟩`.
+    #[test]
+    fn reset_revives_a_leaked_qubit() {
+        let mut s = Sim::new_with_seed(1, 0);
+        s.leakage_channel(0, 0.0, 1.0);
+        s.reset(0);
+        assert!(!s.is_leaked(0));
+        assert_eq!(s.measure(0), Some(false));
     }
 }

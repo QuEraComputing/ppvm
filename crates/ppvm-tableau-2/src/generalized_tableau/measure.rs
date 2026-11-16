@@ -34,7 +34,7 @@ impl<V: VirtualState> GeneralizedTableau<V> {
 /// `None`, a leaked one its pinned bit.
 impl<V: VirtualState> Measure for GeneralizedTableau<V> {
     fn measure(&mut self, q: usize) -> Option<bool> {
-        if self.status.is_lost(q) {
+        if self.is_lost(q) {
             return None;
         }
         Some(self.sample_z(q))

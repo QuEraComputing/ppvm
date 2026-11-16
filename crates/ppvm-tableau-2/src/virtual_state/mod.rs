@@ -27,6 +27,12 @@ pub trait VirtualState: Clone {
     /// `|0…0⟩` on `num_qubits` virtual qubits.
     fn new(num_qubits: usize) -> Self;
 
+    /// Whether `χ = |0…0⟩`, so `|ψ⟩ = C |0…0⟩` is a stabilizer state and the
+    /// caller may measure on the tableau alone. `false` is always correct.
+    fn is_zero(&self) -> bool {
+        false
+    }
+
     /// `χ ← (a·I + b·O) χ` with `O = C⁻¹ (∏ Z_q) C` over `qubits`.
     fn rotate(&mut self, t: &mut VirtualView<'_>, qubits: &[usize], a: Complex64, b: Complex64);
 

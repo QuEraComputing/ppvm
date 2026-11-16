@@ -541,7 +541,7 @@ fn rotations_match_the_state_vector() {
         seed ^= seed << 17;
         seed as usize
     };
-    let (mut max_axes, mut retired) = (0, 0);
+    let (mut max_axes, mut retired, mut stabilizer_measurements) = (0, 0, 0);
     for round in 0..40 {
         let mut s = Sim::new_with_seed(n, round);
         let mut v = vec![C::default(); 1 << n];
@@ -606,6 +606,7 @@ fn rotations_match_the_state_vector() {
                         "round {round} step {step}: P(1) simulator {}, state {p1}",
                         w1 / (w0 + w1)
                     );
+                    stabilizer_measurements += usize::from(s.state().active().is_empty());
                     let outcome = s.measure(a).expect("no loss");
                     assert!(
                         (if outcome { p1 } else { 1.0 - p1 }) > 1e-9,
@@ -633,6 +634,10 @@ fn rotations_match_the_state_vector() {
     }
     assert_eq!(max_axes, n, "the circuits activate every qubit");
     assert!(retired > 0, "measurements retire active axes");
+    assert!(
+        stabilizer_measurements > 0,
+        "some measurements see a stabilizer state"
+    );
 }
 
 /// Asymmetric loss against its Kraus operators on random three-qubit states

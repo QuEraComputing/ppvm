@@ -23,6 +23,11 @@ impl<V: VirtualState> GeneralizedTableau<V> {
 
     /// Sample `Z_q` and collapse, whatever the status of `q`.
     pub(super) fn sample_z(&mut self, q: usize) -> bool {
+        // Hot path: a stabilizer state measures on the tableau alone.
+        if self.state.is_zero() {
+            let rng = &mut self.rng;
+            return self.tableau.measure(q, || rng.random());
+        }
         let [w0, w1] = self.z_weights(q);
         let m = self.rng.random::<f64>() * (w0 + w1) < w1;
         self.collapse(q, m);

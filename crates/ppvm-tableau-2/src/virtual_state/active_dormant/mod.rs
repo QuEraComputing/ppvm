@@ -115,6 +115,10 @@ impl<S: ActiveState + Default> VirtualState for ActiveDormant<S> {
         }
     }
 
+    fn is_zero(&self) -> bool {
+        self.active.is_empty()
+    }
+
     /// Localization: if `O` has X/Y on dormant qubits, CX from the lowest of
     /// them (in `|0⟩`, so `χ` is unchanged) clears the others, and it becomes
     /// active. Then `O` acts as `±P` on the active axes and as `+1` elsewhere.

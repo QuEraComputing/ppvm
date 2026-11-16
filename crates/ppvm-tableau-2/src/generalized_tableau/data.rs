@@ -35,6 +35,17 @@ impl<V: VirtualState> GeneralizedTableau<V> {
         Self::with_rng(n, SmallRng::seed_from_u64(seed))
     }
 
+    /// Clone the state but reseed the RNG, giving an independent simulation
+    /// branch. `Some(seed)` seeds it deterministically; `None` from OS entropy.
+    pub fn fork(&self, seed: Option<u64>) -> Self {
+        let mut forked = self.clone();
+        forked.rng = match seed {
+            Some(s) => SmallRng::seed_from_u64(s),
+            None => rand::make_rng(),
+        };
+        forked
+    }
+
     fn with_rng(n: usize, rng: SmallRng) -> Self {
         Self {
             tableau: InverseTableau::new(n),

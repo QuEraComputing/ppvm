@@ -85,6 +85,35 @@ mod tests {
         }
     }
 
+    /// A fork carries the collapsed state: after measuring one half of a Bell
+    /// pair, the fork's other half agrees with it.
+    #[test]
+    fn fork_keeps_the_collapsed_state() {
+        for seed in 0..50 {
+            let mut s = Sim::new_with_seed(2, seed);
+            s.h(0);
+            s.cnot(0, 1);
+            let a = s.measure(0);
+            let mut f = s.fork(Some(seed + 1000));
+            assert_eq!(f.measure(1), a);
+        }
+    }
+
+    /// Forks of a superposition sample independently: one seed repeats its
+    /// outcome, different seeds give both outcomes.
+    #[test]
+    fn forks_sample_independently() {
+        let mut s = Sim::new_with_seed(1, 0);
+        s.h(0);
+        let mut ones = 0;
+        for seed in 0..200 {
+            let m = s.fork(Some(seed)).measure(0);
+            assert_eq!(s.fork(Some(seed)).measure(0), m);
+            ones += usize::from(m.unwrap());
+        }
+        assert!((60..140).contains(&ones), "{ones} of 200");
+    }
+
     /// `X` then measure is deterministic: `Z|1⟩ = −|1⟩`.
     #[test]
     fn x_flips_the_outcome() {

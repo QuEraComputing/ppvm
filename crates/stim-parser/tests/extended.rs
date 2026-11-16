@@ -25,6 +25,17 @@ fn approx_eq(a: f64, b: f64) {
 }
 
 #[test]
+fn sqrt_z_alias_with_t_tag_lowers_to_t() {
+    // `SQRT_Z` / `SQRT_Z_DAG` are aliases of `S` / `S_DAG`, as in Stim.
+    let p = parse_ok("SQRT_Z[T] 0\nTICK\nSQRT_Z_DAG[T] 1");
+    assert!(matches!(&p.instructions[0], ExtendedInstruction::T { .. }));
+    assert!(matches!(
+        &p.instructions[2],
+        ExtendedInstruction::TDag { .. }
+    ));
+}
+
+#[test]
 fn vanilla_h_passes_through() {
     let p = parse_ok("H 0\n");
     assert_eq!(p.instructions.len(), 1);

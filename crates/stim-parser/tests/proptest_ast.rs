@@ -81,7 +81,6 @@ fn two_qubit_clifford() -> impl Strategy<Value = GateName> {
         Just(GateName::CX),
         Just(GateName::CY),
         Just(GateName::CZ),
-        Just(GateName::CNot),
         Just(GateName::Swap),
     ]
 }
@@ -176,11 +175,7 @@ fn noise_instr() -> impl Strategy<Value = Instruction> {
 }
 
 fn measure_instr() -> impl Strategy<Value = Instruction> {
-    let name = prop_oneof![
-        Just(MeasureName::M),
-        Just(MeasureName::MZ),
-        Just(MeasureName::MR),
-    ];
+    let name = prop_oneof![Just(MeasureName::M), Just(MeasureName::MR),];
     (name, proptest::option::of(prob_lit()), one_q_targets()).prop_map(|(name, args, targets)| {
         Instruction::Measure(MeasureOp {
             name,
@@ -341,11 +336,7 @@ fn ext_noise_instr() -> impl Strategy<Value = ExtendedInstruction> {
 }
 
 fn ext_measure_instr() -> impl Strategy<Value = ExtendedInstruction> {
-    let name = prop_oneof![
-        Just(MeasureName::M),
-        Just(MeasureName::MZ),
-        Just(MeasureName::MR),
-    ];
+    let name = prop_oneof![Just(MeasureName::M), Just(MeasureName::MR),];
     (name, proptest::option::of(prob_lit()), one_q_targets()).prop_map(|(name, args, targets)| {
         ExtendedInstruction::Measure(MeasureOp {
             name,

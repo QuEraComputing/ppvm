@@ -231,7 +231,7 @@ use TargetArity::{AtLeastOne, Pairs};
 const TABLE: &[(&str, TableEntry)] = &[
     // --- Gates: reset ---
     ("R", gate(G::Reset, NoArgs, AtLeastOne, "R")),
-    ("RZ", gate(G::ResetZ, NoArgs, AtLeastOne, "RZ")),
+    ("RZ", gate(G::Reset, NoArgs, AtLeastOne, "R")),
     ("RX", gate(G::ResetX, NoArgs, AtLeastOne, "RX")),
     ("RY", gate(G::ResetY, NoArgs, AtLeastOne, "RY")),
     // --- Gates: single-qubit Clifford / paulis ---
@@ -239,14 +239,11 @@ const TABLE: &[(&str, TableEntry)] = &[
     ("Y", gate(G::Y, NoArgs, AtLeastOne, "Y")),
     ("Z", gate(G::Z, NoArgs, AtLeastOne, "Z")),
     ("H", gate(G::H, NoArgs, AtLeastOne, "H")),
-    ("H_XZ", gate(G::HXZ, NoArgs, AtLeastOne, "H_XZ")),
+    ("H_XZ", gate(G::H, NoArgs, AtLeastOne, "H")),
     ("S", gate(G::S, NoArgs, AtLeastOne, "S")),
     ("S_DAG", gate(G::SDag, NoArgs, AtLeastOne, "S_DAG")),
-    ("SQRT_Z", gate(G::SqrtZ, NoArgs, AtLeastOne, "SQRT_Z")),
-    (
-        "SQRT_Z_DAG",
-        gate(G::SqrtZDag, NoArgs, AtLeastOne, "SQRT_Z_DAG"),
-    ),
+    ("SQRT_Z", gate(G::S, NoArgs, AtLeastOne, "S")),
+    ("SQRT_Z_DAG", gate(G::SDag, NoArgs, AtLeastOne, "S_DAG")),
     ("SQRT_X", gate(G::SqrtX, NoArgs, AtLeastOne, "SQRT_X")),
     (
         "SQRT_X_DAG",
@@ -262,12 +259,12 @@ const TABLE: &[(&str, TableEntry)] = &[
     ("I", gate(G::Identity, NoArgs, AtLeastOne, "I")),
     // --- Gates: two-qubit Clifford ---
     ("CX", gate(G::CX, NoArgs, Pairs, "CX")),
-    ("ZCX", gate(G::ZCX, NoArgs, Pairs, "ZCX")),
-    ("CNOT", gate(G::CNot, NoArgs, Pairs, "CNOT")),
+    ("ZCX", gate(G::CX, NoArgs, Pairs, "CX")),
+    ("CNOT", gate(G::CX, NoArgs, Pairs, "CX")),
     ("CY", gate(G::CY, NoArgs, Pairs, "CY")),
-    ("ZCY", gate(G::ZCY, NoArgs, Pairs, "ZCY")),
+    ("ZCY", gate(G::CY, NoArgs, Pairs, "CY")),
     ("CZ", gate(G::CZ, NoArgs, Pairs, "CZ")),
-    ("ZCZ", gate(G::ZCZ, NoArgs, Pairs, "ZCZ")),
+    ("ZCZ", gate(G::CZ, NoArgs, Pairs, "CZ")),
     // --- Gates: phase-1-unsupported (parser accepts) ---
     ("SWAP", gate(G::Swap, NoArgs, Pairs, "SWAP")),
     ("ISWAP", gate(G::ISwap, NoArgs, Pairs, "ISWAP")),
@@ -341,7 +338,7 @@ const TABLE: &[(&str, TableEntry)] = &[
     ),
     // --- Measurements (all share Optional(1) args) ---
     ("M", measure(Me::M, "M")),
-    ("MZ", measure(Me::MZ, "MZ")),
+    ("MZ", measure(Me::M, "M")),
     ("MR", measure(Me::MR, "MR")),
     ("MX", measure(Me::MX, "MX")),
     ("MY", measure(Me::MY, "MY")),
@@ -429,7 +426,26 @@ pub fn canonical_name(kind: EntryKind) -> &'static str {
         .iter()
         .find(|(_, e)| e.kind == kind)
         .map(|(_, e)| e.canonical)
-        .expect("every EntryKind has a TABLE row (enforced by completeness test)")
+        .or_else(|| alias_spelling(kind))
+        .expect("every EntryKind has a TABLE row or an alias spelling")
+}
+
+/// Spelling of the alias variants, which the parser never produces: like
+/// Stim, it reads `CNOT` as `CX`, `MZ` as `M`, and so on.
+fn alias_spelling(kind: EntryKind) -> Option<&'static str> {
+    use GateName as G;
+    Some(match kind {
+        EntryKind::Gate(G::ResetZ) => "RZ",
+        EntryKind::Gate(G::HXZ) => "H_XZ",
+        EntryKind::Gate(G::SqrtZ) => "SQRT_Z",
+        EntryKind::Gate(G::SqrtZDag) => "SQRT_Z_DAG",
+        EntryKind::Gate(G::ZCX) => "ZCX",
+        EntryKind::Gate(G::CNot) => "CNOT",
+        EntryKind::Gate(G::ZCY) => "ZCY",
+        EntryKind::Gate(G::ZCZ) => "ZCZ",
+        EntryKind::Measure(MeasureName::MZ) => "MZ",
+        _ => return None,
+    })
 }
 
 #[cfg(test)]
@@ -456,6 +472,13 @@ mod table_tests {
                 entry.canonical
             );
         }
+    }
+
+    #[test]
+    fn alias_variants_keep_their_spelling() {
+        assert_eq!(GateName::CNot.canonical_name(), "CNOT");
+        assert_eq!(MeasureName::MZ.canonical_name(), "MZ");
+        assert_eq!(lookup("CNOT").unwrap().kind, EntryKind::Gate(GateName::CX));
     }
 
     #[test]

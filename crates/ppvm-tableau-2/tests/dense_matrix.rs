@@ -10,7 +10,9 @@ use std::collections::{HashSet, VecDeque};
 
 use num_complex::Complex64 as C;
 use ppvm_tableau_2::{ActiveDormant, DenseState, GeneralizedTableau, InverseTableau, VirtualState};
-use ppvm_traits_2::{Clifford, Measure, Pauli, RotXY, RotationOne, RotationTwo, TGate, U3Gate};
+use ppvm_traits_2::{
+    AsymmetricLossChannel, Clifford, Measure, Pauli, RotXY, RotationOne, RotationTwo, TGate, U3Gate,
+};
 
 /// A dense `2^n × 2^n` matrix; basis index bit `q` is qubit `q`.
 #[derive(Clone)]
@@ -631,4 +633,91 @@ fn rotations_match_the_state_vector() {
     }
     assert_eq!(max_axes, n, "the circuits activate every qubit");
     assert!(retired > 0, "measurements retire active axes");
+}
+
+/// Asymmetric loss against its Kraus operators on random three-qubit states
+/// from Cliffords and `T`: the survival branch equals `K₀|v⟩/‖K₀|v⟩‖` with
+/// `K₀ = √(1−p0)|0⟩⟨0| + √(1−p1)|1⟩⟨1|`, a loss branch equals `|v⟩` projected
+/// onto some `|m⟩` with `q` reset, `|χ⟩` stays normalized, and losses occur
+/// with probability `p0·P(0) + p1·P(1)`.
+#[test]
+fn asymmetric_loss_matches_the_kraus_operators() {
+    let n = 3;
+    let gates = all_gates(n);
+    let paulis = Paulis::new(n);
+    let x = gate_matrices()[0];
+    let w = C::from_polar(1.0, std::f64::consts::FRAC_PI_4);
+    let mut seed = 0x6a09_e667_f3bc_c908u64;
+    let mut next = move || {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        seed as usize
+    };
+    let (mut expected, mut variance, mut observed) = (0.0, 0.0, 0);
+    for round in 0..600 {
+        let (p0, p1) = [(0.15, 0.6), (0.3, 0.3), (0.0, 1.0)][round % 3];
+        let mut s = Sim::new_with_seed(n, round as u64);
+        let mut v = vec![C::default(); 1 << n];
+        v[0] = c(1.0, 0.0);
+        for _ in 0..12 {
+            let q = next() % n;
+            let m = if next() % 3 == 0 {
+                s.t(q);
+                single([[c(1.0, 0.0), c(0.0, 0.0)], [c(0.0, 0.0), w]], q, n)
+            } else {
+                let gate = gates[next() % gates.len()];
+                apply(&mut s, gate);
+                matrix(gate, n)
+            };
+            v = apply_to_state(&m, &v);
+        }
+        let q = next() % n;
+        let pop = [1.0 - probability_one(&v, q), probability_one(&v, q)];
+        let p_lost = p0 * pop[0] + p1 * pop[1];
+        (expected, variance) = (expected + p_lost, variance + p_lost * (1.0 - p_lost));
+
+        s.asymmetric_loss_channel(q, p0, p1);
+
+        let candidates: Vec<Vec<C>> = if s.is_lost(q) {
+            observed += 1;
+            [false, true]
+                .into_iter()
+                .filter(|&m| pop[usize::from(m)] > 1e-9)
+                .map(|m| {
+                    let mut u = v.clone();
+                    project(&mut u, q, m);
+                    if m {
+                        u = apply_to_state(&single(x, q, n), &u);
+                    }
+                    u
+                })
+                .collect()
+        } else {
+            let (s0, s1) = ((1.0 - p0).sqrt(), (1.0 - p1).sqrt());
+            let k0 = single([[c(s0, 0.0), c(0.0, 0.0)], [c(0.0, 0.0), c(s1, 0.0)]], q, n);
+            let mut u = apply_to_state(&k0, &v);
+            let norm = u.iter().map(|a| a.norm_sqr()).sum::<f64>().sqrt();
+            u.iter_mut().for_each(|a| *a /= norm);
+            vec![u]
+        };
+        let chi = virtual_state(&s);
+        let norm: f64 = chi.iter().map(|a| a.norm_sqr()).sum();
+        assert!((norm - 1.0).abs() < 1e-9, "round {round}: ‖χ‖² = {norm}");
+        let matches = |u: &Vec<C>| {
+            (0..1usize << (2 * n)).all(|code| {
+                let from_sim = state_expectation(&chi, &conjugated(s.tableau(), code, &paulis));
+                (from_sim - state_expectation(u, &paulis.table[code])).norm() < 1e-9
+            })
+        };
+        assert!(
+            candidates.iter().any(matches),
+            "round {round}: lost = {}, the state matches no Kraus branch",
+            s.is_lost(q)
+        );
+    }
+    assert!(
+        (observed as f64 - expected).abs() < 5.0 * variance.sqrt(),
+        "{observed} losses, {expected:.1} expected"
+    );
 }

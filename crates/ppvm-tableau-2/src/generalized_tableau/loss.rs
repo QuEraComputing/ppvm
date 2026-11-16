@@ -6,11 +6,12 @@
 //! `|0⟩` or `|1⟩`; gates skip it, and measuring it gives the pinned bit. Loss
 //! overwrites leakage. Neither event is a measurement outcome.
 
+use num_complex::Complex64;
 use rand::RngExt;
 
 use ppvm_traits_2::{
-    Clifford, CorrelatedLossChannel, LeakageChannel, LossChannel, ResetLeakageChannel,
-    ResetLossChannel, ResetState,
+    AsymmetricLossChannel, Clifford, CorrelatedLossChannel, LeakageChannel, LossChannel,
+    ResetLeakageChannel, ResetLossChannel, ResetState,
 };
 
 use super::GeneralizedTableau;
@@ -18,13 +19,19 @@ use super::status::QubitStatus;
 use crate::VirtualState;
 
 impl<V: VirtualState> GeneralizedTableau<V> {
-    /// Collapse `q` by sampling `Z_q`, reset it to `|0⟩` and mark it lost. The
-    /// `X` goes straight to the tableau, as `q` may be leaked.
-    fn lose(&mut self, q: usize) {
-        if self.sample_z(q) {
+    /// Reset `q`, collapsed onto outcome `m`, to `|0⟩` and mark it lost. The `X`
+    /// goes straight to the tableau, as `q` may be leaked.
+    fn mark_lost(&mut self, q: usize, m: bool) {
+        if m {
             self.tableau.x(q);
         }
         self.status[q] = QubitStatus::Lost;
+    }
+
+    /// Collapse `q` by sampling `Z_q`, then reset it and mark it lost.
+    fn lose(&mut self, q: usize) {
+        let m = self.sample_z(q);
+        self.mark_lost(q, m);
     }
 }
 
@@ -101,6 +108,36 @@ impl<V: VirtualState> CorrelatedLossChannel<f64> for GeneralizedTableau<V> {
                 None => {}
             }
         }
+    }
+}
+
+/// State-dependent loss, with its back-action (issue #249). With Born weights
+/// `P(m)` of `Z_q`, `q` is lost from `|m⟩` with probability `p_m·P(m)`;
+/// otherwise the survival Kraus operator
+/// `K₀ = √(1−p0)|0⟩⟨0| + √(1−p1)|1⟩⟨1| = a·I + b·Z_q` is applied and the state
+/// renormalized. On a qubit in superposition `K₀` is non-Clifford and
+/// activates an axis.
+impl<V: VirtualState> AsymmetricLossChannel<f64> for GeneralizedTableau<V> {
+    fn asymmetric_loss_channel(&mut self, q: usize, p0: f64, p1: f64) {
+        debug_assert!((0.0..=1.0).contains(&p0) && (0.0..=1.0).contains(&p1));
+        if self.is_lost(q) {
+            return;
+        }
+        let [w0, w1] = self.z_weights(q);
+        let pop = [w0 / (w0 + w1), w1 / (w0 + w1)];
+        if let Some(k) = self.draw(&[p0 * pop[0], p1 * pop[1]]) {
+            // Lost from |m⟩: the outcome comes from the branch, not from `P(m)`.
+            let m = k == 1;
+            self.collapse(q, m);
+            self.mark_lost(q, m);
+            return;
+        }
+        // Scaled so the norm is unchanged: ‖K₀ψ‖² = Σ (1 − p_m)·P(m).
+        let scale = ((1.0 - p0) * pop[0] + (1.0 - p1) * pop[1]).sqrt().recip();
+        let (s0, s1) = ((1.0 - p0).sqrt(), (1.0 - p1).sqrt());
+        let a = Complex64::from((s0 + s1) / 2.0 * scale);
+        let b = Complex64::from((s0 - s1) / 2.0 * scale);
+        self.rotate_z(&[q], a, b);
     }
 }
 
@@ -290,5 +327,27 @@ mod tests {
             );
         }
         assert!(within(second, shots, p[2]), "{second} of {shots}");
+    }
+
+    /// The Bell-pair example of #249 with `p0 = 0, p1 = 1`: the qubit is lost
+    /// exactly from `|1⟩`, so a loss leaves the partner in `|1⟩`; survival
+    /// projects onto `|0⟩`, leaving `|00⟩`. Each happens half of the time.
+    #[test]
+    fn asymmetric_loss_on_a_bell_pair() {
+        let shots = 4000;
+        let mut lost = 0;
+        for seed in 0..shots {
+            let mut s = Sim::new_with_seed(2, seed as u64);
+            s.h(0);
+            s.cnot(0, 1);
+            s.asymmetric_loss_channel(0, 0.0, 1.0);
+            if s.is_lost(0) {
+                lost += 1;
+                assert_eq!(s.measure(1), Some(true), "lost from |1⟩");
+            } else {
+                assert_eq!((s.measure(0), s.measure(1)), (Some(false), Some(false)));
+            }
+        }
+        assert!(within(lost, shots, 0.5), "{lost} of {shots}");
     }
 }

@@ -50,6 +50,14 @@ enum Op {
     /// `X`, `Y`, `Z` with these probabilities.
     Pauli([f64; 3], usize),
     Depolarize2(f64, usize, usize),
+    /// `M`/`MR` on `measured[at..at + len]`, as one `measure_many`; flips and
+    /// resets as for `Measure`.
+    MeasureZ {
+        at: usize,
+        len: usize,
+        flip: f64,
+        reset: bool,
+    },
     /// Recorded outcome flipped with probability `flip`; `reset` returns the
     /// qubit to the basis' `+1` state afterwards.
     Measure {
@@ -108,8 +116,13 @@ fn flip_arg(args: &[f64]) -> f64 {
 }
 
 /// Flatten the program into ops, unrolling `REPEAT` blocks. MPP factors go to
-/// `factors`.
-fn lower(instructions: &[ExtendedInstruction], ops: &mut Vec<Op>, factors: &mut Vec<PauliFactor>) {
+/// `factors`, Z-basis measurement targets to `measured`.
+fn lower(
+    instructions: &[ExtendedInstruction],
+    ops: &mut Vec<Op>,
+    factors: &mut Vec<PauliFactor>,
+    measured: &mut Vec<usize>,
+) {
     for instruction in instructions {
         match instruction {
             ExtendedInstruction::Gate(g) if g.targets.iter().any(|t| t.as_qubit().is_none()) => ops
@@ -190,6 +203,16 @@ fn lower(instructions: &[ExtendedInstruction], ops: &mut Vec<Op>, factors: &mut 
                     other => panic!("unsupported measurement {other:?}"),
                 };
                 let flip = flip_arg(&m.args);
+                if let Basis::Z = basis {
+                    ops.push(Op::MeasureZ {
+                        at: measured.len(),
+                        len: m.targets.len(),
+                        flip,
+                        reset,
+                    });
+                    measured.extend_from_slice(&m.targets);
+                    continue;
+                }
                 ops.extend(m.targets.iter().map(|&q| Op::Measure {
                     basis,
                     q,
@@ -210,7 +233,7 @@ fn lower(instructions: &[ExtendedInstruction], ops: &mut Vec<Op>, factors: &mut 
             }
             ExtendedInstruction::Repeat { count, body, .. } => {
                 let mut block = Vec::new();
-                lower(body, &mut block, factors);
+                lower(body, &mut block, factors, measured);
                 for _ in 0..*count {
                     ops.extend_from_slice(&block);
                 }
@@ -295,7 +318,13 @@ fn pauli_basis(axis: PauliAxis) -> Basis {
 
 /// Run `op`, appending measurement outcomes to `record`; `rng` flips recorded
 /// outcomes.
-fn run(s: &mut Sim, op: Op, factors: &[PauliFactor], rng: &mut SmallRng, record: &mut Vec<bool>) {
+fn run(
+    s: &mut Sim,
+    op: Op,
+    (factors, measured): (&[PauliFactor], &[usize]),
+    rng: &mut SmallRng,
+    record: &mut Vec<bool>,
+) {
     let mut noisy = |m: bool, flip: f64| m ^ (flip > 0.0 && rng.random::<f64>() < flip);
     match op {
         Op::One(name, q) => apply_one(s, name, q),
@@ -323,6 +352,21 @@ fn run(s: &mut Sim, op: Op, factors: &[PauliFactor], rng: &mut SmallRng, record:
             }
             change_basis(s, basis, q, false);
             record.push(noisy(m, flip));
+        }
+        Op::MeasureZ {
+            at,
+            len,
+            flip,
+            reset,
+        } => {
+            let targets = &measured[at..at + len];
+            for (m, &q) in s.measure_many(targets).into_iter().zip(targets) {
+                let m = m.expect("no loss");
+                if reset && m {
+                    s.x(q);
+                }
+                record.push(noisy(m, flip));
+            }
         }
         Op::Feedback { pauli, back, q } => {
             if record[record.len() - back] {
@@ -360,7 +404,7 @@ fn run(s: &mut Sim, op: Op, factors: &[PauliFactor], rng: &mut SmallRng, record:
     }
 }
 
-fn qubits(op: &Op, factors: &[PauliFactor]) -> Vec<usize> {
+fn qubits(op: &Op, (factors, measured): (&[PauliFactor], &[usize])) -> Vec<usize> {
     match *op {
         Op::Two(_, a, b) | Op::Depolarize2(_, a, b) => vec![a, b],
         Op::One(_, q)
@@ -373,6 +417,7 @@ fn qubits(op: &Op, factors: &[PauliFactor]) -> Vec<usize> {
         | Op::Reset(_, q)
         | Op::Feedback { q, .. } => vec![q],
         Op::Mpp { at, len, .. } => factors[at..at + len].iter().map(|f| f.qubit).collect(),
+        Op::MeasureZ { at, len, .. } => measured[at..at + len].to_vec(),
     }
 }
 
@@ -392,11 +437,12 @@ fn main() {
     let src = rewrite_dialect(&std::fs::read_to_string(&path).expect("read circuit"));
     let program =
         stim_parser::parse_extended(&src).unwrap_or_else(|e| panic!("parse error: {e:?}"));
-    let (mut ops, mut factors) = (Vec::new(), Vec::new());
-    lower(&program.instructions, &mut ops, &mut factors);
+    let (mut ops, mut factors, mut measured) = (Vec::new(), Vec::new(), Vec::new());
+    lower(&program.instructions, &mut ops, &mut factors, &mut measured);
+    let pools = (&factors[..], &measured[..]);
     let n = 1 + ops
         .iter()
-        .flat_map(|op| qubits(op, &factors))
+        .flat_map(|op| qubits(op, pools))
         .max()
         .expect("empty circuit");
 
@@ -409,13 +455,16 @@ fn main() {
         let mut s = Sim::new_with_seed(n, rng.random());
         record.clear();
         for &op in &ops {
-            run(&mut s, op, &factors, &mut rng, &mut record);
+            run(&mut s, op, pools, &mut rng, &mut record);
             let k = s.state().active().len();
             max_k = max_k.max(k);
-            if matches!(op, Op::Measure { .. } | Op::Mpp { .. }) {
-                k_at_measurements += k;
-                measurements += 1;
-            }
+            let count = match op {
+                Op::Measure { .. } | Op::Mpp { .. } => 1,
+                Op::MeasureZ { len, .. } => len,
+                _ => 0,
+            };
+            k_at_measurements += k * count;
+            measurements += count;
         }
         parity ^= record.iter().fold(false, |p, &m| p ^ m);
         if records_path.is_some() {

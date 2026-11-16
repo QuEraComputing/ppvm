@@ -44,11 +44,24 @@ impl<V: VirtualState> Measure for GeneralizedTableau<V> {
         }
         Some(self.sample_z(q))
     }
+
+    /// With no active and no lost qubits, the whole batch runs on the
+    /// tableau's `measure_many`; otherwise one target at a time.
+    fn measure_many(&mut self, targets: &[usize]) -> Vec<Option<bool>> {
+        if !self.state.is_zero() || targets.iter().any(|&q| self.is_lost(q)) {
+            return targets.iter().map(|&q| self.measure(q)).collect();
+        }
+        let mut outcomes = vec![false; targets.len()];
+        let rng = &mut self.rng;
+        self.tableau
+            .measure_many(targets, || rng.random(), &mut outcomes);
+        outcomes.into_iter().map(Some).collect()
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use ppvm_traits_2::{Clifford, Reset};
+    use ppvm_traits_2::{Clifford, LossChannel, Reset, TGate};
 
     use super::*;
     use crate::{ActiveDormant, DenseState};
@@ -68,6 +81,57 @@ mod tests {
             ones += usize::from(a);
         }
         assert!((60..140).contains(&ones), "{ones} of 200");
+    }
+
+    /// `n` Bell pairs `(2i, 2i + 1)`, with `T` on each control when `t`.
+    fn bell_pairs(n: usize, t: bool, seed: u64) -> Sim {
+        let mut s = Sim::new_with_seed(2 * n, seed);
+        for i in 0..n {
+            s.h(2 * i);
+            if t {
+                s.t(2 * i);
+            }
+            s.cnot(2 * i, 2 * i + 1);
+        }
+        s
+    }
+
+    /// Batched Bell pairs, enough for the tableau's column-major path: each
+    /// pair agrees, about half are `1`, and measuring again repeats.
+    #[test]
+    fn measure_many_on_bell_pairs() {
+        let n = 100;
+        let targets: Vec<usize> = (0..2 * n).collect();
+        for seed in 0..5 {
+            let mut s = bell_pairs(n, false, seed);
+            let m: Vec<bool> = s.measure_many(&targets).into_iter().flatten().collect();
+            assert_eq!(m.len(), 2 * n);
+            assert!(m.chunks(2).all(|p| p[0] == p[1]));
+            let ones = m.iter().step_by(2).filter(|&&b| b).count();
+            assert!((25..75).contains(&ones), "{ones} of {n}");
+            let again: Vec<bool> = s.measure_many(&targets).into_iter().flatten().collect();
+            assert_eq!(again, m);
+        }
+    }
+
+    /// The per-target fallback: active qubits (from `T`) and a lost qubit,
+    /// which gives `None` while its partner is still measured.
+    #[test]
+    fn measure_many_with_active_or_lost_qubits() {
+        let targets: Vec<usize> = (0..8).collect();
+        for seed in 0..20 {
+            let mut s = bell_pairs(4, true, seed);
+            assert!(!s.state().is_zero());
+            let m = s.measure_many(&targets);
+            assert!(m.chunks(2).all(|p| p[0].is_some() && p[0] == p[1]));
+
+            let mut s = bell_pairs(4, false, seed);
+            s.loss_channel(0, 1.0);
+            let m = s.measure_many(&targets);
+            assert_eq!(m[0], None);
+            assert!(m[1].is_some());
+            assert!(m[2..].chunks(2).all(|p| p[0].is_some() && p[0] == p[1]));
+        }
     }
 
     /// A measured qubit stays in its outcome, and reset leaves `|0⟩`.

@@ -8,15 +8,36 @@ use ppvm_traits_2::Measure;
 use super::GeneralizedTableau;
 use crate::VirtualState;
 
-/// Measure `Z_q` and collapse; `Some(true)` for `|1⟩`. Every qubit is live
-/// until loss is modelled, so the outcome is never `None`.
+impl<V: VirtualState> GeneralizedTableau<V> {
+    /// Unnormalized weights of the outcomes `0` and `1` of `Z_q`.
+    pub(super) fn z_weights(&mut self, q: usize) -> [f64; 2] {
+        let mut view = self.tableau.virtual_view();
+        self.state.z_weights(&mut view, q)
+    }
+
+    /// Project onto outcome `m` of `Z_q`, which must have nonzero weight.
+    pub(super) fn collapse(&mut self, q: usize, m: bool) {
+        let mut view = self.tableau.virtual_view();
+        self.state.collapse(&mut view, q, m);
+    }
+
+    /// Sample `Z_q` and collapse, whatever the status of `q`.
+    pub(super) fn sample_z(&mut self, q: usize) -> bool {
+        let [w0, w1] = self.z_weights(q);
+        let m = self.rng.random::<f64>() * (w0 + w1) < w1;
+        self.collapse(q, m);
+        m
+    }
+}
+
+/// Measure `Z_q` and collapse; `Some(true)` for `|1⟩`. A lost qubit gives
+/// `None`, a leaked one its pinned bit.
 impl<V: VirtualState> Measure for GeneralizedTableau<V> {
     fn measure(&mut self, q: usize) -> Option<bool> {
-        let mut view = self.tableau.virtual_view();
-        let [w0, w1] = self.state.z_weights(&mut view, q);
-        let m = self.rng.random::<f64>() * (w0 + w1) < w1;
-        self.state.collapse(&mut view, q, m);
-        Some(m)
+        if self.status.is_lost(q) {
+            return None;
+        }
+        Some(self.sample_z(q))
     }
 }
 

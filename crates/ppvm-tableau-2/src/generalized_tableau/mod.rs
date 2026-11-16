@@ -5,11 +5,14 @@
 //!
 //! - `gates`: Clifford, T, rotation and `U3` gates, and reset.
 //! - `measure`: Z measurement.
+//! - `loss`: loss and leakage channels.
 //! - `noise`: Pauli and depolarizing channels.
 
 mod gates;
+mod loss;
 mod measure;
 mod noise;
+mod status;
 
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
@@ -18,16 +21,19 @@ use num_complex::Complex64;
 use ppvm_traits_2::{Clifford, Pauli};
 
 use crate::{InverseTableau, VirtualState};
+use status::Status;
 
 /// The state `|ψ⟩ = C |χ⟩`: the Clifford `C` as an [`InverseTableau`], and the
 /// virtual state `|χ⟩` in the representation `V`.
 ///
 /// Physical gates `C ← G·C` touch only the tableau. Measurements ask `V` for
-/// the outcome weights, sample here, and let `V` collapse.
+/// the outcome weights, sample here, and let `V` collapse. Lost and leaked
+/// qubits are tracked here; the tableau and `V` never see them.
 #[derive(Clone, Debug)]
 pub struct GeneralizedTableau<V: VirtualState> {
     tableau: InverseTableau,
     state: V,
+    status: Status,
     rng: SmallRng,
 }
 
@@ -46,6 +52,7 @@ impl<V: VirtualState> GeneralizedTableau<V> {
         Self {
             tableau: InverseTableau::new(n),
             state: V::new(n),
+            status: Status::new(n),
             rng,
         }
     }
@@ -62,8 +69,33 @@ impl<V: VirtualState> GeneralizedTableau<V> {
         &self.state
     }
 
+    /// Whether `q` is lost: gates skip it and measuring it gives `None`.
+    pub fn is_lost(&self, q: usize) -> bool {
+        self.status.is_lost(q)
+    }
+
+    /// Whether `q` is leaked: gates skip it and measuring it gives the pinned bit.
+    pub fn is_leaked(&self, q: usize) -> bool {
+        self.status.is_leaked(q)
+    }
+
     /// `|ψ⟩ ← (a·I + b·∏ Z_q) |ψ⟩` over `qubits`, which must be distinct.
+    /// Inactive qubits are dropped, as gates skip them.
     fn rotate_z(&mut self, qubits: &[usize], a: Complex64, b: Complex64) {
+        let live: Vec<usize>;
+        let qubits = if self.status.any() {
+            live = qubits
+                .iter()
+                .copied()
+                .filter(|&q| !self.status.is_inactive(q))
+                .collect();
+            if live.is_empty() {
+                return;
+            }
+            &live[..]
+        } else {
+            qubits
+        };
         let mut view = self.tableau.virtual_view();
         self.state.rotate(&mut view, qubits, a, b);
     }

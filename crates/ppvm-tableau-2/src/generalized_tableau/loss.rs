@@ -132,6 +132,11 @@ impl<V: VirtualState> AsymmetricLossChannel<f64> for GeneralizedTableau<V> {
             self.mark_lost(q, m);
             return;
         }
+        // K₀ ∝ I: the renormalized state is unchanged, and rotating would
+        // activate an axis for nothing.
+        if p0 == p1 {
+            return;
+        }
         // Scaled so the norm is unchanged: ‖K₀ψ‖² = Σ (1 − p_m)·P(m).
         let scale = ((1.0 - p0) * pop[0] + (1.0 - p1) * pop[1]).sqrt().recip();
         let (s0, s1) = ((1.0 - p0).sqrt(), (1.0 - p1).sqrt());
@@ -349,5 +354,18 @@ mod tests {
             }
         }
         assert!(within(lost, shots, 0.5), "{lost} of {shots}");
+    }
+
+    /// With `p0 = p1` the survival operator is proportional to `I`, so a
+    /// surviving qubit in superposition activates no axis.
+    #[test]
+    fn symmetric_asymmetric_loss_activates_no_axis() {
+        for seed in 0..50 {
+            let mut s = Sim::new_with_seed(2, seed);
+            s.h(0);
+            s.cnot(0, 1);
+            s.asymmetric_loss_channel(0, 0.3, 0.3);
+            assert!(s.state().active().is_empty(), "seed {seed}");
+        }
     }
 }

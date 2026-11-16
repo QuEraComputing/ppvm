@@ -28,7 +28,8 @@ fn empty_and_absent_tags_are_empty_strings() {
         };
         assert!(tag.is_empty());
     }
-    assert_eq!(p.to_string(), "H 0\nH 1\n");
+    // Equal (empty) tags mean the two lines fuse, exactly as in Stim.
+    assert_eq!(p.to_string(), "H 0 1\n");
 }
 
 #[test]

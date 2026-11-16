@@ -28,7 +28,8 @@ pub fn parse(src: &str) -> Result<Program, Diagnostics> {
         let mut sink = FailFast::new();
         let result = Pipeline::new(src)
             .parse(&mut sink)
-            .and_then(|p| p.validate(&mut sink));
+            .and_then(|p| p.validate(&mut sink))
+            .map(|p| p.fuse());
         match result {
             Ok(p) => Ok(p.finish()),
             Err(_) => Err(fail(sink, src)),
@@ -43,7 +44,8 @@ pub fn parse_extended(src: &str) -> Result<ExtendedProgram, Diagnostics> {
         let result = Pipeline::new(src)
             .parse(&mut sink)
             .and_then(|p| p.validate(&mut sink))
-            .and_then(|p| p.lower(&mut sink));
+            .and_then(|p| p.lower(&mut sink))
+            .map(|p| p.fuse());
         match result {
             Ok(p) => Ok(p.finish()),
             Err(_) => Err(fail(sink, src)),

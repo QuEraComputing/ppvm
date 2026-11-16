@@ -12,7 +12,8 @@ mod rot;
 pub use apply_gate_rule::ApplyGateRule;
 pub use channel::{
     AmplitudeDamping, AsymmetricLossChannel, CorrelatedLossChannel, Depolarizing, Depolarizing2,
-    LossChannel, PauliError, ResetLossChannel, TwoQubitPauliError,
+    LeakageChannel, LossChannel, PauliError, ResetLeakageChannel, ResetLossChannel,
+    TwoQubitPauliError,
 };
 pub use clifford::{Clifford, CliffordBatch};
 pub use measure::{Measure, Projection, Reset, ResetState};

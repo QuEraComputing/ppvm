@@ -21,9 +21,10 @@ pub use containers::{
 };
 pub use gates::{
     AmplitudeDamping, ApplyGateRule, AsymmetricLossChannel, Bits, CRx, Clifford, CliffordBatch,
-    CorrelatedLossChannel, Depolarizing, Depolarizing2, LossChannel, Measure, PauliError,
-    Projection, Reset, ResetLossChannel, ResetState, RotXY, RotationOne, RotationOneBatch,
-    RotationTwo, RotationTwoBatch, TGate, TwoQubitPauliError, U3Gate,
+    CorrelatedLossChannel, Depolarizing, Depolarizing2, LeakageChannel, LossChannel, Measure,
+    PauliError, Projection, Reset, ResetLeakageChannel, ResetLossChannel, ResetState, RotXY,
+    RotationOne, RotationOneBatch, RotationTwo, RotationTwoBatch, TGate, TwoQubitPauliError,
+    U3Gate,
 };
 pub use loss::{LossState, LossySite};
 pub use pauli::Pauli;

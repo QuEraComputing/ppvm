@@ -9,7 +9,8 @@
 use rand::RngExt;
 
 use ppvm_traits_2::{
-    Clifford, LeakageChannel, LossChannel, ResetLeakageChannel, ResetLossChannel, ResetState,
+    Clifford, CorrelatedLossChannel, LeakageChannel, LossChannel, ResetLeakageChannel,
+    ResetLossChannel, ResetState,
 };
 
 use super::GeneralizedTableau;
@@ -71,6 +72,34 @@ impl<V: VirtualState> ResetLeakageChannel for GeneralizedTableau<V> {
         if self.is_leaked(q) {
             self.status[q] = QubitStatus::Live;
             self.reset_state(q);
+        }
+    }
+}
+
+/// `p = [p_LL, p_LQ, p_LN]` as the trait documents: if one of the pair is
+/// already lost, the other is lost with `p[2]`; otherwise both with `p[0]` and
+/// each named one alone with `p[1]`. A leaked partner counts as present.
+impl<V: VirtualState> CorrelatedLossChannel<f64> for GeneralizedTableau<V> {
+    fn correlated_loss_channel(&mut self, a: usize, b: usize, p: [f64; 3]) {
+        debug_assert!(
+            p[0] >= 0.0 && p[1] >= 0.0 && p[0] + 2.0 * p[1] <= 1.0 + 1e-9,
+            "correlated loss needs p0, p1 >= 0 and p0 + 2·p1 <= 1; got {p:?}"
+        );
+        debug_assert!((0.0..=1.0).contains(&p[2]), "p2 in [0, 1]; got {p:?}");
+        if self.is_lost(a) {
+            self.loss_channel(b, p[2]);
+        } else if self.is_lost(b) {
+            self.loss_channel(a, p[2]);
+        } else {
+            match self.draw(&[p[0], p[1], p[1]]) {
+                Some(0) => {
+                    self.lose(a);
+                    self.lose(b);
+                }
+                Some(1) => self.lose(a),
+                Some(_) => self.lose(b),
+                None => {}
+            }
         }
     }
 }
@@ -232,5 +261,34 @@ mod tests {
         s.reset(0);
         assert!(!s.is_leaked(0));
         assert_eq!(s.measure(0), Some(false));
+    }
+
+    /// `p = [p_LL, p_LQ, p_LN]`: from two present qubits both are lost with
+    /// `p_LL`, each named one alone with `p_LQ`; with one already lost, the
+    /// other is lost with `p_LN`.
+    #[test]
+    fn correlated_loss_event_rates() {
+        let (p, shots) = ([0.1, 0.2, 0.5], 20_000);
+        let mut counts = [0; 4];
+        let mut second = 0;
+        for seed in 0..shots {
+            let mut s = Sim::new_with_seed(2, seed as u64);
+            s.h(0);
+            s.cnot(0, 1);
+            s.correlated_loss_channel(0, 1, p);
+            counts[usize::from(s.is_lost(0)) | usize::from(s.is_lost(1)) << 1] += 1;
+            let mut t = Sim::new_with_seed(2, seed as u64);
+            t.loss_channel(0, 1.0);
+            t.correlated_loss_channel(0, 1, p);
+            second += usize::from(t.is_lost(1));
+        }
+        let rates = [1.0 - p[0] - 2.0 * p[1], p[1], p[1], p[0]];
+        for (k, (&count, rate)) in counts.iter().zip(rates).enumerate() {
+            assert!(
+                within(count, shots, rate),
+                "event {k:#b}: {count} of {shots}"
+            );
+        }
+        assert!(within(second, shots, p[2]), "{second} of {shots}");
     }
 }

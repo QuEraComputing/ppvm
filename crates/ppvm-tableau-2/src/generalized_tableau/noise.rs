@@ -14,7 +14,7 @@ use crate::VirtualState;
 impl<V: VirtualState> GeneralizedTableau<V> {
     /// Draw event `k` with probability `probabilities[k]`, or `None` with the
     /// remaining probability. Uses one random number.
-    fn draw(&mut self, probabilities: &[f64]) -> Option<usize> {
+    pub(super) fn draw(&mut self, probabilities: &[f64]) -> Option<usize> {
         debug_assert!(probabilities.iter().all(|&p| p >= 0.0));
         debug_assert!(probabilities.iter().sum::<f64>() <= 1.0 + 1e-9);
         let r = self.rng.random::<f64>();

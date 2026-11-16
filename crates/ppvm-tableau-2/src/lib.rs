@@ -3,7 +3,7 @@
 
 //! Hybrid stabilizer simulation: `|ψ⟩ = C |χ⟩`, an inverse tableau for the
 //! Clifford `C` plus the state `|χ⟩` of the virtual qubits in an exchangeable
-//! representation. Design: `docs/design/hybrid-tableau.md`.
+//! representation.
 //!
 //! - `inverse_tableau`: [`InverseTableau`] and its [`VirtualView`].
 //! - `virtual_state`: the [`VirtualState`] trait and [`ActiveDormant`], which

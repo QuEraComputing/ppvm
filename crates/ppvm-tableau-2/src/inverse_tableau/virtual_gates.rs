@@ -95,11 +95,22 @@ impl InverseTableau {
         self.for_each_row(|x, z| {
             let old_pivot = [x[pw] & pm != ZERO, z[pw] & pm != ZERO];
             let (mut pivot_bits, mut flip) = (old_pivot, false);
-            for &t in cx_targets {
-                flip ^= target_step(x, z, t, &mut pivot_bits, heisenberg::cnot);
-            }
-            for &t in cz_targets {
-                flip ^= target_step(x, z, t, &mut pivot_bits, heisenberg::cz);
+            if old_pivot[0] {
+                pivot_bits[0] = true;
+                for &t in cx_targets {
+                    flip ^= target_step(x, z, t, &mut pivot_bits, heisenberg::cnot);
+                }
+                for &t in cz_targets {
+                    flip ^= target_step(x, z, t, &mut pivot_bits, heisenberg::cz);
+                }
+            } else {
+                pivot_bits[0] = false;
+                for &t in cx_targets {
+                    flip ^= target_step(x, z, t, &mut pivot_bits, heisenberg::cnot);
+                }
+                for &t in cz_targets {
+                    flip ^= target_step(x, z, t, &mut pivot_bits, heisenberg::cz);
+                }
             }
             let (new_pivot, f) = last(pivot_bits[0], pivot_bits[1]);
             x[pw] ^= pm & mask_if(new_pivot[0] != old_pivot[0]);

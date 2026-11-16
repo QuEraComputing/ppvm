@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2026 The PPVM Authors
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "ppvm-pauli-sum-2"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+ppvm-traits-2 = { path = "../ppvm-traits-2" }
+ppvm-pauli-word-2 = { path = "../ppvm-pauli-word-2" }
+ppvm-lossy-pauli-word-2 = { path = "../ppvm-lossy-pauli-word-2" }
+hashbrown = { version = "0.17.1", default-features = false, features = ["inline-more"] }
+
+[dev-dependencies]
+num = "0.4"

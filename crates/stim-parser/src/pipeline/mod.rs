@@ -1,10 +1,18 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Typestate lowering pipeline: Source → Parsed → Validated → Lowered.
+//! Typestate lowering pipeline:
+//!
+//! ```text
+//! Source ─parse─▶ Parsed ─validate─▶ Validated ─fuse─▶ Fused<Program>
+//!                                        │
+//!                                        └─lower─▶ Lowered ─fuse─▶ Fused<ExtendedProgram>
+//! ```
+//!
 //! Each transition consumes `self` and returns the next state type, so
 //! illegal orderings do not compile.
 
+mod fuse;
 mod lower;
 mod validate;
 
@@ -13,7 +21,7 @@ use std::sync::Arc;
 use chumsky::Parser;
 
 use crate::ast::{ExtendedProgram, Program};
-use crate::diagnostics::{Aborted, Diagnostic, DiagnosticSink, Flow, LineMap, Span};
+use crate::diagnostics::{Aborted, Diagnostic, DiagnosticSink, Flow, LineMap, Severity, Span};
 use crate::syntax::{RawSyntaxTree, program_parser};
 
 /// Emit a diagnostic to the sink and report the sink's continuation decision.
@@ -40,6 +48,25 @@ pub(crate) fn emit_skip<T>(
     }
 }
 
+/// Forwards to the wrapped sink, remembering whether an error went through.
+struct TrackErrors<'s> {
+    sink: &'s mut dyn DiagnosticSink,
+    seen: bool,
+}
+
+impl<'s> TrackErrors<'s> {
+    fn new(sink: &'s mut dyn DiagnosticSink) -> Self {
+        TrackErrors { sink, seen: false }
+    }
+}
+
+impl DiagnosticSink for TrackErrors<'_> {
+    fn emit(&mut self, diagnostic: Diagnostic) -> Flow {
+        self.seen |= diagnostic.severity == Severity::Error;
+        self.sink.emit(diagnostic)
+    }
+}
+
 pub struct Pipeline<S> {
     state: S,
 }
@@ -52,12 +79,17 @@ pub struct Parsed {
     pub(crate) line_map: Arc<LineMap>,
 }
 // Once a Program exists it owns the LineMap, so the later states need only
-// hold the program.
+// hold the program, and whether any stage so far reported an error.
 pub struct Validated {
     pub(crate) program: Program,
+    pub(crate) had_errors: bool,
 }
 pub struct Lowered {
     pub(crate) program: ExtendedProgram,
+    pub(crate) had_errors: bool,
+}
+pub struct Fused<P> {
+    pub(crate) program: P,
 }
 
 impl<'a> Pipeline<Source<'a>> {
@@ -97,9 +129,13 @@ impl Pipeline<Parsed> {
     /// forwarding every recoverable error to the sink.
     pub fn validate(self, sink: &mut dyn DiagnosticSink) -> Result<Pipeline<Validated>, Aborted> {
         let Parsed { tree, line_map } = self.state;
-        let program = validate::validate(tree, &line_map, sink)?;
+        let mut sink = TrackErrors::new(sink);
+        let program = validate::validate(tree, &line_map, &mut sink)?;
         Ok(Pipeline {
-            state: Validated { program },
+            state: Validated {
+                program,
+                had_errors: sink.seen,
+            },
         })
     }
 }
@@ -109,10 +145,34 @@ impl Pipeline<Validated> {
     /// [`ExtendedInstruction`] variants, forwarding every recoverable error to
     /// the sink.
     pub fn lower(self, sink: &mut dyn DiagnosticSink) -> Result<Pipeline<Lowered>, Aborted> {
-        let program = lower::lower(self.state.program, sink)?;
+        let Validated {
+            program,
+            had_errors,
+        } = self.state;
+        let mut sink = TrackErrors::new(sink);
+        let program = lower::lower(program, &mut sink)?;
         Ok(Pipeline {
-            state: Lowered { program },
+            state: Lowered {
+                program,
+                had_errors: had_errors || sink.seen,
+            },
         })
+    }
+
+    /// Stage 4: fusion. Merges consecutive compatible instructions, as Stim
+    /// does (`H 0` / `H 1` becomes `H 0 1`). Skipped if any stage reported an
+    /// error, since the program is then incomplete.
+    pub fn fuse(self) -> Pipeline<Fused<Program>> {
+        let Validated {
+            mut program,
+            had_errors,
+        } = self.state;
+        if !had_errors {
+            program.instructions = fuse::fuse(program.instructions);
+        }
+        Pipeline {
+            state: Fused { program },
+        }
     }
 
     pub fn finish(self) -> Program {
@@ -121,7 +181,29 @@ impl Pipeline<Validated> {
 }
 
 impl Pipeline<Lowered> {
+    /// Stage 4: fusion. Merges consecutive compatible instructions, as Stim
+    /// does (`H 0` / `H 1` becomes `H 0 1`). Skipped if any stage reported an
+    /// error, since the program is then incomplete.
+    pub fn fuse(self) -> Pipeline<Fused<ExtendedProgram>> {
+        let Lowered {
+            mut program,
+            had_errors,
+        } = self.state;
+        if !had_errors {
+            program.instructions = fuse::fuse(program.instructions);
+        }
+        Pipeline {
+            state: Fused { program },
+        }
+    }
+
     pub fn finish(self) -> ExtendedProgram {
+        self.state.program
+    }
+}
+
+impl<P> Pipeline<Fused<P>> {
+    pub fn finish(self) -> P {
         self.state.program
     }
 }

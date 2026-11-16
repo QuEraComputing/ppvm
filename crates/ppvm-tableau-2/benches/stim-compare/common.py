@@ -1,7 +1,6 @@
 """Running the timing tools: a ppvm example (`run_stim`, `run_clifft`) and
 reference binaries with the same CLI (`<tool> <circuit> <shots>`, printing
-`<x> µs/shot` or `<x> us/shot`), such as `stim_driver` built against a Stim
-checkout."""
+`<x> µs/shot` or `<x> us/shot`), such as a native Stim build."""
 
 import pathlib
 import re
@@ -34,7 +33,7 @@ def build_ppvm(example: str = "run_stim") -> None:
 def tools(references: list[str], example: str = "run_stim") -> dict[str, list[str]]:
     """`ppvm` (the example), then the `NAME=PATH` references in order."""
     if not references:
-        sys.exit("give at least one --reference NAME=PATH (see README.md)")
+        sys.exit("give at least one --reference NAME=PATH")
     found = {"ppvm": [str(EXAMPLES / example)]}
     for reference in references:
         name, path = reference.split("=", 1)

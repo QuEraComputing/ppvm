@@ -7,7 +7,7 @@ few rounds; median per tool. Writes the circuits and `sweep.csv` to
         [--case surface:7]... [--family surface] [--max-qubits N] [--rounds 3]
 
 Python Stim only generates the circuits; timing is against the references
-(e.g. `stim_driver`, see README.md). Times are per shot, noise-free,
+(e.g. a native Stim build). Times are per shot, noise-free,
 gates/measurements/resets only; see the design doc's Benchmarks section for how
 instruction batching differs between the tools.
 """

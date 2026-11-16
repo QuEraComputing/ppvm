@@ -174,8 +174,4 @@ impl<S: ActiveState + Default> VirtualState for ActiveDormant<S> {
             }
         }
     }
-
-    fn truncation_error(&self) -> f64 {
-        self.phi.truncation_error()
-    }
 }

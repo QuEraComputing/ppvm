@@ -31,9 +31,4 @@ pub trait ActiveState: Clone {
     /// renormalize. Axes above the pivot shift down by one. The branch must
     /// have nonzero weight.
     fn collapse(&mut self, p: AxisPauli, m: bool, v: &Rotation);
-
-    /// Weight dropped by truncation so far; exact backends return 0.
-    fn truncation_error(&self) -> f64 {
-        0.0
-    }
 }

@@ -37,9 +37,4 @@ pub trait VirtualState: Clone {
     /// Project onto outcome `m` of `Z_q` and renormalize. The outcome must have
     /// nonzero weight.
     fn collapse(&mut self, t: &mut VirtualView<'_>, q: usize, m: bool);
-
-    /// Weight dropped by truncation so far; exact representations return 0.
-    fn truncation_error(&self) -> f64 {
-        0.0
-    }
 }

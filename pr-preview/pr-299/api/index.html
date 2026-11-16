@@ -106,8 +106,7 @@ Chaining it gives exact bitstring probabilities:</p>
 <p><code>python p = 1.0 for q, bit in enumerate(bits):     p *= tab.project(q, MeasurementResult(bit)) </code></p>
 </div><section class="doc-section"><h5>Parameters</h5><dl class="param-list"><dt><code class="param-name">addr0</code><code class="param-type">int</code></dt><dd><p>The index of the target qubit.</p>
 </dd><dt><code class="param-name">outcome</code><code class="param-type">MeasurementResult</code></dt><dd><p>The outcome to project onto.</p>
-</dd><dt><code class="param-name">tol</code><code class="param-type">float</code></dt><dd><p>Smallest probability accepted for <code>outcome</code>; must be
-positive and finite.</p>
+</dd><dt><code class="param-name">tol</code><code class="param-type">float</code></dt><dd><p>Smallest probability accepted for <code>outcome</code>, in <code>(0, 1]</code>.</p>
 </dd></dl></section><section class="doc-section"><h5>Returns</h5><dl class="return-list"><dt><code class="param-type">float</code></dt><dd><p>The probability of measuring <code>outcome</code> before the projection.</p>
 </dd></dl></section><section class="doc-section"><h5>Raises</h5><dl class="return-list"><dt><code class="param-type">ValueError</code></dt><dd><p>If <code>tol</code> is invalid, or, leaving the state unchanged,
 if the probability of <code>outcome</code> is below <code>tol</code>.</p>
@@ -1787,7 +1786,7 @@ it, and return its probability. Chaining it gives
 <code>P(z) = Π_i P(z_i | z_&lt;i)</code>.</p>
 <p>Loss is classical: <code>None</code> has probability 1 on a lost qubit and 0 on a
 live one, and <code>Some(_)</code> has probability 0 on a lost qubit.</p>
-<p><code>tol</code> must be positive and finite. Returns <a href="#rs-ppvm-tableau-measure-ImpossibleOutcome"><code>ImpossibleOutcome</code></a>,
+<p><code>tol</code> must be in <code>(0, 1]</code>. Returns <a href="#rs-ppvm-tableau-measure-ImpossibleOutcome"><code>ImpossibleOutcome</code></a>,
 leaving the tableau untouched, if <code>P(outcome) &lt; tol</code>.</p>
 </div></div></details></article><article class="api-item" id="rs-ppvm-tableau-data-GeneralizedTableau-trace" data-name="trace" data-path="ppvm_tableau::data::generalizedtableau::trace" data-kind="function"><div class="row1"><span class="kind kind-function">function</span><span class="name"><a href="#rs-ppvm-tableau-data-GeneralizedTableau-trace">trace</a></span><span class="path">ppvm_tableau::data::GeneralizedTableau::trace</span></div><div class="signature">fn trace(self, pattern) -&gt; …</div><p class="summary"><code>Σ_{P matches pattern} ⟨ψ|P|ψ⟩</code>.</p><details><summary>Full docstring</summary><div class="docstring"><div class="doc-prose"><p><code>Σ_{P matches pattern} ⟨ψ|P|ψ⟩</code>.</p>
 <p>Enumerates every <code>PauliWord</code> accepted by <code>pattern</code> via

@@ -2310,6 +2310,7 @@ dependencies = [
  "num",
  "ppvm-pauli-sum",
  "ppvm-tableau",
+ "rand 0.10.3",
  "rayon",
  "smallvec",
  "stim-parser",

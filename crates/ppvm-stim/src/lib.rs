@@ -33,6 +33,7 @@
 //! [`ExtendedProgram`]: stim_parser::prelude::ExtendedProgram
 //! [`GeneralizedTableau`]: ppvm_tableau::prelude::GeneralizedTableau
 
+pub mod css;
 pub mod executor;
 pub mod validate;
 

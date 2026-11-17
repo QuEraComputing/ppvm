@@ -136,8 +136,6 @@ where
     Ok(QubitPairBatch { pairs, params })
 }
 
-// TODO: these use vihaco's `#[doc(hidden)]` message traits so the batches build in
-// any composite; switch to a public extension point once QuEraComputing/vihaco#169 lands.
 macro_rules! automatic_batch_message {
     ($msg:ident, $pop:ident) => {
         impl<C, F, I, Ctx: ?Sized, P> ReusableMessageRecipe<C, F, I, Ctx> for $msg<P>

@@ -559,10 +559,20 @@ class GeneralizedTableau(
         if n_qubits is None:
             n_qubits = max(1, prog.num_qubits)
         native_cls = _native_tableau_cls(n_qubits)
-        buf, (n, m) = native_cls.sample(prog, n_qubits, min_abs_coeff, num_shots, seed)
-        if as_numpy:
-            return np.frombuffer(buf, dtype=np.int8).reshape(n, m)
-        return [[_BY_VALUE[x] for x in buf[i * m : (i + 1) * m]] for i in range(n)]
+        buf, shape = native_cls.sample(prog, n_qubits, min_abs_coeff, num_shots, seed)
+        return _shots(buf, shape, as_numpy)
+
+
+def _shots(
+    buf: bytearray, shape: tuple[int, int], as_numpy: bool
+) -> list[list[MeasurementResult]] | np.ndarray:
+    n, m = shape
+    if as_numpy:
+        return np.frombuffer(buf, dtype=np.int8).reshape(n, m)
+    return [[_BY_VALUE[x] for x in buf[i * m : (i + 1) * m]] for i in range(n)]
+
+
+SampleMethod = Literal["auto", "tableau", "css"]
 
 
 @overload
@@ -573,6 +583,7 @@ def sample_stim(
     num_shots: int = ...,
     seed: int | None = ...,
     as_numpy: Literal[False] = ...,
+    method: SampleMethod = ...,
 ) -> list[list[MeasurementResult]]: ...
 
 
@@ -585,6 +596,7 @@ def sample_stim(
     seed: int | None = ...,
     *,
     as_numpy: Literal[True],
+    method: SampleMethod = ...,
 ) -> np.ndarray: ...
 
 
@@ -596,6 +608,7 @@ def sample_stim(
     num_shots: int = ...,
     seed: int | None = ...,
     as_numpy: bool = ...,
+    method: SampleMethod = ...,
 ) -> list[list[MeasurementResult]] | np.ndarray: ...
 
 
@@ -606,14 +619,28 @@ def sample_stim(
     num_shots: int = 1,
     seed: int | None = None,
     as_numpy: bool = False,
+    method: SampleMethod = "auto",
 ) -> list[list[MeasurementResult]] | np.ndarray:
-    """Multi-shot sampling — module-level alias for ``GeneralizedTableau.sample``.
+    """Multi-shot sampling of a Stim program.
+
+    ``method="tableau"`` runs `GeneralizedTableau.sample`. ``method="css"`` runs the
+    CSS frame sampler, which simulates loss and leakage exactly with many shots per
+    machine word, but only for circuits that are CSS up to Hadamard gates (see
+    `StimProgram.is_css`); ``n_qubits`` and ``min_abs_coeff`` do not apply to it.
+    ``method="auto"`` (the default) uses the CSS sampler whenever the program allows
+    it. Both samplers draw from the same distribution, but a given seed yields
+    different shots in each.
 
     When ``n_qubits`` is ``None`` (the default) the qubit count is inferred from
     the program; see `GeneralizedTableau.sample`. Shots are sampled in parallel
     across CPU cores with the GIL released; see `GeneralizedTableau.sample` for
     seeding, ``RAYON_NUM_THREADS`` and the ``as_numpy`` array format.
     """
+    if method not in ("auto", "tableau", "css"):
+        raise ValueError(f"method must be 'auto', 'tableau' or 'css', got {method!r}")
+    if method == "css" or (method == "auto" and prog.is_css):
+        buf, shape = prog._sample_css(num_shots, seed)
+        return _shots(buf, shape, as_numpy)
     return GeneralizedTableau.sample(
         prog,
         n_qubits,

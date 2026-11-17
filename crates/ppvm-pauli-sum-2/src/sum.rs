@@ -15,7 +15,12 @@ pub type PreserveSet<K> = HashSet<K, IdentityBuildHasher>;
 /// A sparse sum of words and coefficients, all with the same site count.
 /// Storage determines the key and coefficient types. Reduction and truncation
 /// are explicit; adding or scaling terms never removes zero coefficients.
-#[derive(Debug, Clone)]
+/// Arithmetic retains the left operand's policy and preserved keys.
+/// Addition and subtraction panic on unequal widths.
+/// Exact and approximate comparisons require matching widths and stored keys,
+/// including explicit zeros, and compare coefficients independently of policy.
+/// Display sorts terms by weight with three coefficient decimals; Debug uses eight.
+#[derive(Clone)]
 pub struct Sum<S: Support, P = NoPolicy> {
     pub(crate) storage: S,
     policy: P,

@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 mod clifford;
+mod compare;
+mod display;
+mod ops;
 mod policy;
 mod store;
 mod sum;

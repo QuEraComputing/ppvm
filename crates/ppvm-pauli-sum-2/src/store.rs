@@ -113,7 +113,7 @@ where
     #[inline]
     fn accumulate(&mut self, key: K, coeff: C) {
         match self.terms.entry(key) {
-            Entry::Occupied(mut entry) => *entry.get_mut() += coeff,
+            Entry::Occupied(mut entry) => *entry.get_mut() += &coeff,
             Entry::Vacant(entry) => {
                 entry.insert(coeff);
             }

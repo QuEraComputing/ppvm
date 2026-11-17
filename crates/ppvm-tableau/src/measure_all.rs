@@ -8,13 +8,10 @@ use num::{
     Complex, One, PrimInt, ToPrimitive, Zero,
     complex::{Complex64, ComplexFloat},
 };
-use ppvm_traits::{char::Pauli, config::Config};
+use ppvm_traits::config::Config;
 
 use crate::measure::MeasureScratch;
-use crate::{
-    data::GeneralizedTableau, qubit_status::QubitStatus, sparsevec::SparseVector,
-    tableau_index::TableauIndex,
-};
+use crate::{data::GeneralizedTableau, sparsevec::SparseVector, tableau_index::TableauIndex};
 
 pub trait LossyMeasureAll {
     fn measure_all(&mut self) -> Vec<Option<bool>>;
@@ -88,7 +85,7 @@ where
         scratch: &mut MeasureScratch<I, T::Coeff>,
     ) -> Vec<Option<bool>> {
         (0..self.n_qubits())
-            .map(|idx| self.measure_one_with_scratch(idx, scratch))
+            .map(|idx| self.measure_with_scratch(idx, scratch))
             .collect()
     }
 
@@ -106,32 +103,7 @@ where
     ) -> Vec<Option<bool>> {
         indices
             .iter()
-            .map(|&idx| self.measure_one_with_scratch(idx, scratch))
+            .map(|&idx| self.measure_with_scratch(idx, scratch))
             .collect()
-    }
-
-    /// Measure a single qubit `idx` in the Z basis, reusing `scratch`. A lost
-    /// qubit pushes `None` onto the measurement record and returns `None`,
-    /// exactly as the standalone `measure` path does. Shared by
-    /// `measure_all_with_scratch` and `measure_many_with_scratch` so every
-    /// batched path measures — and records — identically to per-qubit `measure`.
-    fn measure_one_with_scratch(
-        &mut self,
-        idx: usize,
-        scratch: &mut MeasureScratch<I, T::Coeff>,
-    ) -> Option<bool> {
-        if self.qubit_status[idx] == QubitStatus::Lost {
-            self.measurement_record.push(None);
-            return None;
-        }
-        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) =
-            self.compute_decomposition(idx, Pauli::Z);
-        self.measure_with_scratch(
-            idx,
-            scratch,
-            phase_decomp,
-            stab_anticomm_bits,
-            destab_anticomm_bits,
-        )
     }
 }

@@ -8,6 +8,26 @@ use ppvm_traits_2::{Clifford, CliffordBatch};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 type Gate<T> = fn(&mut T, usize, usize);
+type Batch<T, Q> = fn(&mut T, &[Q]);
+
+fn single_batches<T: CliffordBatch>() -> [Batch<T, usize>; 10] {
+    [
+        T::x_many,
+        T::y_many,
+        T::z_many,
+        T::h_many,
+        T::s_many,
+        T::s_dag_many,
+        T::sqrt_x_many,
+        T::sqrt_x_dag_many,
+        T::sqrt_y_many,
+        T::sqrt_y_dag_many,
+    ]
+}
+
+fn pair_batches<T: CliffordBatch>() -> [Batch<T, (usize, usize)>; 3] {
+    [T::cnot_many, T::cz_many, T::cy_many]
+}
 
 // Single-qubit gates ignore the second index.
 fn gates<T: Clifford>() -> [Gate<T>; 13] {
@@ -131,7 +151,93 @@ fn invalid_gate_arguments_do_not_change_terms() {
 }
 
 #[test]
-fn batches_and_aliases_follow_gate_order() {
+fn batches_match_scalar_gates_with_repeated_targets_and_loss() {
+    type TestSum = LossyPauliSum<Complex<f64>, CoefficientThreshold>;
+    let original = TestSum::from_terms_with_policy(
+        3,
+        CoefficientThreshold { threshold: 10.0 },
+        [
+            ("XYZ".into(), Complex::new(2.0, 3.0)),
+            ("ZIX".into(), Complex::new(0.0, 0.0)),
+            ("LXY".into(), Complex::new(-1.0, 4.0)),
+            ("YLL".into(), Complex::new(3.0, -2.0)),
+        ],
+    )
+    .preserving(["XYZ".into()]);
+
+    for (batch, scalar) in single_batches::<TestSum>()
+        .into_iter()
+        .zip(gates::<TestSum>())
+    {
+        for indices in [&[][..], &[0], &[2, 0, 2, 1]] {
+            let mut actual = original.clone();
+            let mut expected = original.clone();
+            batch(&mut actual, indices);
+            for &q in indices {
+                scalar(&mut expected, q, 0);
+            }
+            assert_eq!(actual, expected);
+            assert_eq!(actual.policy(), original.policy());
+            assert_eq!(actual.preserved_keys(), original.preserved_keys());
+        }
+    }
+    for (batch, scalar) in pair_batches::<TestSum>()
+        .into_iter()
+        .zip(&gates::<TestSum>()[10..])
+    {
+        for pairs in [
+            &[][..],
+            &[(0, 1)],
+            &[(0, 1), (1, 2)],
+            &[(0, 1), (1, 2), (0, 2), (0, 1)],
+        ] {
+            for reverse in [false, true] {
+                let mut pairs = pairs.to_vec();
+                if reverse {
+                    pairs.reverse();
+                }
+                let mut actual = original.clone();
+                let mut expected = original.clone();
+                batch(&mut actual, &pairs);
+                for &(a, b) in &pairs {
+                    scalar(&mut expected, a, b);
+                }
+                assert_eq!(actual, expected, "pairs={pairs:?}, reverse={reverse}");
+                assert_eq!(actual.policy(), original.policy());
+                assert_eq!(actual.preserved_keys(), original.preserved_keys());
+            }
+        }
+    }
+}
+
+#[test]
+fn invalid_batches_are_rejected_before_any_gate_runs() {
+    for original in [
+        PauliSum::new(2),
+        PauliSum::from_terms(2, [("XY".into(), 2.0)]),
+    ] {
+        for batch in single_batches::<PauliSum>() {
+            let mut sum = original.clone();
+            assert!(catch_unwind(AssertUnwindSafe(|| batch(&mut sum, &[0, 2]))).is_err());
+            assert_eq!(sum, original);
+        }
+        for batch in pair_batches::<PauliSum>() {
+            for invalid in [(0, 2), (2, 0), (1, 1)] {
+                let mut sum = original.clone();
+                assert!(
+                    catch_unwind(AssertUnwindSafe(|| {
+                        batch(&mut sum, &[(0, 1), invalid]);
+                    }))
+                    .is_err()
+                );
+                assert_eq!(sum, original);
+            }
+        }
+    }
+}
+
+#[test]
+fn aliases_follow_gate_order() {
     let mut actual = PauliSum::from_terms(
         3,
         [
@@ -141,16 +247,6 @@ fn batches_and_aliases_follow_gate_order() {
         ],
     );
     let mut expected = actual.clone();
-    actual.s_many(&[0, 2, 0]);
-    actual.cnot_many(&[(0, 1), (1, 2), (0, 1)]);
-    for q in [0, 2, 0] {
-        expected.s(q);
-    }
-    for (a, b) in [(0, 1), (1, 2), (0, 1)] {
-        expected.cnot(a, b);
-    }
-    assert_eq!(actual, expected);
-
     let aliases: [(Gate<PauliSum>, Gate<PauliSum>); 4] = [
         (PauliSum::cx, PauliSum::cnot),
         (PauliSum::zcx, PauliSum::cnot),

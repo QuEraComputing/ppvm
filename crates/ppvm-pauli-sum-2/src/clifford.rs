@@ -32,6 +32,57 @@ impl<S: RekeyBijective, P> Sum<S, P> {
             }
         });
     }
+
+    fn conjugate_single_batch(
+        &mut self,
+        indices: &[usize],
+        gate: impl Fn(&mut Phased<S::Key>, usize),
+    ) {
+        for &qubit in indices {
+            self.check_qubit(qubit);
+        }
+        match indices {
+            [] => {}
+            &[qubit] => self.conjugate_terms(|word| gate(word, qubit)),
+            _ => self.conjugate_terms(|word| {
+                for &qubit in indices {
+                    gate(word, qubit);
+                }
+            }),
+        }
+    }
+
+    fn conjugate_pair_batch(
+        &mut self,
+        pairs: &[(usize, usize)],
+        gate: impl Fn(&mut Phased<S::Key>, usize, usize),
+    ) {
+        for &(a, b) in pairs {
+            self.check_pair(a, b);
+        }
+        match pairs {
+            [] => {}
+            &[(a, b)] => self.conjugate_terms(|word| gate(word, a, b)),
+            _ => self.conjugate_terms(|word| {
+                for &(a, b) in pairs {
+                    gate(word, a, b);
+                }
+            }),
+        }
+    }
+}
+
+impl<S: SignFlipByKey, P> Sum<S, P> {
+    fn flip_signs_many(&mut self, indices: &[usize], negate: impl Fn(&S::Key, usize) -> bool) {
+        if indices.is_empty() {
+            return;
+        }
+        for &qubit in indices {
+            self.check_qubit(qubit);
+        }
+        self.storage
+            .flip_sign_by_key(|key| indices.iter().fold(false, |flip, &q| flip ^ negate(key, q)));
+    }
 }
 
 /// Conjugate each term, validating qubit indices before changing storage.
@@ -110,4 +161,76 @@ where
     }
 }
 
-impl<S: Support, P> CliffordBatch for Sum<S, P> where Self: Clifford {}
+/// Apply gates in input order, rebuilding storage once per batch of changed keys.
+/// Pauli batches only update signs. Validate the whole batch before changing terms.
+impl<S, P> CliffordBatch for Sum<S, P>
+where
+    S: RekeyBijective + SignFlipByKey,
+    S::Key: PauliBits + LossInfo,
+{
+    fn x_many(&mut self, indices: &[usize]) {
+        if let &[qubit] = indices {
+            self.x(qubit);
+            return;
+        }
+        self.flip_signs_many(indices, |key, q| !key.is_lost(q) && key.z_bit(q));
+    }
+
+    fn y_many(&mut self, indices: &[usize]) {
+        if let &[qubit] = indices {
+            self.y(qubit);
+            return;
+        }
+        self.flip_signs_many(indices, |key, q| {
+            !key.is_lost(q) && (key.x_bit(q) ^ key.z_bit(q))
+        });
+    }
+
+    fn z_many(&mut self, indices: &[usize]) {
+        if let &[qubit] = indices {
+            self.z(qubit);
+            return;
+        }
+        self.flip_signs_many(indices, |key, q| !key.is_lost(q) && key.x_bit(q));
+    }
+
+    fn h_many(&mut self, indices: &[usize]) {
+        self.conjugate_single_batch(indices, Phased::h);
+    }
+
+    fn s_many(&mut self, indices: &[usize]) {
+        self.conjugate_single_batch(indices, Phased::s);
+    }
+
+    fn s_dag_many(&mut self, indices: &[usize]) {
+        self.conjugate_single_batch(indices, Phased::s_dag);
+    }
+
+    fn sqrt_x_many(&mut self, indices: &[usize]) {
+        self.conjugate_single_batch(indices, Phased::sqrt_x);
+    }
+
+    fn sqrt_x_dag_many(&mut self, indices: &[usize]) {
+        self.conjugate_single_batch(indices, Phased::sqrt_x_dag);
+    }
+
+    fn sqrt_y_many(&mut self, indices: &[usize]) {
+        self.conjugate_single_batch(indices, Phased::sqrt_y);
+    }
+
+    fn sqrt_y_dag_many(&mut self, indices: &[usize]) {
+        self.conjugate_single_batch(indices, Phased::sqrt_y_dag);
+    }
+
+    fn cnot_many(&mut self, pairs: &[(usize, usize)]) {
+        self.conjugate_pair_batch(pairs, Phased::cnot);
+    }
+
+    fn cz_many(&mut self, pairs: &[(usize, usize)]) {
+        self.conjugate_pair_batch(pairs, Phased::cz);
+    }
+
+    fn cy_many(&mut self, pairs: &[(usize, usize)]) {
+        self.conjugate_pair_batch(pairs, Phased::cy);
+    }
+}

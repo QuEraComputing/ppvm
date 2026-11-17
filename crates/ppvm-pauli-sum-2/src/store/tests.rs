@@ -208,3 +208,35 @@ fn sign_flips_do_not_allocate_a_second_map() {
     assert_eq!(store.terms.capacity(), capacity);
     assert_eq!(store.scratch.capacity(), 0);
 }
+
+#[test]
+fn clifford_batches_rebuild_once_and_skip_rebuilding_for_signs() {
+    use crate::{NoPolicy, PauliSum};
+    use ppvm_traits_2::CliffordBatch;
+
+    let batches: [fn(&mut PauliSum); 2] = [
+        |sum| sum.h_many(&[0, 1]),
+        |sum| sum.cnot_many(&[(0, 1), (1, 0)]),
+    ];
+    for batch in batches {
+        let mut sum = PauliSum::with_capacity(2, NoPolicy, 64);
+        sum.add_term("XY".into(), 2.0);
+        sum.add_term("YZ".into(), 0.0);
+        let original_capacity = sum.storage.terms.capacity();
+
+        sum.h_many(&[]);
+        sum.cnot_many(&[]);
+        sum.x_many(&[0, 1]);
+        sum.y_many(&[1, 0]);
+        sum.z_many(&[0, 0]);
+        assert_eq!(sum.storage.terms.capacity(), original_capacity);
+        assert_eq!(sum.storage.scratch.capacity(), 0);
+
+        batch(&mut sum);
+        // Two scalar calls would swap back to the original, larger map.
+        assert_eq!(sum.storage.scratch.capacity(), original_capacity);
+        assert!(sum.storage.terms.capacity() < original_capacity);
+        assert!(sum.storage.scratch.is_empty());
+        assert_eq!(sum.len(), 2);
+    }
+}

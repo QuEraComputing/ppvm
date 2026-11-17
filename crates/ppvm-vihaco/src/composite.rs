@@ -343,6 +343,9 @@ fn assert_dispatch_coverage(
 
 impl vihaco::Reset for PPVM {
     fn reset(&mut self) {
+        self.execution.reset();
+        // Clears a paused breakpoint; installed gutter breakpoints live in the module.
+        self.debugger.reset();
         self.cpu.reset();
         self.circuit.reset();
         self.measurement_record.record.clear();
@@ -611,6 +614,23 @@ mod tests {
         machine.reset();
         assert!(machine.measurement_record().is_empty());
         assert!(machine.trace_record().is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn reset_while_paused_returns_to_a_fresh_machine() -> eyre::Result<()> {
+        let source = program("circuit.n_qubits 1;", &[], BREAK_THEN_MEASURE);
+        let (mut m, module) = paused_at_breakpoint(&source)?;
+        m.send(&circuit::X, PopFromStack((0,)))?;
+
+        m.reset();
+        assert!(!m.is_paused(), "reset must clear the breakpoint pause");
+        assert!(m.is_halted(), "reset must end the running invocation");
+        assert!(m.execution.stack().is_empty());
+
+        // A rerun starts from |0>, so the injected X is gone and q0 measures 0.
+        m.run(&module)?;
+        assert_eq!(outcomes(&m), [MeasurementOutcome::Zero]);
         Ok(())
     }
 

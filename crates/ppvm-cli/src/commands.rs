@@ -204,11 +204,11 @@ fn debug_loop(
                 }
                 DebugCommand::Continue => {}
                 DebugCommand::Step => {
-                    // TODO: vihaco has no single-instruction step API yet (only `resume`).
-                    writeln!(
-                        output,
-                        "single-step is not supported yet — use c to continue"
-                    )?;
+                    machine.single_step(&module)?;
+                    if machine.is_halted() {
+                        writeln!(output, "Program finished.")?;
+                        break;
+                    }
                     continue;
                 }
             }
@@ -520,12 +520,11 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "TODO: needs a single-step API in vihaco"]
     fn debug_break_at_start_steps_through_to_finish() {
-        // PROGRAM is cpu::cpu.const u64, 0 / circuit::circuit.measure / ret = 3 steps.
+        // PROGRAM is const_u64 0 / measure / ret = 3 steps.
         let out = run_debug(PROGRAM, "ppvm_cli_debug_step.sst", true, "s\ns\ns\n");
         assert!(
-            out.contains("next: Measure"),
+            out.contains("pc=1  next: V_circuit__circuit__Measure"),
             "should display the gate: {out}"
         );
         assert!(out.contains("Program finished."), "{out}");
@@ -537,10 +536,29 @@ mod tests {
 
     #[test]
     fn debug_break_at_start_pauses_before_running() {
+        // One step runs only the const, so nothing is measured until continuing.
         let out = run_debug(PROGRAM, "ppvm_cli_debug_start.sst", true, "s\nc\n");
         assert!(out.contains("pc=0"), "should pause at the entry: {out}");
-        assert!(out.contains("measurements: \n"), "nothing ran yet: {out}");
-        assert!(out.contains("single-step is not supported yet"), "{out}");
+        assert!(
+            out.contains("pc=1"),
+            "one step advances one instruction: {out}"
+        );
+        assert_eq!(out.matches("measurements: \n").count(), 2, "{out}");
+        assert!(out.contains("Program finished."), "{out}");
+        assert!(out.contains("Measurements: 0"), "{out}");
+    }
+
+    #[test]
+    fn debug_steps_past_authored_breakpoint() {
+        // Stepping from the breakpoint executes the instructions after it.
+        let out = run_debug(
+            BREAKPOINT_PROGRAM,
+            "ppvm_cli_debug_bp_step.sst",
+            false,
+            "s\ns\ns\n",
+        );
+        assert!(out.contains("-- breakpoint hit --"), "{out}");
+        assert!(out.contains("next: V_circuit__circuit__Measure"), "{out}");
         assert!(out.contains("Program finished."), "{out}");
         assert!(out.contains("Measurements: 0"), "{out}");
     }

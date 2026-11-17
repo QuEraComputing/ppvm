@@ -123,6 +123,19 @@ fn run_file_via_library_helper() {
 }
 
 #[test]
+fn batched_gates_run_from_source() {
+    // `x_many` flips both qubits; one `measure_many` records both outcomes.
+    let machine = run_file("tests/batched_x_measure.sst")
+        .unwrap_or_else(|e| panic!("run batched_x_measure.sst: {e:?}"));
+    let record = machine.measurement_record();
+    assert_eq!(record.len(), 1, "one batched measurement");
+    assert_eq!(
+        record[0].as_slice(),
+        &[MeasurementOutcome::One, MeasurementOutcome::One]
+    );
+}
+
+#[test]
 fn batch_runs_ignore_breakpoints() {
     // The breakpoint precedes the only measurement, so a shot cut off there
     // records nothing; a full run measures |0> and must get 0.

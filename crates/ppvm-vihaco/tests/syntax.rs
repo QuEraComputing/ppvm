@@ -61,3 +61,41 @@ fn rejects_pascal_case_token() {
     // Tokens are lowercase; the Rust type name must not parse.
     assert_eq!(parse("CNOT"), None);
 }
+
+#[test]
+fn parses_batched_tokens_without_prefix_collision() {
+    // Each base token is a prefix of its batched form, e.g. `x` of `x_many`.
+    for (token, variant) in [
+        ("x_many", "XMany"),
+        ("y_many", "YMany"),
+        ("z_many", "ZMany"),
+        ("h_many", "HMany"),
+        ("s_many", "SMany"),
+        ("s_adj_many", "SAdjMany"),
+        ("t_many", "TMany"),
+        ("t_adj_many", "TAdjMany"),
+        ("sqrt_x_many", "SqrtXMany"),
+        ("sqrt_x_adj_many", "SqrtXAdjMany"),
+        ("sqrt_y_many", "SqrtYMany"),
+        ("sqrt_y_adj_many", "SqrtYAdjMany"),
+        ("reset_many", "ResetMany"),
+        ("measure_many", "MeasureMany"),
+        ("cnot_many", "CNOTMany"),
+        ("cz_many", "CZMany"),
+        ("rx_many", "RXMany"),
+        ("ry_many", "RYMany"),
+        ("rz_many", "RZMany"),
+        ("depolarize_many", "DepolarizeMany"),
+        ("loss_many", "LossMany"),
+        ("rxx_many", "RXXMany"),
+        ("ryy_many", "RYYMany"),
+        ("rzz_many", "RZZMany"),
+        ("depolarize2_many", "Depolarize2Many"),
+        ("u3_many", "U3Many"),
+        ("paulierror_many", "PauliErrorMany"),
+        ("correlatedloss_many", "CorrelatedLossMany"),
+        ("twoqubitpaulierror_many", "TwoQubitPauliErrorMany"),
+    ] {
+        assert_parses_to(token, variant);
+    }
+}

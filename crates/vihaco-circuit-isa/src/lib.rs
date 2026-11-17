@@ -7,112 +7,8 @@ pub mod messages;
 
 #[dialect]
 pub mod circuit {
-    #[instruction]
-    pub struct TwoQubitPauliError;
-
-    #[instruction]
-    pub struct Truncate;
-
-    #[instruction]
-    pub struct Trace;
-
-    #[instruction]
-    pub struct X;
-
-    #[instruction]
-    pub struct Y;
-
-    #[instruction]
-    pub struct Z;
-
-    #[instruction]
-    pub struct H;
-
-    #[pattern = "'sqrt_x_adj"]
-    #[instruction]
-    pub struct SqrtXAdj;
-
-    #[pattern = "'sqrt_x"]
-    #[instruction]
-    pub struct SqrtX;
-
-    #[pattern = "'sqrt_y_adj"]
-    #[instruction]
-    pub struct SqrtYAdj;
-
-    #[pattern = "'sqrt_y"]
-    #[instruction]
-    pub struct SqrtY;
-
-    #[pattern = "'s_adj"]
-    #[instruction]
-    pub struct SAdj;
-
-    #[instruction]
-    pub struct S;
-
-    #[instruction]
-    pub struct CNOT;
-
-    #[instruction]
-    pub struct CZ;
-
-    #[pattern = "'t_adj"]
-    #[instruction]
-    pub struct TAdj;
-
-    #[instruction]
-    pub struct T;
-
-    #[instruction]
-    pub struct RXX;
-
-    #[instruction]
-    pub struct RYY;
-
-    #[instruction]
-    pub struct RZZ;
-
-    #[instruction]
-    pub struct RX;
-
-    #[instruction]
-    pub struct RY;
-
-    #[instruction]
-    pub struct RZ;
-
-    #[instruction]
-    pub struct U3;
-
-    #[instruction]
-    pub struct Measure;
-
-    #[instruction]
-    pub struct Reset;
-
-    #[instruction]
-    pub struct R;
-
-    #[instruction]
-    pub struct Loss;
-
-    #[instruction]
-    pub struct CorrelatedLoss;
-
-    #[instruction]
-    pub struct PauliError;
-
-    #[instruction]
-    pub struct Depolarize2;
-
-    #[instruction]
-    pub struct Depolarize;
-
-    #[instruction]
-    pub struct Leakage;
-
     // Batched variants: same gate applied to every qubit (or pair) in the batch.
+    // Declared first since tokens match in order, else `x` eats the `x_many` prefix.
 
     #[pattern = "'x_many"]
     #[instruction]
@@ -229,6 +125,111 @@ pub mod circuit {
     #[pattern = "'twoqubitpaulierror_many"]
     #[instruction]
     pub struct TwoQubitPauliErrorMany;
+
+    #[instruction]
+    pub struct TwoQubitPauliError;
+
+    #[instruction]
+    pub struct Truncate;
+
+    #[instruction]
+    pub struct Trace;
+
+    #[instruction]
+    pub struct X;
+
+    #[instruction]
+    pub struct Y;
+
+    #[instruction]
+    pub struct Z;
+
+    #[instruction]
+    pub struct H;
+
+    #[pattern = "'sqrt_x_adj"]
+    #[instruction]
+    pub struct SqrtXAdj;
+
+    #[pattern = "'sqrt_x"]
+    #[instruction]
+    pub struct SqrtX;
+
+    #[pattern = "'sqrt_y_adj"]
+    #[instruction]
+    pub struct SqrtYAdj;
+
+    #[pattern = "'sqrt_y"]
+    #[instruction]
+    pub struct SqrtY;
+
+    #[pattern = "'s_adj"]
+    #[instruction]
+    pub struct SAdj;
+
+    #[instruction]
+    pub struct S;
+
+    #[instruction]
+    pub struct CNOT;
+
+    #[instruction]
+    pub struct CZ;
+
+    #[pattern = "'t_adj"]
+    #[instruction]
+    pub struct TAdj;
+
+    #[instruction]
+    pub struct T;
+
+    #[instruction]
+    pub struct RXX;
+
+    #[instruction]
+    pub struct RYY;
+
+    #[instruction]
+    pub struct RZZ;
+
+    #[instruction]
+    pub struct RX;
+
+    #[instruction]
+    pub struct RY;
+
+    #[instruction]
+    pub struct RZ;
+
+    #[instruction]
+    pub struct U3;
+
+    #[instruction]
+    pub struct Measure;
+
+    #[instruction]
+    pub struct Reset;
+
+    #[instruction]
+    pub struct R;
+
+    #[instruction]
+    pub struct Loss;
+
+    #[instruction]
+    pub struct CorrelatedLoss;
+
+    #[instruction]
+    pub struct PauliError;
+
+    #[instruction]
+    pub struct Depolarize2;
+
+    #[instruction]
+    pub struct Depolarize;
+
+    #[instruction]
+    pub struct Leakage;
 }
 
 #[cfg(test)]

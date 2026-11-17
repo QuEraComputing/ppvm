@@ -248,7 +248,7 @@ where
             self.storage.retain(keep);
         } else {
             self.storage
-                .retain(|key, coeff| self.preserved_keys.contains(key) || keep(key, coeff));
+                .retain(|key, coeff| keep(key, coeff) || self.preserved_keys.contains(key));
         }
     }
 }

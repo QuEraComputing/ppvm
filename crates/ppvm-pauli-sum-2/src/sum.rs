@@ -17,7 +17,7 @@ pub type PreserveSet<K> = HashSet<K, IdentityBuildHasher>;
 /// are explicit; adding or scaling terms never removes zero coefficients.
 #[derive(Debug, Clone)]
 pub struct Sum<S: Support, P = NoPolicy> {
-    storage: S,
+    pub(crate) storage: S,
     policy: P,
     n_sites: usize,
     preserved_keys: PreserveSet<S::Key>,
@@ -35,6 +35,7 @@ impl<S: Support, P> Sum<S, P> {
     }
 
     /// Keys protected from [`Self::truncate`]. Absent keys are not inserted.
+    /// Gates transform stored terms, leaving these key exemptions fixed.
     pub fn preserved_keys(&self) -> &PreserveSet<S::Key> {
         &self.preserved_keys
     }

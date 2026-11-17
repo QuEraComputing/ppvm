@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
+mod clifford;
 mod policy;
 mod store;
 mod sum;
@@ -8,7 +9,7 @@ mod sum;
 pub use policy::{
     CoefficientThreshold, CombinedPolicy, MaxLossWeight, MaxPauliWeight, NoPolicy, Policy,
 };
-pub use store::{HashMapStore, StoreAlloc};
+pub use store::{HashMapStore, RekeyBijective, SignFlipByKey, StoreAlloc};
 pub use sum::{PreserveSet, Sum};
 
 pub use ppvm_lossy_pauli_word_2::LossyPauliWord;

@@ -155,3 +155,56 @@ fn hash_collisions_do_not_merge_distinct_keys() {
     assert_eq!(store.get(&Key(1)), Some(2.0));
     assert_eq!(store.get(&Key(2)), Some(5.0));
 }
+
+#[test]
+fn rekey_reuses_both_maps_and_clone_omits_scratch() {
+    use ppvm_phased_pauli_word_2::Phased;
+    use ppvm_traits_2::{Clifford, Phase};
+
+    let mut store = Store::with_capacity(16);
+    store.accumulate("X".into(), 2.0);
+    store.accumulate("Y".into(), 0.0);
+    let original_capacity = store.terms.capacity();
+    let conjugate_h = |key, coeff: f64| {
+        let mut word = Phased::new(key);
+        word.h(0);
+        let (key, phase) = word.into_parts();
+        (key, if phase == Phase::Neg1 { -coeff } else { coeff })
+    };
+    store.rekey_bijective(conjugate_h);
+    let rebuilt_capacity = store.terms.capacity();
+    assert_eq!(store.scratch.capacity(), original_capacity);
+    assert!(store.scratch.is_empty());
+    assert_eq!(store.get(&"Z".into()), Some(2.0));
+    assert_eq!(store.get(&"Y".into()), Some(0.0));
+
+    let cloned = store.clone();
+    assert_eq!(cloned.scratch.capacity(), 0);
+    for _ in 0..3 {
+        store.rekey_bijective(conjugate_h);
+        assert_eq!(store.terms.capacity(), original_capacity);
+        assert_eq!(store.scratch.capacity(), rebuilt_capacity);
+        assert_eq!(store.get(&"X".into()), Some(2.0));
+        store.rekey_bijective(conjugate_h);
+        assert_eq!(store.terms.capacity(), rebuilt_capacity);
+        assert_eq!(store.scratch.capacity(), original_capacity);
+    }
+    store.clear();
+    assert_eq!(store.terms.capacity(), rebuilt_capacity);
+    assert_eq!(store.scratch.capacity(), original_capacity);
+    assert!(store.is_empty());
+    assert_eq!(cloned.get(&"Z".into()), Some(2.0));
+}
+
+#[test]
+fn sign_flips_do_not_allocate_a_second_map() {
+    let mut store = Store::with_capacity(16);
+    store.accumulate("X".into(), 2.0);
+    store.accumulate("Z".into(), 3.0);
+    let capacity = store.terms.capacity();
+    store.flip_sign_by_key(|key| *key == PauliWord::from("X"));
+    assert_eq!(store.get(&"X".into()), Some(-2.0));
+    assert_eq!(store.get(&"Z".into()), Some(3.0));
+    assert_eq!(store.terms.capacity(), capacity);
+    assert_eq!(store.scratch.capacity(), 0);
+}

@@ -242,6 +242,22 @@ mod tests {
         assert_eq!(measure(&mut circuit, 1), MeasurementOutcome::One);
     }
 
+    #[test]
+    fn tableau_t_gate_doubles_coefficients() {
+        // T on |+> is non-Clifford, so the tableau splits into two terms; the
+        // following CNOT is Clifford and keeps that count.
+        let mut circuit = Circuit::tableau(&info(2)).unwrap();
+        circuit.execute(&circuit::H, PopFromStack((0,))).unwrap();
+        circuit.execute(&circuit::T, PopFromStack((0,))).unwrap();
+        circuit
+            .execute(&circuit::CNOT, PopFromStack((0, 1)))
+            .unwrap();
+        let CircuitKind::Tableau(TableauBuckets::Bits64(executor)) = &circuit.inner else {
+            panic!("a 2-qubit tableau should use the 64-bit bucket");
+        };
+        assert_eq!(executor.backend.coefficients.len(), 2);
+    }
+
     // The widest bucket is 2048 qubits; beyond it constructors must error
     // rather than panic, since a panic would tear down the TUI.
 

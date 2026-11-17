@@ -7,8 +7,8 @@ use crate::measurements::{
 };
 use eyre;
 use vihaco::{
-    Apply, BuildMessage, Effects, Execute, ExecutionState, HasInstructionSet, PushToStack, Step,
-    Type, Value, composite, field, module::LocalModule,
+    BuildMessage, Effects, Execute, ExecutionState, HasInstructionSet, PushToStack,
+    ReusableMessageRecipe, Step, Type, Value, composite, field, module::LocalModule,
 };
 
 // Device configuration lives in `device_info` (shipped with the circuit
@@ -71,26 +71,36 @@ impl PPVM {
     }
 }
 
-// Batched circuit instructions pop their operands through custom messages.
-// TODO: per-composite builders conflict with vihaco's blanket `BuildMessage` (E0119)
-// since the messages are foreign here; the ISA crate implements them for now instead.
-// impl<I, P: PopParams> BuildMessage<field!(PPVM::circuit), I, Program, QubitBatch<P>> for PPVM
-// where
-//     Circuit: Execute<I, Message = QubitBatch<P>>,
-// {
-//     fn build_message(&mut self, _: &I, _: &Program) -> eyre::Result<QubitBatch<P>> {
-//         pop_qubit_batch(&mut self.execution)
-//     }
-// }
+// Every field builds its messages through the message type's recipe.
+impl<I, M> BuildMessage<field!(PPVM::execution), I, Program, M> for PPVM
+where
+    ExecutionState: Execute<I, Message = M>,
+    M: ReusableMessageRecipe<Self, field!(PPVM::execution), I, Program>,
+{
+    fn build_message(&mut self, instruction: &I, module: &Program) -> eyre::Result<M> {
+        M::prepare(self, instruction, module)
+    }
+}
 
-// impl<I, P: PopParams> BuildMessage<field!(PPVM::circuit), I, Program, QubitPairBatch<P>> for PPVM
-// where
-//     Circuit: Execute<I, Message = QubitPairBatch<P>>,
-// {
-//     fn build_message(&mut self, _: &I, _: &Program) -> eyre::Result<QubitPairBatch<P>> {
-//         pop_qubit_pair_batch(&mut self.execution)
-//     }
-// }
+impl<I, M> BuildMessage<field!(PPVM::cpu), I, Program, M> for PPVM
+where
+    vihaco_cpu::CPU: Execute<I, Message = M>,
+    M: ReusableMessageRecipe<Self, field!(PPVM::cpu), I, Program>,
+{
+    fn build_message(&mut self, instruction: &I, module: &Program) -> eyre::Result<M> {
+        M::prepare(self, instruction, module)
+    }
+}
+
+impl<I, M> BuildMessage<field!(PPVM::circuit), I, Program, M> for PPVM
+where
+    Circuit: Execute<I, Message = M>,
+    M: ReusableMessageRecipe<Self, field!(PPVM::circuit), I, Program>,
+{
+    fn build_message(&mut self, instruction: &I, module: &Program) -> eyre::Result<M> {
+        M::prepare(self, instruction, module)
+    }
+}
 
 // execution stepping
 impl<I> Step<field!(PPVM::execution), I, Program> for PPVM
@@ -218,7 +228,7 @@ impl PPVM {
 
     /// True while a breakpoint has suspended the running program.
     pub fn is_paused(&self) -> bool {
-        self.execution.is_paused()
+        self.execution.is_halted()
     }
 
     /// True once the program has finished (or before one was started).

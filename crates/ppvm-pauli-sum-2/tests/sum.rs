@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use num::Complex;
-use ppvm_pauli_sum_2::{LossyPauliSum, NoPolicy, PauliSum, PauliWord, Policy};
+use ppvm_pauli_sum_2::{
+    CoefficientThreshold, LossyPauliSum, NoPolicy, PauliSum, PauliWord, Policy,
+};
 use ppvm_traits_2::Retain;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -66,14 +68,20 @@ fn lossy_alias_uses_the_same_core_operations() {
 }
 
 #[test]
-fn complex_scaling_and_pairing_use_the_storage_algebra() {
+fn complex_pairing_accepts_different_policies_without_truncating() {
     let x = PauliWord::from("X");
     let mut left = PauliSum::<Complex<f64>>::from_terms(1, [(x, Complex::new(1.0, 2.0))]);
     left.scale(&Complex::new(0.0, 1.0));
     assert_eq!(left.get(&x), Some(Complex::new(-2.0, 1.0)));
-    let right = PauliSum::<Complex<f64>>::from_terms(1, [(x, Complex::new(3.0, 4.0))]);
+    let right = PauliSum::from_terms_with_policy(
+        1,
+        CoefficientThreshold { threshold: 10.0 },
+        [(x, Complex::new(3.0, 4.0))],
+    );
     assert_eq!(left.overlap(&right), Complex::new(-10.0, -5.0));
+    assert_eq!(right.overlap(&left), Complex::new(-10.0, -5.0));
     assert_eq!(left.hermitian_overlap(&right), Complex::new(-2.0, -11.0));
+    assert_eq!(right.hermitian_overlap(&left), Complex::new(-2.0, 11.0));
 }
 
 #[test]
@@ -91,7 +99,7 @@ fn invalid_insertions_leave_the_sum_unchanged() {
 #[test]
 fn overlap_rejects_different_widths_even_for_empty_sums() {
     let left = PauliSum::<f64>::new(1);
-    let right = PauliSum::<f64>::new(2);
+    let right = PauliSum::<f64, _>::with_policy(2, CoefficientThreshold::default());
     assert!(catch_unwind(|| left.overlap(&right)).is_err());
     assert!(catch_unwind(|| left.hermitian_overlap(&right)).is_err());
 }

@@ -36,24 +36,23 @@ enum Commands {
         #[arg(short, long, value_enum, default_value = "pretty")]
         format: commands::Format,
     },
-    // TODO: bytecode (.ssb) is disabled until vihaco ships codecs for its own dialects.
-    // /// Compile a .sst file to bytecode
-    // Dump {
-    //     /// Input .sst file
-    //     #[arg(value_name = "FILE")]
-    //     file: String,
-    //
-    //     /// Output file (optional, defaults to <file_name>.ssb)
-    //     #[arg(short, long)]
-    //     output: Option<String>,
-    //
-    //     /// Overwrite the output file if it already exists
-    //     #[arg(short, long)]
-    //     force: bool,
-    // },
-    /// Run a .sst program
-    Run {
+    /// Compile a .sst file to bytecode
+    Dump {
         /// Input .sst file
+        #[arg(value_name = "FILE")]
+        file: String,
+
+        /// Output file (optional, defaults to <file_name>.ssb)
+        #[arg(short, long)]
+        output: Option<String>,
+
+        /// Overwrite the output file if it already exists
+        #[arg(short, long)]
+        force: bool,
+    },
+    /// Run a .sst or .ssb program
+    Run {
+        /// Input file (.sst source or .ssb bytecode)
         #[arg(value_name = "FILE")]
         file: String,
 
@@ -80,7 +79,7 @@ enum Commands {
 
     /// Run a program interactively, pausing at breakpoints
     Debug {
-        /// Input .sst file
+        /// Input file (.sst source or .ssb bytecode)
         #[arg(value_name = "FILE")]
         file: String,
 
@@ -103,14 +102,13 @@ fn main() -> Result<()> {
         Some(Commands::Parse { file, format }) => {
             commands::parse(&file, format)?;
         }
-        // TODO: bytecode (.ssb) is disabled until vihaco ships codecs for its own dialects.
-        // Some(Commands::Dump {
-        //     file,
-        //     output,
-        //     force,
-        // }) => {
-        //     commands::dump(&file, output.as_deref(), force)?;
-        // }
+        Some(Commands::Dump {
+            file,
+            output,
+            force,
+        }) => {
+            commands::dump(&file, output.as_deref(), force)?;
+        }
         Some(Commands::Run {
             file,
             shots,

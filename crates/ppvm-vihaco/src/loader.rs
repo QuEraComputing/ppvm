@@ -39,9 +39,15 @@ pub fn compile_program(source: &str) -> eyre::Result<PPVMModule> {
     metadata.map_extra(|_| info).into_module(code)
 }
 
-/// Read a file and compile it with [`compile_program`].
+/// Read a file into a module, auto-detecting the format: a leading PPVM magic
+/// is read as `.ssb` bytecode, anything else is compiled as `.sst` source.
 pub fn load_module_file(path: &str) -> eyre::Result<PPVMModule> {
-    compile_program(&std::fs::read_to_string(path)?)
+    let bytes = std::fs::read(path)?;
+    if crate::bytecode::is_bytecode(&bytes) {
+        crate::bytecode::module_from_bytes(&bytes)
+    } else {
+        compile_program(std::str::from_utf8(&bytes)?)
+    }
 }
 
 #[cfg(test)]

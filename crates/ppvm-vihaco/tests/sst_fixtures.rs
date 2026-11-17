@@ -21,23 +21,19 @@ fn run_file(path: &str) -> eyre::Result<PPVM> {
     run_module(&load_module_file(path)?)
 }
 
-// TODO: bytecode (.ssb) is disabled until vihaco ships codecs for its own dialects.
-// /// Dump a fixture to a `.ssb` file, load it back, and run it. Exercises the
-// /// full bytecode round-trip through disk: `dump_file` → `load_bytecode_file`.
-// fn dump_load_run(sst_path: &str, ssb_name: &str) -> PPVM {
-//     let out = std::env::temp_dir().join(ssb_name);
-//     let out = out.to_str().expect("utf-8 temp path");
-//     ppvm_vihaco::dump_file(sst_path, out).unwrap_or_else(|e| panic!("dump {sst_path}: {e:?}"));
-//
-//     let mut machine = PPVM::default();
-//     machine
-//         .load_bytecode_file(out)
-//         .unwrap_or_else(|e| panic!("load {out}: {e:?}"));
-//     machine.run().unwrap_or_else(|e| panic!("run {out}: {e:?}"));
-//
-//     let _ = std::fs::remove_file(out);
-//     machine
-// }
+/// Dump a fixture to a `.ssb` file, load it back, and run it. Exercises the
+/// full bytecode round-trip through disk: `dump_file` → `load_module_file`.
+fn dump_load_run(sst_path: &str, ssb_name: &str) -> PPVM {
+    let out = std::env::temp_dir().join(ssb_name);
+    let out = out.to_str().expect("utf-8 temp path");
+    ppvm_vihaco::dump_file(sst_path, out).unwrap_or_else(|e| panic!("dump {sst_path}: {e:?}"));
+
+    let module = load_module_file(out).unwrap_or_else(|e| panic!("load {out}: {e:?}"));
+    let machine = run_module(&module).unwrap_or_else(|e| panic!("run {out}: {e:?}"));
+
+    let _ = std::fs::remove_file(out);
+    machine
+}
 
 #[test]
 fn bell_sst_runs_and_records_two_measurements() {
@@ -81,16 +77,15 @@ fn rotxy_sst_runs_and_flips_qubit() {
     );
 }
 
-// TODO: bytecode (.ssb) is disabled until vihaco ships codecs for its own dialects.
-// #[test]
-// fn dumped_rotxy_runs_and_flips_qubit() {
-//     // Same program, but through the bytecode round-trip: confirms the `R`
-//     // instruction survives dump → `.ssb` → load → execute.
-//     let machine = dump_load_run("tests/rotxy.sst", "ppvm_dump_rotxy.ssb");
-//     let record = machine.measurement_record();
-//     assert_eq!(record.len(), 1);
-//     assert_eq!(record[0].as_slice(), &[MeasurementOutcome::One]);
-// }
+#[test]
+fn dumped_rotxy_runs_and_flips_qubit() {
+    // Same program, but through the bytecode round-trip: confirms the `R`
+    // instruction survives dump → `.ssb` → load → execute.
+    let machine = dump_load_run("tests/rotxy.sst", "ppvm_dump_rotxy.ssb");
+    let record = machine.measurement_record();
+    assert_eq!(record.len(), 1);
+    assert_eq!(record[0].as_slice(), &[MeasurementOutcome::One]);
+}
 
 #[test]
 fn tableau_leakage_pins_to_one_and_skips_x() {
@@ -107,14 +102,13 @@ fn tableau_leakage_pins_to_one_and_skips_x() {
     );
 }
 
-// TODO: bytecode (.ssb) is disabled until vihaco ships codecs for its own dialects.
-// #[test]
-// fn dumped_tableau_leakage_pins_to_one() {
-//     let machine = dump_load_run("tests/tableau_leakage.sst", "ppvm_dump_tableau_leakage.ssb");
-//     let record = machine.measurement_record();
-//     assert_eq!(record.len(), 1);
-//     assert_eq!(record[0].as_slice(), &[MeasurementOutcome::One]);
-// }
+#[test]
+fn dumped_tableau_leakage_pins_to_one() {
+    let machine = dump_load_run("tests/tableau_leakage.sst", "ppvm_dump_tableau_leakage.ssb");
+    let record = machine.measurement_record();
+    assert_eq!(record.len(), 1);
+    assert_eq!(record[0].as_slice(), &[MeasurementOutcome::One]);
+}
 
 #[test]
 fn run_file_via_library_helper() {
@@ -488,137 +482,128 @@ fn tableau_and_paulisum_agree_on_ry_z_trace() {
 
 // ─── Auto-detect via load_file: route by content, not extension ───────────
 
-// TODO: bytecode (.ssb) is disabled until vihaco ships codecs for its own dialects.
-// #[test]
-// fn is_bytecode_distinguishes_ssb_from_sst() {
-//     let sst = std::fs::read("tests/bell.sst").expect("read bell.sst");
-//     assert!(
-//         !ppvm_vihaco::bytecode::is_bytecode(&sst),
-//         ".sst source must not be detected as bytecode"
-//     );
-//
-//     let ssb = ppvm_vihaco::bytecode::compile_to_bytes(
-//         &String::from_utf8(sst).expect("bell.sst is utf-8"),
-//     )
-//     .expect("compile bell.sst");
-//     assert!(
-//         ppvm_vihaco::bytecode::is_bytecode(&ssb),
-//         "dumped .ssb must be detected as bytecode"
-//     );
-//
-//     // Inputs shorter than the 4-byte magic are never bytecode. Note "PPVM" as
-//     // text also fails: the magic is a little-endian u32, so its on-disk bytes
-//     // are "MVPP", not "PPVM".
-//     assert!(!ppvm_vihaco::bytecode::is_bytecode(b"PPV"));
-//     assert!(!ppvm_vihaco::bytecode::is_bytecode(b""));
-//     assert!(!ppvm_vihaco::bytecode::is_bytecode(b"PPVM"));
-// }
+#[test]
+fn is_bytecode_distinguishes_ssb_from_sst() {
+    let sst = std::fs::read("tests/bell.sst").expect("read bell.sst");
+    assert!(
+        !ppvm_vihaco::bytecode::is_bytecode(&sst),
+        ".sst source must not be detected as bytecode"
+    );
 
-// TODO: bytecode (.ssb) is disabled until vihaco ships codecs for its own dialects.
-// #[test]
-// fn load_file_auto_detects_bytecode_and_text() {
-//     // Use the deterministic X-prepared fixture: q0 measures 1, the branch
-//     // flips q1, so both routes must yield exactly [1], [1]. Any divergence —
-//     // or a binary file mis-parsed as text — fails loudly.
-//     let from_text = run_file("tests/branch_on_outcome_x.sst")
-//         .unwrap_or_else(|e| panic!("run .sst via load_file: {e:?}"));
-//
-//     // Dump the same fixture to a `.ssb` and run *that file* through the same
-//     // run_file entry point. If load_file didn't sniff the magic it would try
-//     // to parse the binary as text and error.
-//     let out = std::env::temp_dir().join("ppvm_autodetect_branch_x.ssb");
-//     let out = out.to_str().expect("utf-8 temp path");
-//     ppvm_vihaco::dump_file("tests/branch_on_outcome_x.sst", out)
-//         .unwrap_or_else(|e| panic!("dump: {e:?}"));
-//     let from_binary = run_file(out).unwrap_or_else(|e| panic!("run .ssb: {e:?}"));
-//     let _ = std::fs::remove_file(out);
-//
-//     for (label, machine) in [("text", &from_text), ("binary", &from_binary)] {
-//         let record = machine.measurement_record();
-//         assert_eq!(record.len(), 2, "{label}: expected two measurements");
-//         assert_eq!(
-//             record[0].as_slice(),
-//             &[MeasurementOutcome::One],
-//             "{label}: X-prepared q0 must measure 1"
-//         );
-//         assert_eq!(
-//             record[1].as_slice(),
-//             &[MeasurementOutcome::One],
-//             "{label}: branch must flip q1"
-//         );
-//     }
-// }
+    let ssb = ppvm_vihaco::bytecode::compile_to_bytes(
+        &String::from_utf8(sst).expect("bell.sst is utf-8"),
+    )
+    .expect("compile bell.sst");
+    assert!(
+        ppvm_vihaco::bytecode::is_bytecode(&ssb),
+        "dumped .ssb must be detected as bytecode"
+    );
+
+    // Inputs shorter than the 4-byte magic are never bytecode. Note "PPVM" as
+    // text also fails: the magic is a little-endian u32, so its on-disk bytes
+    // are "MVPP", not "PPVM".
+    assert!(!ppvm_vihaco::bytecode::is_bytecode(b"PPV"));
+    assert!(!ppvm_vihaco::bytecode::is_bytecode(b""));
+    assert!(!ppvm_vihaco::bytecode::is_bytecode(b"PPVM"));
+}
+
+#[test]
+fn load_file_auto_detects_bytecode_and_text() {
+    // Use the deterministic X-prepared fixture: q0 measures 1, the branch
+    // flips q1, so both routes must yield exactly [1], [1]. Any divergence —
+    // or a binary file mis-parsed as text — fails loudly.
+    let from_text = run_file("tests/branch_on_outcome_x.sst")
+        .unwrap_or_else(|e| panic!("run .sst via load_file: {e:?}"));
+
+    // Dump the same fixture to a `.ssb` and run *that file* through the same
+    // run_file entry point. If load_file didn't sniff the magic it would try
+    // to parse the binary as text and error.
+    let out = std::env::temp_dir().join("ppvm_autodetect_branch_x.ssb");
+    let out = out.to_str().expect("utf-8 temp path");
+    ppvm_vihaco::dump_file("tests/branch_on_outcome_x.sst", out)
+        .unwrap_or_else(|e| panic!("dump: {e:?}"));
+    let from_binary = run_file(out).unwrap_or_else(|e| panic!("run .ssb: {e:?}"));
+    let _ = std::fs::remove_file(out);
+
+    for (label, machine) in [("text", &from_text), ("binary", &from_binary)] {
+        let record = machine.measurement_record();
+        assert_eq!(record.len(), 2, "{label}: expected two measurements");
+        assert_eq!(
+            record[0].as_slice(),
+            &[MeasurementOutcome::One],
+            "{label}: X-prepared q0 must measure 1"
+        );
+        assert_eq!(
+            record[1].as_slice(),
+            &[MeasurementOutcome::One],
+            "{label}: branch must flip q1"
+        );
+    }
+}
 
 // ─── Bytecode round-trip: dump → load → execute each fixture ──────────────
 
-// TODO: bytecode (.ssb) is disabled until vihaco ships codecs for its own dialects.
-// #[test]
-// fn dumped_bell_records_two_measurements() {
-//     let machine = dump_load_run("tests/bell.sst", "ppvm_dump_bell.ssb");
-//     assert_eq!(machine.measurement_record().len(), 2);
-// }
+#[test]
+fn dumped_bell_records_two_measurements() {
+    let machine = dump_load_run("tests/bell.sst", "ppvm_dump_bell.ssb");
+    assert_eq!(machine.measurement_record().len(), 2);
+}
 
-// TODO: bytecode (.ssb) is disabled until vihaco ships codecs for its own dialects.
-// #[test]
-// fn dumped_hello_circuit_runs_with_no_measurements() {
-//     let machine = dump_load_run("tests/hello_circuit.sst", "ppvm_dump_hello_circuit.ssb");
-//     assert_eq!(machine.measurement_record().len(), 0);
-// }
+#[test]
+fn dumped_hello_circuit_runs_with_no_measurements() {
+    let machine = dump_load_run("tests/hello_circuit.sst", "ppvm_dump_hello_circuit.ssb");
+    assert_eq!(machine.measurement_record().len(), 0);
+}
 
-// TODO: bytecode (.ssb) is disabled until vihaco ships codecs for its own dialects.
-// #[test]
-// fn dumped_function_call_executes_callee() {
-//     let machine = dump_load_run("tests/function_call.sst", "ppvm_dump_function_call.ssb");
-//     let record = machine.measurement_record();
-//     assert_eq!(record.len(), 1);
-//     assert_eq!(record[0].len(), 1);
-//     assert!(record[0][0] != MeasurementOutcome::Lost);
-// }
+#[test]
+fn dumped_function_call_executes_callee() {
+    let machine = dump_load_run("tests/function_call.sst", "ppvm_dump_function_call.ssb");
+    let record = machine.measurement_record();
+    assert_eq!(record.len(), 1);
+    assert_eq!(record[0].len(), 1);
+    assert!(record[0][0] != MeasurementOutcome::Lost);
+}
 
-// TODO: bytecode (.ssb) is disabled until vihaco ships codecs for its own dialects.
-// #[test]
-// fn dumped_function_call_ret_executes() {
-//     let machine = dump_load_run(
-//         "tests/function_call_ret.sst",
-//         "ppvm_dump_function_call_ret.ssb",
-//     );
-//     let record = machine.measurement_record();
-//     assert_eq!(record.len(), 1);
-//     assert_eq!(record[0].len(), 1);
-// }
+#[test]
+fn dumped_function_call_ret_executes() {
+    let machine = dump_load_run(
+        "tests/function_call_ret.sst",
+        "ppvm_dump_function_call_ret.ssb",
+    );
+    let record = machine.measurement_record();
+    assert_eq!(record.len(), 1);
+    assert_eq!(record[0].len(), 1);
+}
 
-// TODO: bytecode (.ssb) is disabled until vihaco ships codecs for its own dialects.
-// #[test]
-// fn dumped_branch_on_outcome_x_is_deterministic() {
-//     // X-prepared q0 measures 1, so the branch flips q1 → both outcomes are 1.
-//     // Confirms branch targets survive the dump/load round-trip.
-//     let machine = dump_load_run("tests/branch_on_outcome_x.sst", "ppvm_dump_branch_x.ssb");
-//     let record = machine.measurement_record();
-//     assert_eq!(record.len(), 2);
-//     assert_eq!(record[0].as_slice(), &[MeasurementOutcome::One]);
-//     assert_eq!(record[1].as_slice(), &[MeasurementOutcome::One]);
-// }
+#[test]
+fn dumped_branch_on_outcome_x_is_deterministic() {
+    // X-prepared q0 measures 1, so the branch flips q1 → both outcomes are 1.
+    // Confirms branch targets survive the dump/load round-trip.
+    let machine = dump_load_run("tests/branch_on_outcome_x.sst", "ppvm_dump_branch_x.ssb");
+    let record = machine.measurement_record();
+    assert_eq!(record.len(), 2);
+    assert_eq!(record[0].as_slice(), &[MeasurementOutcome::One]);
+    assert_eq!(record[1].as_slice(), &[MeasurementOutcome::One]);
+}
 
-// TODO: bytecode (.ssb) is disabled until vihaco ships codecs for its own dialects.
-// #[test]
-// fn dumped_branch_on_outcome_preserves_invariant() {
-//     // q0 in |+> is a fair coin, but the branch steers q1 to match q0 every
-//     // shot — that invariant must hold after a round-trip.
-//     let machine = dump_load_run("tests/branch_on_outcome.sst", "ppvm_dump_branch.ssb");
-//     let record = machine.measurement_record();
-//     assert_eq!(record.len(), 2);
-//     assert_eq!(record[0][0], record[1][0]);
-// }
+#[test]
+fn dumped_branch_on_outcome_preserves_invariant() {
+    // q0 in |+> is a fair coin, but the branch steers q1 to match q0 every
+    // shot — that invariant must hold after a round-trip.
+    let machine = dump_load_run("tests/branch_on_outcome.sst", "ppvm_dump_branch.ssb");
+    let record = machine.measurement_record();
+    assert_eq!(record.len(), 2);
+    assert_eq!(record[0][0], record[1][0]);
+}
 
-// TODO: bytecode (.ssb) is disabled until vihaco ships codecs for its own dialects.
-// #[test]
-// fn dumped_function_call_branch_both_runs() {
-//     let machine = dump_load_run(
-//         "tests/function_call_branch_both.sst",
-//         "ppvm_dump_function_call_branch_both.ssb",
-//     );
-//     let record = machine.measurement_record();
-//     assert_eq!(record.len(), 2);
-//     assert_eq!(record[0].len(), 1);
-//     assert_eq!(record[1].len(), 1);
-// }
+#[test]
+fn dumped_function_call_branch_both_runs() {
+    let machine = dump_load_run(
+        "tests/function_call_branch_both.sst",
+        "ppvm_dump_function_call_branch_both.ssb",
+    );
+    let record = machine.measurement_record();
+    assert_eq!(record.len(), 2);
+    assert_eq!(record[0].len(), 1);
+    assert_eq!(record[1].len(), 1);
+}

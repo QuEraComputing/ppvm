@@ -3,356 +3,280 @@
 
 //! Binary bytecode (`.ssb`) round-trip for PPVM modules.
 //!
-//! Serializes a resolved [`Module`] to a little-endian container — header
-//! (magic + version + device info) → strings section → code section — and
-//! reads it back. The per-instruction codec is the existing `WriteBytes` /
-//! `FromBytes` generated for [`PPVMInstruction`]; this module only frames the
-//! container around it.
+//! Serializes a compiled [`PPVMModule`] to a little-endian container — header
+//! (magic + version + device info) → strings → function/label metadata → code —
+//! and reads it back. Each instruction is a `u16` opcode followed by its
+//! payload fields, as listed in the opcode table below.
 
 use std::io::{Read, Write};
-
 use vihaco::instruction::{FromBytes, WriteBytes};
 use vihaco::module::{FunctionInfo, LabelInfo, Parameter, Signature};
-use vihaco::{Type, Value};
-use vihaco_cpu::RuntimeInstruction as CpuInstruction;
+use vihaco::{HasInstructionSet, Type};
+use vihaco_circuit_isa::circuit;
+use vihaco_cpu::cpu;
+use vihaco_stdlib::debugger::dialect::debug;
+use vihaco_stdlib::program::program;
 
 use crate::PPVMModule;
-use crate::composite::{BackendKind, PPVM_MAGIC, PPVMDeviceInfo, PPVMInstruction};
+use crate::composite::{BackendKind, PPVM, PPVM_MAGIC, PPVMDeviceInfo};
 
-#[derive(Debug, Clone, vihaco::Instruction)]
-enum BytecodeType {
-    Undefined,
-    String,
-    Bool,
-    I64,
-    U32,
-    U64,
-    F64,
-    FunctionRef,
-    HeapRef,
-}
+type Instruction = <PPVM as HasInstructionSet>::Runtime;
 
-#[derive(Debug, Clone, vihaco::Instruction)]
-enum BytecodeValue {
-    Undefined,
-    String(u32),
-    Bool(bool),
-    I64(i64),
-    U32(u32),
-    U64(u64),
-    F64(f64),
-    FunctionRef(u32),
-    HeapRef(u32),
-}
-
-/// Makes the boilerplate encode and decode functions for moving between
-/// {Type|Value} and Bytecode{Type|Value}.
-macro_rules! define_bytecode_codec {
-    (
-        $source:ident, $encoded:ident, $encode:ident, $decode:ident;
-        $($variant:ident $(($binding:ident))?),+ $(,)?
-    ) => {
-        fn $encode(value: $source) -> $encoded {
-            match value {
-                $(
-                    $source::$variant $(($binding))? =>
-                        $encoded::$variant $(($binding))?,
-                )+
-            }
+/// Generate the opcode enum and the instruction encoder/decoder from one table.
+///
+/// An entry's opcode is its position in the table, so the table is append-only:
+/// reordering or removing an entry changes the opcodes of every later one.
+macro_rules! opcode_table {
+    ($( $variant:ident = $($seg:ident)::+ $(( $($field:ident: $ty:ty),* ))? ),* $(,)?) => {
+        #[allow(non_camel_case_types, clippy::enum_variant_names)]
+        #[repr(u16)]
+        enum Opcode {
+            $( $variant, )*
         }
 
-        fn $decode(value: $encoded) -> $source {
-            match value {
-                $(
-                    $encoded::$variant $(($binding))? =>
-                        $source::$variant $(($binding))?,
-                )+
+        fn write_instruction<W: Write>(inst: &Instruction, w: &mut W) -> eyre::Result<()> {
+            match inst {
+                $( Instruction::$variant($($seg)::+ $(( $($field),* ))?) => {
+                    w.write_all(&(Opcode::$variant as u16).to_le_bytes())?;
+                    $( $( $field.write_bytes(w)?; )* )?
+                } )*
             }
+            Ok(())
+        }
+
+        fn read_instruction<R: Read>(r: &mut R) -> eyre::Result<Instruction> {
+            let opcode = read_u16(r)?;
+            $( if opcode == Opcode::$variant as u16 {
+                return Ok(Instruction::$variant($($seg)::+ $(( $( <$ty>::from_bytes(r)? ),* ))?));
+            } )*
+            Err(eyre::eyre!("unknown opcode {opcode}"))
+        }
+
+        /// One instance of every instruction, with distinct payload values.
+        #[cfg(test)]
+        fn every_instruction() -> Vec<Instruction> {
+            let mut next = 0u8;
+            let mut value = || {
+                next = next.wrapping_add(1);
+                next
+            };
+            vec![$( Instruction::$variant($($seg)::+ $(( $( <$ty>::from({ let _ = stringify!($field); value() }) ),* ))?), )*]
         }
     };
 }
 
-define_bytecode_codec! {
-    Type, BytecodeType, encode_type, decode_type;
-    Undefined, String, Bool, I64, U32, U64, F64, FunctionRef, HeapRef,
-}
-
-define_bytecode_codec! {
-    Value, BytecodeValue, encode_value, decode_value;
-    Undefined, String(v), Bool(v), I64(v), U32(v), U64(v), F64(v), FunctionRef(v), HeapRef(v),
-}
-
-#[derive(Debug, Clone, vihaco::Instruction)]
-enum BytecodeCpu {
-    Span(u32, u32, u32),
-    FunctionStart,
-    FunctionEnd,
-    Breakpoint,
-    Branch(u32),
-    ConditionalBranch(u32, u32),
-    Return(u32),
-    IndirectCall,
-    Call(u32, u32),
-    Halt,
-    Print,
-    Load(BytecodeType, u32),
-    Store(BytecodeType, u32),
-    Dup,
-    HeapAlloc(u32),
-    GetItem,
-    HeapDealloc,
-    Const(BytecodeType, BytecodeValue),
-    Add(BytecodeType),
-    Sub(BytecodeType),
-    Mul(BytecodeType),
-    Div(BytecodeType),
-    Rem(BytecodeType),
-    Neg(BytecodeType),
-    Shl(BytecodeType),
-    Shr(BytecodeType),
-    Rol(BytecodeType),
-    Ror(BytecodeType),
-    BitAnd(BytecodeType),
-    BitOr(BytecodeType),
-    BitXor(BytecodeType),
-    Not,
-    And,
-    Or,
-    Xor,
-    Eq(BytecodeType),
-    Ne(BytecodeType),
-    Lt(BytecodeType),
-    Gt(BytecodeType),
-    Le(BytecodeType),
-    Ge(BytecodeType),
-}
-
-#[allow(clippy::upper_case_acronyms)]
-#[derive(Debug, Clone, vihaco::Instruction)]
-enum BytecodeCircuit {
-    TwoQubitPauliError,
-    Truncate,
-    Trace,
-    X,
-    Y,
-    Z,
-    H,
-    SqrtXAdj,
-    SqrtX,
-    SqrtYAdj,
-    SqrtY,
-    SAdj,
-    S,
-    CNOT,
-    CZ,
-    TAdj,
-    T,
-    RXX,
-    RYY,
-    RZZ,
-    RX,
-    RY,
-    RZ,
-    U3,
-    Measure,
-    Reset,
-    R,
-    Loss,
-    CorrelatedLoss,
-    PauliError,
-    Depolarize2,
-    Depolarize,
-    Leakage,
-}
-
-#[derive(Debug, Clone, vihaco::Instruction)]
-enum BytecodeInstruction {
-    Cpu(BytecodeCpu),
-    Circuit(BytecodeCircuit),
-}
-
-fn encode_instruction(inst: &PPVMInstruction) -> eyre::Result<BytecodeInstruction> {
-    let encoded = match inst {
-        PPVMInstruction::Cpu(inst) => BytecodeInstruction::Cpu(match inst {
-            CpuInstruction::Span(a, b, c) => BytecodeCpu::Span(*a, *b, *c),
-            CpuInstruction::FunctionStart => BytecodeCpu::FunctionStart,
-            CpuInstruction::FunctionEnd => BytecodeCpu::FunctionEnd,
-            CpuInstruction::Breakpoint => BytecodeCpu::Breakpoint,
-            CpuInstruction::Branch(v) => BytecodeCpu::Branch(*v),
-            CpuInstruction::ConditionalBranch(a, b) => BytecodeCpu::ConditionalBranch(*a, *b),
-            CpuInstruction::Return(v) => BytecodeCpu::Return(*v),
-            CpuInstruction::IndirectCall => BytecodeCpu::IndirectCall,
-            CpuInstruction::Call(a, b) => BytecodeCpu::Call(*a, *b),
-            CpuInstruction::Halt => BytecodeCpu::Halt,
-            CpuInstruction::Print => BytecodeCpu::Print,
-            CpuInstruction::Load(t, v) => BytecodeCpu::Load(encode_type(*t), *v),
-            CpuInstruction::Store(t, v) => BytecodeCpu::Store(encode_type(*t), *v),
-            CpuInstruction::Dup => BytecodeCpu::Dup,
-            CpuInstruction::HeapAlloc(v) => BytecodeCpu::HeapAlloc(*v),
-            CpuInstruction::GetItem => BytecodeCpu::GetItem,
-            CpuInstruction::HeapDealloc => BytecodeCpu::HeapDealloc,
-            CpuInstruction::Const(t, v) => BytecodeCpu::Const(encode_type(*t), encode_value(*v)),
-            CpuInstruction::Add(t) => BytecodeCpu::Add(encode_type(*t)),
-            CpuInstruction::Sub(t) => BytecodeCpu::Sub(encode_type(*t)),
-            CpuInstruction::Mul(t) => BytecodeCpu::Mul(encode_type(*t)),
-            CpuInstruction::Div(t) => BytecodeCpu::Div(encode_type(*t)),
-            CpuInstruction::Rem(t) => BytecodeCpu::Rem(encode_type(*t)),
-            CpuInstruction::Neg(t) => BytecodeCpu::Neg(encode_type(*t)),
-            CpuInstruction::Shl(t) => BytecodeCpu::Shl(encode_type(*t)),
-            CpuInstruction::Shr(t) => BytecodeCpu::Shr(encode_type(*t)),
-            CpuInstruction::Rol(t) => BytecodeCpu::Rol(encode_type(*t)),
-            CpuInstruction::Ror(t) => BytecodeCpu::Ror(encode_type(*t)),
-            CpuInstruction::BitAnd(t) => BytecodeCpu::BitAnd(encode_type(*t)),
-            CpuInstruction::BitOr(t) => BytecodeCpu::BitOr(encode_type(*t)),
-            CpuInstruction::BitXor(t) => BytecodeCpu::BitXor(encode_type(*t)),
-            CpuInstruction::Not => BytecodeCpu::Not,
-            CpuInstruction::And => BytecodeCpu::And,
-            CpuInstruction::Or => BytecodeCpu::Or,
-            CpuInstruction::Xor => BytecodeCpu::Xor,
-            CpuInstruction::Eq(t) => BytecodeCpu::Eq(encode_type(*t)),
-            CpuInstruction::Ne(t) => BytecodeCpu::Ne(encode_type(*t)),
-            CpuInstruction::Lt(t) => BytecodeCpu::Lt(encode_type(*t)),
-            CpuInstruction::Gt(t) => BytecodeCpu::Gt(encode_type(*t)),
-            CpuInstruction::Le(t) => BytecodeCpu::Le(encode_type(*t)),
-            CpuInstruction::Ge(t) => BytecodeCpu::Ge(encode_type(*t)),
-            CpuInstruction::Label(_) => {
-                return Err(eyre::eyre!(
-                    "runtime labels are not serializable in PPVM bytecode"
-                ));
-            }
-        }),
-        PPVMInstruction::Circuit(inst) => BytecodeInstruction::Circuit(match inst {
-            vihaco_circuit_isa::CircuitInstruction::TwoQubitPauliError => {
-                BytecodeCircuit::TwoQubitPauliError
-            }
-            vihaco_circuit_isa::CircuitInstruction::Truncate => BytecodeCircuit::Truncate,
-            vihaco_circuit_isa::CircuitInstruction::Trace => BytecodeCircuit::Trace,
-            vihaco_circuit_isa::CircuitInstruction::X => BytecodeCircuit::X,
-            vihaco_circuit_isa::CircuitInstruction::Y => BytecodeCircuit::Y,
-            vihaco_circuit_isa::CircuitInstruction::Z => BytecodeCircuit::Z,
-            vihaco_circuit_isa::CircuitInstruction::H => BytecodeCircuit::H,
-            vihaco_circuit_isa::CircuitInstruction::SqrtXAdj => BytecodeCircuit::SqrtXAdj,
-            vihaco_circuit_isa::CircuitInstruction::SqrtX => BytecodeCircuit::SqrtX,
-            vihaco_circuit_isa::CircuitInstruction::SqrtYAdj => BytecodeCircuit::SqrtYAdj,
-            vihaco_circuit_isa::CircuitInstruction::SqrtY => BytecodeCircuit::SqrtY,
-            vihaco_circuit_isa::CircuitInstruction::SAdj => BytecodeCircuit::SAdj,
-            vihaco_circuit_isa::CircuitInstruction::S => BytecodeCircuit::S,
-            vihaco_circuit_isa::CircuitInstruction::CNOT => BytecodeCircuit::CNOT,
-            vihaco_circuit_isa::CircuitInstruction::CZ => BytecodeCircuit::CZ,
-            vihaco_circuit_isa::CircuitInstruction::TAdj => BytecodeCircuit::TAdj,
-            vihaco_circuit_isa::CircuitInstruction::T => BytecodeCircuit::T,
-            vihaco_circuit_isa::CircuitInstruction::RXX => BytecodeCircuit::RXX,
-            vihaco_circuit_isa::CircuitInstruction::RYY => BytecodeCircuit::RYY,
-            vihaco_circuit_isa::CircuitInstruction::RZZ => BytecodeCircuit::RZZ,
-            vihaco_circuit_isa::CircuitInstruction::RX => BytecodeCircuit::RX,
-            vihaco_circuit_isa::CircuitInstruction::RY => BytecodeCircuit::RY,
-            vihaco_circuit_isa::CircuitInstruction::RZ => BytecodeCircuit::RZ,
-            vihaco_circuit_isa::CircuitInstruction::U3 => BytecodeCircuit::U3,
-            vihaco_circuit_isa::CircuitInstruction::Measure => BytecodeCircuit::Measure,
-            vihaco_circuit_isa::CircuitInstruction::Reset => BytecodeCircuit::Reset,
-            vihaco_circuit_isa::CircuitInstruction::R => BytecodeCircuit::R,
-            vihaco_circuit_isa::CircuitInstruction::Loss => BytecodeCircuit::Loss,
-            vihaco_circuit_isa::CircuitInstruction::CorrelatedLoss => {
-                BytecodeCircuit::CorrelatedLoss
-            }
-            vihaco_circuit_isa::CircuitInstruction::PauliError => BytecodeCircuit::PauliError,
-            vihaco_circuit_isa::CircuitInstruction::Depolarize2 => BytecodeCircuit::Depolarize2,
-            vihaco_circuit_isa::CircuitInstruction::Depolarize => BytecodeCircuit::Depolarize,
-            vihaco_circuit_isa::CircuitInstruction::Leakage => BytecodeCircuit::Leakage,
-        }),
-    };
-    Ok(encoded)
-}
-
-fn decode_instruction(inst: BytecodeInstruction) -> PPVMInstruction {
-    match inst {
-        BytecodeInstruction::Cpu(inst) => PPVMInstruction::Cpu(match inst {
-            BytecodeCpu::Span(a, b, c) => CpuInstruction::Span(a, b, c),
-            BytecodeCpu::FunctionStart => CpuInstruction::FunctionStart,
-            BytecodeCpu::FunctionEnd => CpuInstruction::FunctionEnd,
-            BytecodeCpu::Breakpoint => CpuInstruction::Breakpoint,
-            BytecodeCpu::Branch(v) => CpuInstruction::Branch(v),
-            BytecodeCpu::ConditionalBranch(a, b) => CpuInstruction::ConditionalBranch(a, b),
-            BytecodeCpu::Return(v) => CpuInstruction::Return(v),
-            BytecodeCpu::IndirectCall => CpuInstruction::IndirectCall,
-            BytecodeCpu::Call(a, b) => CpuInstruction::Call(a, b),
-            BytecodeCpu::Halt => CpuInstruction::Halt,
-            BytecodeCpu::Print => CpuInstruction::Print,
-            BytecodeCpu::Load(t, v) => CpuInstruction::Load(decode_type(t), v),
-            BytecodeCpu::Store(t, v) => CpuInstruction::Store(decode_type(t), v),
-            BytecodeCpu::Dup => CpuInstruction::Dup,
-            BytecodeCpu::HeapAlloc(v) => CpuInstruction::HeapAlloc(v),
-            BytecodeCpu::GetItem => CpuInstruction::GetItem,
-            BytecodeCpu::HeapDealloc => CpuInstruction::HeapDealloc,
-            BytecodeCpu::Const(t, v) => CpuInstruction::Const(decode_type(t), decode_value(v)),
-            BytecodeCpu::Add(t) => CpuInstruction::Add(decode_type(t)),
-            BytecodeCpu::Sub(t) => CpuInstruction::Sub(decode_type(t)),
-            BytecodeCpu::Mul(t) => CpuInstruction::Mul(decode_type(t)),
-            BytecodeCpu::Div(t) => CpuInstruction::Div(decode_type(t)),
-            BytecodeCpu::Rem(t) => CpuInstruction::Rem(decode_type(t)),
-            BytecodeCpu::Neg(t) => CpuInstruction::Neg(decode_type(t)),
-            BytecodeCpu::Shl(t) => CpuInstruction::Shl(decode_type(t)),
-            BytecodeCpu::Shr(t) => CpuInstruction::Shr(decode_type(t)),
-            BytecodeCpu::Rol(t) => CpuInstruction::Rol(decode_type(t)),
-            BytecodeCpu::Ror(t) => CpuInstruction::Ror(decode_type(t)),
-            BytecodeCpu::BitAnd(t) => CpuInstruction::BitAnd(decode_type(t)),
-            BytecodeCpu::BitOr(t) => CpuInstruction::BitOr(decode_type(t)),
-            BytecodeCpu::BitXor(t) => CpuInstruction::BitXor(decode_type(t)),
-            BytecodeCpu::Not => CpuInstruction::Not,
-            BytecodeCpu::And => CpuInstruction::And,
-            BytecodeCpu::Or => CpuInstruction::Or,
-            BytecodeCpu::Xor => CpuInstruction::Xor,
-            BytecodeCpu::Eq(t) => CpuInstruction::Eq(decode_type(t)),
-            BytecodeCpu::Ne(t) => CpuInstruction::Ne(decode_type(t)),
-            BytecodeCpu::Lt(t) => CpuInstruction::Lt(decode_type(t)),
-            BytecodeCpu::Gt(t) => CpuInstruction::Gt(decode_type(t)),
-            BytecodeCpu::Le(t) => CpuInstruction::Le(decode_type(t)),
-            BytecodeCpu::Ge(t) => CpuInstruction::Ge(decode_type(t)),
-        }),
-        BytecodeInstruction::Circuit(inst) => PPVMInstruction::Circuit(match inst {
-            BytecodeCircuit::TwoQubitPauliError => {
-                vihaco_circuit_isa::CircuitInstruction::TwoQubitPauliError
-            }
-            BytecodeCircuit::Truncate => vihaco_circuit_isa::CircuitInstruction::Truncate,
-            BytecodeCircuit::Trace => vihaco_circuit_isa::CircuitInstruction::Trace,
-            BytecodeCircuit::X => vihaco_circuit_isa::CircuitInstruction::X,
-            BytecodeCircuit::Y => vihaco_circuit_isa::CircuitInstruction::Y,
-            BytecodeCircuit::Z => vihaco_circuit_isa::CircuitInstruction::Z,
-            BytecodeCircuit::H => vihaco_circuit_isa::CircuitInstruction::H,
-            BytecodeCircuit::SqrtXAdj => vihaco_circuit_isa::CircuitInstruction::SqrtXAdj,
-            BytecodeCircuit::SqrtX => vihaco_circuit_isa::CircuitInstruction::SqrtX,
-            BytecodeCircuit::SqrtYAdj => vihaco_circuit_isa::CircuitInstruction::SqrtYAdj,
-            BytecodeCircuit::SqrtY => vihaco_circuit_isa::CircuitInstruction::SqrtY,
-            BytecodeCircuit::SAdj => vihaco_circuit_isa::CircuitInstruction::SAdj,
-            BytecodeCircuit::S => vihaco_circuit_isa::CircuitInstruction::S,
-            BytecodeCircuit::CNOT => vihaco_circuit_isa::CircuitInstruction::CNOT,
-            BytecodeCircuit::CZ => vihaco_circuit_isa::CircuitInstruction::CZ,
-            BytecodeCircuit::TAdj => vihaco_circuit_isa::CircuitInstruction::TAdj,
-            BytecodeCircuit::T => vihaco_circuit_isa::CircuitInstruction::T,
-            BytecodeCircuit::RXX => vihaco_circuit_isa::CircuitInstruction::RXX,
-            BytecodeCircuit::RYY => vihaco_circuit_isa::CircuitInstruction::RYY,
-            BytecodeCircuit::RZZ => vihaco_circuit_isa::CircuitInstruction::RZZ,
-            BytecodeCircuit::RX => vihaco_circuit_isa::CircuitInstruction::RX,
-            BytecodeCircuit::RY => vihaco_circuit_isa::CircuitInstruction::RY,
-            BytecodeCircuit::RZ => vihaco_circuit_isa::CircuitInstruction::RZ,
-            BytecodeCircuit::U3 => vihaco_circuit_isa::CircuitInstruction::U3,
-            BytecodeCircuit::Measure => vihaco_circuit_isa::CircuitInstruction::Measure,
-            BytecodeCircuit::Reset => vihaco_circuit_isa::CircuitInstruction::Reset,
-            BytecodeCircuit::R => vihaco_circuit_isa::CircuitInstruction::R,
-            BytecodeCircuit::Loss => vihaco_circuit_isa::CircuitInstruction::Loss,
-            BytecodeCircuit::CorrelatedLoss => {
-                vihaco_circuit_isa::CircuitInstruction::CorrelatedLoss
-            }
-            BytecodeCircuit::PauliError => vihaco_circuit_isa::CircuitInstruction::PauliError,
-            BytecodeCircuit::Depolarize2 => vihaco_circuit_isa::CircuitInstruction::Depolarize2,
-            BytecodeCircuit::Depolarize => vihaco_circuit_isa::CircuitInstruction::Depolarize,
-            BytecodeCircuit::Leakage => vihaco_circuit_isa::CircuitInstruction::Leakage,
-        }),
-    }
+// Append new instructions at the end of the table; never reorder or remove.
+opcode_table! {
+    // execution::program
+    V_execution__program__Branch = program::Branch(a: u32),
+    V_execution__program__ConditionalBranch = program::ConditionalBranch(a: u32, b: u32),
+    V_execution__program__Return = program::Return(a: u32),
+    V_execution__program__IndirectCall = program::IndirectCall,
+    V_execution__program__Call = program::Call(a: u32, b: u32),
+    V_execution__program__Halt = program::Halt,
+    V_execution__program__LoadI32 = program::LoadI32(a: u32),
+    V_execution__program__LoadI64 = program::LoadI64(a: u32),
+    V_execution__program__LoadU32 = program::LoadU32(a: u32),
+    V_execution__program__LoadU64 = program::LoadU64(a: u32),
+    V_execution__program__LoadF32 = program::LoadF32(a: u32),
+    V_execution__program__LoadF64 = program::LoadF64(a: u32),
+    V_execution__program__LoadBool = program::LoadBool(a: u32),
+    V_execution__program__StoreI32 = program::StoreI32(a: u32),
+    V_execution__program__StoreI64 = program::StoreI64(a: u32),
+    V_execution__program__StoreU32 = program::StoreU32(a: u32),
+    V_execution__program__StoreU64 = program::StoreU64(a: u32),
+    V_execution__program__StoreF32 = program::StoreF32(a: u32),
+    V_execution__program__StoreF64 = program::StoreF64(a: u32),
+    V_execution__program__StoreBool = program::StoreBool(a: u32),
+    V_execution__program__Dup = program::Dup,
+    V_execution__program__ConstI32 = program::ConstI32(a: u64),
+    V_execution__program__ConstI64 = program::ConstI64(a: u64),
+    V_execution__program__ConstU32 = program::ConstU32(a: u64),
+    V_execution__program__ConstU64 = program::ConstU64(a: u64),
+    V_execution__program__ConstF32 = program::ConstF32(a: u64),
+    V_execution__program__ConstF64 = program::ConstF64(a: u64),
+    V_execution__program__ConstBool = program::ConstBool(a: u64),
+    V_execution__program__ConstString = program::ConstString(a: u64),
+    V_execution__program__ConstFunctionRef = program::ConstFunctionRef(a: u64),
+    V_execution__program__ConstHeapRef = program::ConstHeapRef(a: u64),
+    // cpu::cpu
+    V_cpu__cpu__HeapAlloc = cpu::HeapAlloc(a: u32),
+    V_cpu__cpu__GetItem = cpu::GetItem,
+    V_cpu__cpu__HeapDealloc = cpu::HeapDealloc,
+    V_cpu__cpu__HeapReserve = cpu::HeapReserve,
+    V_cpu__cpu__HeapPush = cpu::HeapPush,
+    V_cpu__cpu__HeapLen = cpu::HeapLen,
+    V_cpu__cpu__AddI32 = cpu::AddI32,
+    V_cpu__cpu__AddF32 = cpu::AddF32,
+    V_cpu__cpu__AddI64 = cpu::AddI64,
+    V_cpu__cpu__AddU32 = cpu::AddU32,
+    V_cpu__cpu__AddU64 = cpu::AddU64,
+    V_cpu__cpu__AddF64 = cpu::AddF64,
+    V_cpu__cpu__SubI32 = cpu::SubI32,
+    V_cpu__cpu__SubI64 = cpu::SubI64,
+    V_cpu__cpu__SubU32 = cpu::SubU32,
+    V_cpu__cpu__SubU64 = cpu::SubU64,
+    V_cpu__cpu__SubF32 = cpu::SubF32,
+    V_cpu__cpu__SubF64 = cpu::SubF64,
+    V_cpu__cpu__MulI32 = cpu::MulI32,
+    V_cpu__cpu__MulI64 = cpu::MulI64,
+    V_cpu__cpu__MulU32 = cpu::MulU32,
+    V_cpu__cpu__MulU64 = cpu::MulU64,
+    V_cpu__cpu__MulF32 = cpu::MulF32,
+    V_cpu__cpu__MulF64 = cpu::MulF64,
+    V_cpu__cpu__DivI32 = cpu::DivI32,
+    V_cpu__cpu__DivI64 = cpu::DivI64,
+    V_cpu__cpu__DivU32 = cpu::DivU32,
+    V_cpu__cpu__DivU64 = cpu::DivU64,
+    V_cpu__cpu__DivF32 = cpu::DivF32,
+    V_cpu__cpu__DivF64 = cpu::DivF64,
+    V_cpu__cpu__RemI32 = cpu::RemI32,
+    V_cpu__cpu__RemI64 = cpu::RemI64,
+    V_cpu__cpu__RemU32 = cpu::RemU32,
+    V_cpu__cpu__RemU64 = cpu::RemU64,
+    V_cpu__cpu__RemF32 = cpu::RemF32,
+    V_cpu__cpu__RemF64 = cpu::RemF64,
+    V_cpu__cpu__NegI32 = cpu::NegI32,
+    V_cpu__cpu__NegI64 = cpu::NegI64,
+    V_cpu__cpu__NegF32 = cpu::NegF32,
+    V_cpu__cpu__NegF64 = cpu::NegF64,
+    V_cpu__cpu__ShlI32 = cpu::ShlI32,
+    V_cpu__cpu__ShlI64 = cpu::ShlI64,
+    V_cpu__cpu__ShlU32 = cpu::ShlU32,
+    V_cpu__cpu__ShlU64 = cpu::ShlU64,
+    V_cpu__cpu__ShrI32 = cpu::ShrI32,
+    V_cpu__cpu__ShrI64 = cpu::ShrI64,
+    V_cpu__cpu__ShrU32 = cpu::ShrU32,
+    V_cpu__cpu__ShrU64 = cpu::ShrU64,
+    V_cpu__cpu__RolI32 = cpu::RolI32,
+    V_cpu__cpu__RolI64 = cpu::RolI64,
+    V_cpu__cpu__RolU32 = cpu::RolU32,
+    V_cpu__cpu__RolU64 = cpu::RolU64,
+    V_cpu__cpu__RorI32 = cpu::RorI32,
+    V_cpu__cpu__RorI64 = cpu::RorI64,
+    V_cpu__cpu__RorU32 = cpu::RorU32,
+    V_cpu__cpu__RorU64 = cpu::RorU64,
+    V_cpu__cpu__BitAndI32 = cpu::BitAndI32,
+    V_cpu__cpu__BitAndI64 = cpu::BitAndI64,
+    V_cpu__cpu__BitAndU32 = cpu::BitAndU32,
+    V_cpu__cpu__BitAndU64 = cpu::BitAndU64,
+    V_cpu__cpu__BitOrI32 = cpu::BitOrI32,
+    V_cpu__cpu__BitOrI64 = cpu::BitOrI64,
+    V_cpu__cpu__BitOrU32 = cpu::BitOrU32,
+    V_cpu__cpu__BitOrU64 = cpu::BitOrU64,
+    V_cpu__cpu__BitXorI32 = cpu::BitXorI32,
+    V_cpu__cpu__BitXorI64 = cpu::BitXorI64,
+    V_cpu__cpu__BitXorU32 = cpu::BitXorU32,
+    V_cpu__cpu__BitXorU64 = cpu::BitXorU64,
+    V_cpu__cpu__Not = cpu::Not,
+    V_cpu__cpu__And = cpu::And,
+    V_cpu__cpu__Or = cpu::Or,
+    V_cpu__cpu__Xor = cpu::Xor,
+    V_cpu__cpu__EqI32 = cpu::EqI32,
+    V_cpu__cpu__EqI64 = cpu::EqI64,
+    V_cpu__cpu__EqU32 = cpu::EqU32,
+    V_cpu__cpu__EqU64 = cpu::EqU64,
+    V_cpu__cpu__EqF32 = cpu::EqF32,
+    V_cpu__cpu__EqF64 = cpu::EqF64,
+    V_cpu__cpu__NeI32 = cpu::NeI32,
+    V_cpu__cpu__NeI64 = cpu::NeI64,
+    V_cpu__cpu__NeU32 = cpu::NeU32,
+    V_cpu__cpu__NeU64 = cpu::NeU64,
+    V_cpu__cpu__NeF32 = cpu::NeF32,
+    V_cpu__cpu__NeF64 = cpu::NeF64,
+    V_cpu__cpu__LtI32 = cpu::LtI32,
+    V_cpu__cpu__LtI64 = cpu::LtI64,
+    V_cpu__cpu__LtU32 = cpu::LtU32,
+    V_cpu__cpu__LtU64 = cpu::LtU64,
+    V_cpu__cpu__LtF32 = cpu::LtF32,
+    V_cpu__cpu__LtF64 = cpu::LtF64,
+    V_cpu__cpu__GtI32 = cpu::GtI32,
+    V_cpu__cpu__GtI64 = cpu::GtI64,
+    V_cpu__cpu__GtU32 = cpu::GtU32,
+    V_cpu__cpu__GtU64 = cpu::GtU64,
+    V_cpu__cpu__GtF32 = cpu::GtF32,
+    V_cpu__cpu__GtF64 = cpu::GtF64,
+    V_cpu__cpu__LeI32 = cpu::LeI32,
+    V_cpu__cpu__LeI64 = cpu::LeI64,
+    V_cpu__cpu__LeU32 = cpu::LeU32,
+    V_cpu__cpu__LeU64 = cpu::LeU64,
+    V_cpu__cpu__LeF32 = cpu::LeF32,
+    V_cpu__cpu__LeF64 = cpu::LeF64,
+    V_cpu__cpu__GeI32 = cpu::GeI32,
+    V_cpu__cpu__GeI64 = cpu::GeI64,
+    V_cpu__cpu__GeU32 = cpu::GeU32,
+    V_cpu__cpu__GeU64 = cpu::GeU64,
+    V_cpu__cpu__GeF32 = cpu::GeF32,
+    V_cpu__cpu__GeF64 = cpu::GeF64,
+    // circuit::circuit
+    V_circuit__circuit__XMany = circuit::XMany,
+    V_circuit__circuit__YMany = circuit::YMany,
+    V_circuit__circuit__ZMany = circuit::ZMany,
+    V_circuit__circuit__HMany = circuit::HMany,
+    V_circuit__circuit__SMany = circuit::SMany,
+    V_circuit__circuit__SAdjMany = circuit::SAdjMany,
+    V_circuit__circuit__TMany = circuit::TMany,
+    V_circuit__circuit__TAdjMany = circuit::TAdjMany,
+    V_circuit__circuit__SqrtXMany = circuit::SqrtXMany,
+    V_circuit__circuit__SqrtXAdjMany = circuit::SqrtXAdjMany,
+    V_circuit__circuit__SqrtYMany = circuit::SqrtYMany,
+    V_circuit__circuit__SqrtYAdjMany = circuit::SqrtYAdjMany,
+    V_circuit__circuit__ResetMany = circuit::ResetMany,
+    V_circuit__circuit__MeasureMany = circuit::MeasureMany,
+    V_circuit__circuit__CNOTMany = circuit::CNOTMany,
+    V_circuit__circuit__CZMany = circuit::CZMany,
+    V_circuit__circuit__RXMany = circuit::RXMany,
+    V_circuit__circuit__RYMany = circuit::RYMany,
+    V_circuit__circuit__RZMany = circuit::RZMany,
+    V_circuit__circuit__DepolarizeMany = circuit::DepolarizeMany,
+    V_circuit__circuit__LossMany = circuit::LossMany,
+    V_circuit__circuit__RXXMany = circuit::RXXMany,
+    V_circuit__circuit__RYYMany = circuit::RYYMany,
+    V_circuit__circuit__RZZMany = circuit::RZZMany,
+    V_circuit__circuit__Depolarize2Many = circuit::Depolarize2Many,
+    V_circuit__circuit__U3Many = circuit::U3Many,
+    V_circuit__circuit__PauliErrorMany = circuit::PauliErrorMany,
+    V_circuit__circuit__CorrelatedLossMany = circuit::CorrelatedLossMany,
+    V_circuit__circuit__TwoQubitPauliErrorMany = circuit::TwoQubitPauliErrorMany,
+    V_circuit__circuit__TwoQubitPauliError = circuit::TwoQubitPauliError,
+    V_circuit__circuit__Truncate = circuit::Truncate,
+    V_circuit__circuit__Trace = circuit::Trace,
+    V_circuit__circuit__X = circuit::X,
+    V_circuit__circuit__Y = circuit::Y,
+    V_circuit__circuit__Z = circuit::Z,
+    V_circuit__circuit__H = circuit::H,
+    V_circuit__circuit__SqrtXAdj = circuit::SqrtXAdj,
+    V_circuit__circuit__SqrtX = circuit::SqrtX,
+    V_circuit__circuit__SqrtYAdj = circuit::SqrtYAdj,
+    V_circuit__circuit__SqrtY = circuit::SqrtY,
+    V_circuit__circuit__SAdj = circuit::SAdj,
+    V_circuit__circuit__S = circuit::S,
+    V_circuit__circuit__CNOT = circuit::CNOT,
+    V_circuit__circuit__CZ = circuit::CZ,
+    V_circuit__circuit__TAdj = circuit::TAdj,
+    V_circuit__circuit__T = circuit::T,
+    V_circuit__circuit__RXX = circuit::RXX,
+    V_circuit__circuit__RYY = circuit::RYY,
+    V_circuit__circuit__RZZ = circuit::RZZ,
+    V_circuit__circuit__RX = circuit::RX,
+    V_circuit__circuit__RY = circuit::RY,
+    V_circuit__circuit__RZ = circuit::RZ,
+    V_circuit__circuit__U3 = circuit::U3,
+    V_circuit__circuit__Measure = circuit::Measure,
+    V_circuit__circuit__Reset = circuit::Reset,
+    V_circuit__circuit__R = circuit::R,
+    V_circuit__circuit__Loss = circuit::Loss,
+    V_circuit__circuit__CorrelatedLoss = circuit::CorrelatedLoss,
+    V_circuit__circuit__PauliError = circuit::PauliError,
+    V_circuit__circuit__Depolarize2 = circuit::Depolarize2,
+    V_circuit__circuit__Depolarize = circuit::Depolarize,
+    V_circuit__circuit__Leakage = circuit::Leakage,
+    // debugger::debug
+    V_debugger__debug__Breakpoint = debug::Breakpoint,
 }
 
 /// Current `.ssb` format version. The reader rejects any other version.
-pub const PPVM_BYTECODE_VERSION: u16 = 2;
+pub const PPVM_BYTECODE_VERSION: u16 = 3;
 
 /// Byte length of the fixed portion of the header. The actual `header_size`
 /// in the stream may exceed this when the optional `observable` string is
@@ -363,11 +287,11 @@ pub const PPVM_BYTECODE_VERSION: u16 = 2;
 /// + max_pauli_weight(8) + observable_present(1) = 33.
 const FIXED_HEADER_SIZE: u32 = 4 + 2 + 4 + 4 + 8 + 1 + 1 + 8 + 1;
 
-/// Serialize a resolved module to the v2 `.ssb` byte stream.
+/// Serialize a compiled module to the `.ssb` byte stream.
 pub fn write_module<W: Write>(module: &PPVMModule, w: &mut W) -> eyre::Result<()> {
     if !module.constants.is_empty() || !module.source_symbols.is_empty() {
         return Err(eyre::eyre!(
-            "bytecode v2 cannot represent constants or source symbols"
+            "bytecode cannot represent constants or source symbols"
         ));
     }
 
@@ -460,13 +384,13 @@ pub fn write_module<W: Write>(module: &PPVMModule, w: &mut W) -> eyre::Result<()
         u32::try_from(module.code.len()).map_err(|_| eyre::eyre!("code length exceeds u32"))?;
     w.write_all(&code_count.to_le_bytes())?;
     for inst in &module.code {
-        encode_instruction(inst)?.write_bytes(w)?;
+        write_instruction(inst, w)?;
     }
 
     Ok(())
 }
 
-/// Reconstruct a module from a v2 `.ssb` byte stream.
+/// Reconstruct a module from a `.ssb` byte stream.
 pub fn read_module<R: Read>(r: &mut R) -> eyre::Result<PPVMModule> {
     // Header.
     let magic = read_u32(r)?;
@@ -580,7 +504,7 @@ pub fn read_module<R: Read>(r: &mut R) -> eyre::Result<PPVMModule> {
     let code_count = read_u32(r)?;
     let mut code = Vec::new();
     for _ in 0..code_count {
-        code.push(decode_instruction(BytecodeInstruction::from_bytes(r)?));
+        code.push(read_instruction(r)?);
     }
 
     Ok(PPVMModule {
@@ -690,247 +614,153 @@ fn skip_bytes<R: Read>(r: &mut R, n: u64) -> eyre::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use vihaco::{Type, Value};
-
     use super::*;
+    use crate::compile_program;
 
-    fn empty_module() -> PPVMModule {
-        PPVMModule::default()
+    fn round_trip(module: &PPVMModule) -> PPVMModule {
+        module_from_bytes(&module_to_bytes(module).unwrap()).unwrap()
+    }
+
+    fn fixture_paths() -> Vec<std::path::PathBuf> {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+        let mut paths: Vec<_> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "sst"))
+            .collect();
+        paths.sort();
+        paths
+    }
+
+    #[test]
+    fn every_instruction_round_trips() {
+        let mut m = PPVMModule::default();
+        m.extra.n_qubits = 1;
+        m.code = every_instruction();
+        assert_eq!(
+            m.code.len(),
+            Opcode::V_debugger__debug__Breakpoint as usize + 1
+        );
+        assert_eq!(round_trip(&m), m);
+    }
+
+    #[test]
+    fn every_fixture_round_trips() {
+        let paths = fixture_paths();
+        assert!(!paths.is_empty());
+        for path in paths {
+            let module = compile_program(&std::fs::read_to_string(&path).unwrap())
+                .unwrap_or_else(|e| panic!("compile {}: {e:?}", path.display()));
+            assert_eq!(round_trip(&module), module, "{}", path.display());
+        }
     }
 
     #[test]
     fn round_trips_device_info() {
-        let mut m = empty_module();
-        m.extra.n_qubits = 7;
-        m.extra.coefficient_threshold = 1e-9;
-
-        let mut buf = Vec::new();
-        write_module(&m, &mut buf).unwrap();
-        let back = read_module(&mut buf.as_slice()).unwrap();
-
-        assert_eq!(back, m);
-    }
-
-    #[test]
-    fn round_trips_paulisum_device_info() {
-        let mut m = empty_module();
+        let mut m = PPVMModule::default();
         m.extra.n_qubits = 6;
+        m.extra.coefficient_threshold = 1e-9;
         m.extra.backend = BackendKind::PauliSum;
-        m.extra.observable = Some("ZZIIII".to_string());
+        m.extra.observable = Some("ZZIIII".to_owned());
         m.extra.max_pauli_weight = Some(8);
+        assert_eq!(round_trip(&m), m);
 
-        let mut buf = Vec::new();
-        write_module(&m, &mut buf).unwrap();
-        let back = read_module(&mut buf.as_slice()).unwrap();
-
-        assert_eq!(back, m);
-    }
-
-    #[test]
-    fn round_trips_lossy_backend_without_observable() {
-        let mut m = empty_module();
-        m.extra.n_qubits = 4;
+        // Absent optional fields take the other encoding path.
         m.extra.backend = BackendKind::LossyPauliSum;
-        // observable and max_pauli_weight stay None — verifies the absent path.
-
-        let mut buf = Vec::new();
-        write_module(&m, &mut buf).unwrap();
-        let back = read_module(&mut buf.as_slice()).unwrap();
-
-        assert_eq!(back, m);
-        assert_eq!(back.extra.observable, None);
-        assert_eq!(back.extra.max_pauli_weight, None);
-    }
-
-    #[test]
-    fn round_trips_code() {
-        use vihaco_circuit_isa::CircuitInstruction;
-        use vihaco_cpu::RuntimeInstruction as Cpu;
-
-        let mut m = empty_module();
-        m.extra.n_qubits = 2;
-        m.code = vec![
-            PPVMInstruction::Cpu(Cpu::Const(Type::U64, Value::U64(0))),
-            PPVMInstruction::Circuit(CircuitInstruction::H),
-            PPVMInstruction::Circuit(CircuitInstruction::R),
-            PPVMInstruction::Cpu(Cpu::Branch(1)),
-            PPVMInstruction::Cpu(Cpu::ConditionalBranch(0, 1)),
-            PPVMInstruction::Cpu(Cpu::Call(0, 1)),
-            PPVMInstruction::Cpu(Cpu::Return(0)),
-        ];
-
-        let mut buf = Vec::new();
-        write_module(&m, &mut buf).unwrap();
-        let back = read_module(&mut buf.as_slice()).unwrap();
-
-        assert_eq!(back, m);
-    }
-
-    #[test]
-    fn read_honors_header_size_with_padding() {
-        let mut m = empty_module();
-        m.extra.n_qubits = 3;
-        m.strings = vec!["hi".to_string()];
-        m.code = vec![PPVMInstruction::Cpu(
-            vihaco_cpu::RuntimeInstruction::Return(0),
-        )];
-
-        let mut buf = Vec::new();
-        write_module(&m, &mut buf).unwrap();
-
-        // Simulate a larger header: 4 padding bytes after the fixed fields,
-        // with header_size bumped to match. The reader must skip to it.
-        // (This test uses an empty observable, so the on-disk header size
-        // equals FIXED_HEADER_SIZE.)
-        buf[6..10].copy_from_slice(&(FIXED_HEADER_SIZE + 4).to_le_bytes());
-        for i in 0..4 {
-            buf.insert(FIXED_HEADER_SIZE as usize + i, 0x00);
-        }
-
-        let back = read_module(&mut buf.as_slice()).unwrap();
-        assert_eq!(back, m);
-    }
-
-    #[test]
-    fn compile_to_bytes_round_trips_through_resolve() {
-        let src = "device circuit.n_qubits 2;\n\
-                   fn @main() {\n\
-                       cpu::cpu.const u64, 0\n\
-                       circuit::circuit.h\n\
-                       cpu::cpu.const u64, 0\n\
-                       cpu::cpu.const u64, 1\n\
-                       circuit::circuit.cnot\n\
-                       cpu::cpu.ret 0\n\
-                   }\n";
-
-        let bytes = compile_to_bytes(src).unwrap();
-        let back = module_from_bytes(&bytes).unwrap();
-        let expected = crate::compile_program(src).unwrap();
-
-        assert_eq!(back, expected);
-    }
-
-    #[test]
-    fn loaded_bytecode_executes_like_text() {
-        let src = "device circuit.n_qubits 2;\n\
-                   fn @main() {\n\
-                       cpu::cpu.const u64, 0\n circuit::circuit.h\n\
-                       cpu::cpu.const u64, 0\n cpu::cpu.const u64, 1\n circuit::circuit.cnot\n\
-                       cpu::cpu.const u64, 0\n circuit::circuit.measure\n\
-                       cpu::cpu.const u64, 1\n circuit::circuit.measure\n\
-                        cpu::cpu.ret 0\n }\n";
-        let bytes = compile_to_bytes(src).unwrap();
-
-        let mut machine = crate::composite::PPVM::default();
-        machine.load_bytecode(&bytes).unwrap();
-        machine.run().unwrap();
-
-        assert_eq!(machine.measurement_record().len(), 2);
-    }
-
-    #[test]
-    fn load_bytecode_file_reads_from_disk() {
-        let src = "device circuit.n_qubits 1;\n\
-                   fn @main() { cpu::cpu.const u64, 0\n circuit::circuit.measure\n cpu::cpu.ret 0 }\n";
-        let bytes = compile_to_bytes(src).unwrap();
-        let path = std::env::temp_dir().join("ppvm_load_bytecode_file_test.ssb");
-        std::fs::write(&path, &bytes).unwrap();
-
-        let mut machine = crate::composite::PPVM::default();
-        machine.load_bytecode_file(path.to_str().unwrap()).unwrap();
-        machine.run().unwrap();
-
-        assert_eq!(machine.measurement_record().len(), 1);
-        let _ = std::fs::remove_file(&path);
-    }
-
-    #[test]
-    fn read_rejects_truncated_input() {
-        let mut m = empty_module();
-        m.extra.n_qubits = 2;
-        m.code = vec![PPVMInstruction::Cpu(
-            vihaco_cpu::RuntimeInstruction::Return(0),
-        )];
-
-        let mut buf = Vec::new();
-        write_module(&m, &mut buf).unwrap();
-        buf.truncate(buf.len() - 3); // cut off mid-instruction
-
-        assert!(read_module(&mut buf.as_slice()).is_err());
-    }
-
-    #[test]
-    fn round_trips_populated_functions_table() {
-        use vihaco::module::{FunctionInfo, Signature};
-
-        let mut m = empty_module();
-        m.extra.n_qubits = 1;
-        m.functions.push(FunctionInfo {
-            name: 0,
-            signature: Signature {
-                params: vec![],
-                ret: vec![],
-            },
-            local_count: 0,
-            start_address: 0,
-            end_address: 0,
-            file: 0,
-        });
-
-        let mut buf = Vec::new();
-        write_module(&m, &mut buf).unwrap();
-        assert_eq!(read_module(&mut buf.as_slice()).unwrap(), m);
-    }
-
-    #[test]
-    fn read_rejects_bad_magic() {
-        let mut m = empty_module();
-        m.extra.n_qubits = 2;
-        let mut buf = Vec::new();
-        write_module(&m, &mut buf).unwrap();
-        // Corrupt the magic (first 4 bytes).
-        buf[0] ^= 0xFF;
-
-        let err = read_module(&mut buf.as_slice()).unwrap_err();
-        assert!(
-            err.to_string().contains("not a PPVM bytecode file"),
-            "err: {err}"
-        );
+        m.extra.observable = None;
+        m.extra.max_pauli_weight = None;
+        assert_eq!(round_trip(&m), m);
     }
 
     #[test]
     fn round_trips_strings() {
-        let mut m = empty_module();
-        m.extra.n_qubits = 1;
-        m.strings = vec![
-            String::new(),
-            "hello".to_string(),
-            "tab\tnl\nquote\"".to_string(),
-            "üñîçødé ⚛".to_string(),
-        ];
+        let m = PPVMModule {
+            strings: vec![
+                String::new(),
+                "hello".to_owned(),
+                "tab\tnl\nquote\"".to_owned(),
+                "üñîçødé ⚛".to_owned(),
+            ],
+            ..Default::default()
+        };
+        assert_eq!(round_trip(&m), m);
+    }
 
-        let mut buf = Vec::new();
-        write_module(&m, &mut buf).unwrap();
-        let back = read_module(&mut buf.as_slice()).unwrap();
+    #[test]
+    fn bytecode_runs_like_source() {
+        // Same program and seed, from source and from bytecode: identical records.
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/bell.sst");
+        let module = compile_program(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let loaded = round_trip(&module);
+        let records = |m: &PPVMModule| {
+            crate::shots::run_shots(m, 64, Some(3))
+                .unwrap()
+                .into_iter()
+                .map(|shot| shot.measurements)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(records(&loaded), records(&module));
+    }
 
-        assert_eq!(back, m);
+    #[test]
+    fn read_honors_header_size_with_padding() {
+        let mut m = PPVMModule::default();
+        m.extra.n_qubits = 3;
+        m.strings = vec!["hi".to_owned()];
+        let mut buf = module_to_bytes(&m).unwrap();
+        // Grow the header by 4 padding bytes; the reader must skip past them.
+        buf[6..10].copy_from_slice(&(FIXED_HEADER_SIZE + 4).to_le_bytes());
+        for i in 0..4 {
+            buf.insert(FIXED_HEADER_SIZE as usize + i, 0);
+        }
+        assert_eq!(module_from_bytes(&buf).unwrap(), m);
+    }
+
+    #[test]
+    fn read_rejects_bad_magic() {
+        let mut buf = module_to_bytes(&PPVMModule::default()).unwrap();
+        buf[0] ^= 0xFF;
+        assert!(!is_bytecode(&buf));
+        let err = module_from_bytes(&buf).unwrap_err();
+        assert!(
+            err.to_string().contains("not a PPVM bytecode file"),
+            "{err}"
+        );
     }
 
     #[test]
     fn read_rejects_unsupported_version() {
-        let mut m = empty_module();
-        m.extra.n_qubits = 2;
-        let mut buf = Vec::new();
-        write_module(&m, &mut buf).unwrap();
-        // Bump the version (bytes 4..6) past the supported one.
-        let bad = (PPVM_BYTECODE_VERSION + 1).to_le_bytes();
-        buf[4] = bad[0];
-        buf[5] = bad[1];
-
-        let err = read_module(&mut buf.as_slice()).unwrap_err();
+        let mut buf = module_to_bytes(&PPVMModule::default()).unwrap();
+        buf[4..6].copy_from_slice(&(PPVM_BYTECODE_VERSION + 1).to_le_bytes());
+        let err = module_from_bytes(&buf).unwrap_err();
         assert!(
             err.to_string().contains("unsupported bytecode version"),
-            "err: {err}"
+            "{err}"
         );
+    }
+
+    #[test]
+    fn read_rejects_unknown_opcode() {
+        let m = PPVMModule {
+            code: vec![every_instruction().remove(0)],
+            ..Default::default()
+        };
+        let mut buf = module_to_bytes(&m).unwrap();
+        // The opcode is the first two bytes of the last instruction (`br` + u32).
+        let at = buf.len() - 6;
+        buf[at..at + 2].copy_from_slice(&u16::MAX.to_le_bytes());
+        let err = module_from_bytes(&buf).unwrap_err();
+        assert!(err.to_string().contains("unknown opcode"), "{err}");
+    }
+
+    #[test]
+    fn read_rejects_truncated_input() {
+        let m = PPVMModule {
+            code: vec![every_instruction().remove(0)],
+            ..Default::default()
+        };
+        let mut buf = module_to_bytes(&m).unwrap();
+        buf.truncate(buf.len() - 3); // cut off mid-instruction
+        assert!(module_from_bytes(&buf).is_err());
     }
 }

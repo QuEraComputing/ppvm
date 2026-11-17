@@ -199,8 +199,22 @@ impl AppState {
             self.set_status("program finished — :reset to run again");
             return Ok(());
         }
-        // TODO: vihaco has no single-instruction step API yet (only `resume`).
-        Err(eyre!("single-step is not supported yet — use :continue"))
+        let (Some(m), Some(module)) = (self.machine.as_mut(), self.module.as_ref()) else {
+            return Ok(());
+        };
+        m.single_step(module)?;
+        if m.is_halted() {
+            self.paused = false;
+            self.finished = true;
+            self.set_status("program finished");
+        } else {
+            self.paused = true;
+            if m.is_paused() {
+                self.set_status("-- breakpoint hit --");
+            }
+        }
+        self.refresh_cursor();
+        Ok(())
     }
 
     fn cont(&mut self) -> Result<()> {
@@ -652,7 +666,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    #[ignore = "TODO: needs a single-step API in vihaco"]
     fn empty_line_steps_and_advances_cursor() {
         let mut app = AppState::new();
         app.load_source(BP_PROGRAM).unwrap();

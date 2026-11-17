@@ -280,7 +280,17 @@ impl PPVM {
 
     /// Index of the next instruction to execute.
     pub fn pc(&self) -> u32 {
-        self.execution.pc()
+        let pc = self.execution.pc();
+        match self.execution.run_state() {
+            // An explicit breakpoint leaves `pc` on itself; resuming skips past it.
+            // A gutter breakpoint resumes by running the instruction it displaced.
+            vihaco_stdlib::RunState::Other(DebuggerState::Breakpoint { resume_pc })
+                if !self.debugger.contains(&pc) =>
+            {
+                *resume_pc
+            }
+            _ => pc,
+        }
     }
 
     /// True while a breakpoint has suspended the running program.

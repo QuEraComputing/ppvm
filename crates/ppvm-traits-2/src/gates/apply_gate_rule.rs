@@ -20,6 +20,11 @@ use super::Clifford;
 /// Paulis one at a time; with an integer `B` each bit position is a separate
 /// Pauli. A container without signs ignores the flip.
 ///
+/// With `B = bool`, `apply1` and `apply2` must call `rule` exactly once if they
+/// apply the gate, and not at all if they skip it (e.g. on a lost site). Check
+/// for loss before calling `rule`. Wrappers such as `Phased` take the sign flip
+/// from that one call, so an extra or early call gives a wrong sign.
+///
 /// Implementing this trait gives [`Clifford`] through the blanket impl, so a
 /// type must not also implement [`Clifford`] by hand.
 pub trait ApplyGateRule {

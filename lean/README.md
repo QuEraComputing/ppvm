@@ -3,6 +3,9 @@
 Proofs for `crates/ppvm-pauli-kernels`. Core Lean only (no Mathlib); every
 fact is decided in the kernel.
 
+Run these from `lean/`; its `mise.toml` installs elan and defines the tasks
+(run `mise trust` there once).
+
 ```sh
 mise run lean-build    # lake build
 mise run lean-tables   # regenerate crates/ppvm-pauli-kernels/tests/generated/tables.rs

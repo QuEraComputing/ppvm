@@ -25,7 +25,8 @@ impl<W> Phased<W> {
 }
 
 /// A word that skips a gate (e.g. on a lost site) never calls the rule, so the
-/// recorded flip stays `false` and the phase is untouched.
+/// recorded flip stays `false` and the phase is untouched. This relies on `W`
+/// calling the rule once per applied gate, as `ApplyGateRule` requires.
 impl<W> ApplyGateRule for Phased<W>
 where
     W: ApplyGateRule<B = bool> + PauliBits + LossInfo,

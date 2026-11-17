@@ -1,0 +1,17 @@
+# Lean tooling, scoped to `lean/` so other contributors don't install elan.
+[tools]
+# Lean toolchain manager. `elan` reads `lean-toolchain` and provisions the
+# pinned Lean/Lake proxies into `~/.elan/bin`.
+"github:leanprover/elan" = "4.2.4"
+
+[env]
+# Put the elan-managed `lean` / `lake` proxies on PATH for mise tasks and shells.
+_.path = ["~/.elan/bin"]
+
+[tasks.lean-build]
+description = "Build the PPVM Lean formalization (lake build)."
+run = "lake build"
+
+[tasks.lean-tables]
+description = "Regenerate the ppvm-pauli-kernels test tables from the Lean matrix model."
+run = "lake env lean --run scripts/GenTables.lean > ../crates/ppvm-pauli-kernels/tests/generated/tables.rs"

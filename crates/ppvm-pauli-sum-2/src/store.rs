@@ -134,5 +134,30 @@ impl<K: Indexable, C: Coefficient> Retain<K, C> for HashMapStore<K, C> {
     }
 }
 
+impl<K: Indexable, C: Coefficient> RekeyBijective for HashMapStore<K, C> {
+    fn rekey_bijective(&mut self, mut transform: impl FnMut(K, C) -> (K, C)) {
+        self.scratch.clear();
+        self.scratch.reserve(self.terms.len());
+        // Changed keys must be reinserted into their new hash buckets.
+        for (key, coeff) in self.terms.drain() {
+            let (new_key, new_coeff) = transform(key, coeff);
+            let replaced = self.scratch.insert(new_key, new_coeff);
+            debug_assert!(replaced.is_none(), "rekey must preserve distinct keys");
+        }
+        // Keep the emptied source map for the next gate to reuse.
+        std::mem::swap(&mut self.terms, &mut self.scratch);
+    }
+}
+
+impl<K: Indexable, C: Coefficient> SignFlipByKey for HashMapStore<K, C> {
+    fn flip_sign_by_key(&mut self, negate: impl Fn(&K) -> bool) {
+        for (key, coeff) in &mut self.terms {
+            if negate(key) {
+                coeff.mul_sign_assign(-1);
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests;

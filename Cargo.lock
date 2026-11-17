@@ -2239,11 +2239,7 @@ dependencies = [
 name = "ppvm-pauli-sum-2"
 version = "0.3.0"
 dependencies = [
-<<<<<<< HEAD
  "approx",
- "hashbrown 0.17.1",
-=======
->>>>>>> trait-2/pauli-sum-core
  "num",
  "ppvm-lossy-pauli-word-2",
  "ppvm-pauli-word-2",

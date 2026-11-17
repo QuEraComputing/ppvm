@@ -28,14 +28,6 @@ fn gates<T: Clifford>() -> [Gate<T>; 13] {
     ]
 }
 
-fn assert_same(actual: &PauliSum, expected: &PauliSum) {
-    assert_eq!(actual.n_sites(), expected.n_sites());
-    assert_eq!(actual.len(), expected.len());
-    for (key, coeff) in expected.iter() {
-        assert_eq!(actual.get(&key), Some(coeff));
-    }
-}
-
 #[test]
 fn propagation_matches_phased_words_including_loss() {
     let alphabet = ['I', 'X', 'Y', 'Z', 'L'];
@@ -82,15 +74,19 @@ fn complex_coefficients_absorb_signs_and_preserve_overlap() {
             ("IZ".into(), Complex::new(-1.0, 4.0)),
         ],
     );
-    let mut right = PauliSum::from_terms(2, [("XY".into(), Complex::new(1.0, -2.0))]);
+    let mut right = PauliSum::from_terms_with_policy(
+        2,
+        CoefficientThreshold { threshold: 10.0 },
+        [("XY".into(), Complex::new(1.0, -2.0))],
+    );
     let overlap = left.hermitian_overlap(&right);
     left.z(0);
     assert_eq!(left.get(&"XY".into()), Some(Complex::new(-2.0, -3.0)));
     right.z(0);
-    for sum in [&mut left, &mut right] {
-        sum.h(1);
-        sum.cnot(0, 1);
-    }
+    left.h(1);
+    right.h(1);
+    left.cnot(0, 1);
+    right.cnot(0, 1);
     assert_eq!(left.get(&"YZ".into()), Some(Complex::new(2.0, 3.0)));
     assert_eq!(left.hermitian_overlap(&right), overlap);
 }
@@ -122,13 +118,13 @@ fn invalid_gate_arguments_do_not_change_terms() {
         for gate in gates::<PauliSum>() {
             let mut sum = original.clone();
             assert!(catch_unwind(AssertUnwindSafe(|| gate(&mut sum, 2, 0))).is_err());
-            assert_same(&sum, &original);
+            assert_eq!(sum, original);
         }
         for gate in [PauliSum::cnot, PauliSum::cz, PauliSum::cy] {
             for (a, b) in [(0, 0), (0, 2)] {
                 let mut sum = original.clone();
                 assert!(catch_unwind(AssertUnwindSafe(|| gate(&mut sum, a, b))).is_err());
-                assert_same(&sum, &original);
+                assert_eq!(sum, original);
             }
         }
     }
@@ -153,7 +149,7 @@ fn batches_and_aliases_follow_gate_order() {
     for (a, b) in [(0, 1), (1, 2), (0, 1)] {
         expected.cnot(a, b);
     }
-    assert_same(&actual, &expected);
+    assert_eq!(actual, expected);
 
     let aliases: [(Gate<PauliSum>, Gate<PauliSum>); 4] = [
         (PauliSum::cx, PauliSum::cnot),
@@ -164,6 +160,6 @@ fn batches_and_aliases_follow_gate_order() {
     for (alias, gate) in aliases {
         alias(&mut actual, 0, 1);
         gate(&mut expected, 0, 1);
-        assert_same(&actual, &expected);
+        assert_eq!(actual, expected);
     }
 }

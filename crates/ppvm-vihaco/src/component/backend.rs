@@ -63,6 +63,9 @@ pub trait CircuitBackend {
 
     fn state(&mut self) -> &mut Self::State;
 
+    /// Number of qubits on the device; every qubit operand must be below it.
+    fn n_qubits(&self) -> usize;
+
     // NOTE: methods that differ between backends get dedicated methods
 
     fn measure(&mut self, _addr0: usize) -> eyre::Result<MeasurementOutcome> {
@@ -93,6 +96,10 @@ where
 
     fn state(&mut self) -> &mut Self::State {
         self
+    }
+
+    fn n_qubits(&self) -> usize {
+        GeneralizedTableau::n_qubits(self)
     }
 
     fn measure(&mut self, q: usize) -> eyre::Result<MeasurementOutcome> {
@@ -152,6 +159,10 @@ where
 
     fn state(&mut self) -> &mut Self::State {
         &mut self.state
+    }
+
+    fn n_qubits(&self) -> usize {
+        self.state.n_qubits()
     }
 
     fn reset(&mut self) {

@@ -202,6 +202,7 @@ fn observable_terms(info: &PPVMDeviceInfo) -> Result<Vec<(String, f64)>> {
 mod tests {
     use super::*;
     use crate::component::MAX_QUBITS;
+    use crate::component::{QubitBatch, QubitPairBatch, TwoQubitPauliErrorMsg};
     use crate::measurements::{CircuitOutcomeEffect, MeasurementOutcome};
     use vihaco::PopFromStack;
 
@@ -284,5 +285,83 @@ mod tests {
     #[test]
     fn constructs_at_the_2048_qubit_boundary() {
         assert!(Circuit::tableau(&info(MAX_QUBITS)).is_ok());
+    }
+
+    // A qubit index outside the device must error, not panic in the backend.
+
+    fn assert_out_of_range<I: CircuitOp>(circuit: &mut Circuit, instruction: I, msg: I::Message) {
+        let err = circuit
+            .execute(&instruction, msg)
+            .err()
+            .expect("an out-of-range qubit must be an error");
+        assert!(err.to_string().contains("out of range"), "got: {err}");
+    }
+
+    /// One op from each operand shape; qubit 1 is outside a 1-qubit device.
+    fn assert_rejects_out_of_range_qubits(mut circuit: Circuit) {
+        let batch = |qubits: &[usize]| QubitBatch {
+            qubits: qubits.iter().copied().collect(),
+            params: (),
+        };
+        assert_out_of_range(&mut circuit, circuit::X, PopFromStack((1,)));
+        assert_out_of_range(&mut circuit, circuit::CNOT, PopFromStack((0, 1)));
+        assert_out_of_range(&mut circuit, circuit::RX, PopFromStack((1, 0.3)));
+        assert_out_of_range(&mut circuit, circuit::RXX, PopFromStack((1, 0, 0.3)));
+        assert_out_of_range(&mut circuit, circuit::U3, PopFromStack((1, 0.1, 0.2, 0.3)));
+        assert_out_of_range(
+            &mut circuit,
+            circuit::PauliError,
+            PopFromStack((1, 0.1, 0.0, 0.0)),
+        );
+        assert_out_of_range(
+            &mut circuit,
+            circuit::CorrelatedLoss,
+            PopFromStack((0, 1, 0.1, 0.0, 0.0)),
+        );
+        assert_out_of_range(
+            &mut circuit,
+            circuit::TwoQubitPauliError,
+            TwoQubitPauliErrorMsg {
+                q0: 0,
+                q1: 1,
+                ps: [0.0; 15],
+            },
+        );
+        assert_out_of_range(&mut circuit, circuit::XMany, batch(&[0, 1]));
+        assert_out_of_range(
+            &mut circuit,
+            circuit::CNOTMany,
+            QubitPairBatch {
+                pairs: [(0, 1)].into_iter().collect(),
+                params: (),
+            },
+        );
+    }
+
+    #[test]
+    fn tableau_rejects_out_of_range_qubits() {
+        assert_rejects_out_of_range_qubits(Circuit::tableau(&info(1)).unwrap());
+        let mut circuit = Circuit::tableau(&info(1)).unwrap();
+        assert_out_of_range(&mut circuit, circuit::Measure, PopFromStack((1,)));
+        assert_out_of_range(&mut circuit, circuit::Leakage, PopFromStack((1, 0.1, 0.1)));
+    }
+
+    #[test]
+    fn paulisum_rejects_out_of_range_qubits() {
+        let terms = [("Z".to_owned(), 1.0)];
+        assert_rejects_out_of_range_qubits(Circuit::paulisum(&info(1), &terms).unwrap());
+        assert_rejects_out_of_range_qubits(Circuit::lossy_paulisum(&info(1), &terms).unwrap());
+    }
+
+    #[test]
+    fn bad_index_leaves_a_batch_unapplied() {
+        // q0 is valid and q1 is not; the whole batch must be rejected up front.
+        let mut circuit = Circuit::tableau(&info(1)).unwrap();
+        let batch = QubitBatch {
+            qubits: [0, 1].into_iter().collect(),
+            params: (),
+        };
+        assert_out_of_range(&mut circuit, circuit::XMany, batch);
+        assert_eq!(measure(&mut circuit, 0), MeasurementOutcome::Zero);
     }
 }

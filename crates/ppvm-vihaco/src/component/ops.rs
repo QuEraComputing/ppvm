@@ -27,6 +27,32 @@ pub trait CircuitOp {
     ) -> eyre::Result<Self::Effect>;
 }
 
+/// Check a qubit index against the device, so a bad index errors instead of panicking.
+fn check_qubit<B: CircuitBackend>(backend: &B, q: usize) -> eyre::Result<usize> {
+    let n = backend.n_qubits();
+    eyre::ensure!(q < n, "qubit {q} out of range for a {n}-qubit device");
+    Ok(q)
+}
+
+/// Convert a popped qubit operand, rejecting indices outside the device.
+fn qubit<B: CircuitBackend>(backend: &B, q: u64) -> eyre::Result<usize> {
+    check_qubit(backend, usize::try_from(q).unwrap_or(usize::MAX))
+}
+
+/// Check a whole batch up front, so a bad index never leaves it half-applied.
+fn check_qubits<B: CircuitBackend>(backend: &B, qubits: &[usize]) -> eyre::Result<()> {
+    qubits
+        .iter()
+        .try_for_each(|&q| check_qubit(backend, q).map(drop))
+}
+
+/// Pair counterpart of [`check_qubits`].
+fn check_pairs<B: CircuitBackend>(backend: &B, pairs: &[(usize, usize)]) -> eyre::Result<()> {
+    pairs
+        .iter()
+        .try_for_each(|&(a, b)| check_qubits(backend, &[a, b]))
+}
+
 macro_rules! single_qubit_execute {
     ($leaf:ident, $method:ident) => {
         impl CircuitOp for circuit::$leaf {
@@ -38,7 +64,8 @@ macro_rules! single_qubit_execute {
                 backend: &mut B,
                 msg: Self::Message,
             ) -> eyre::Result<()> {
-                backend.state().$method(msg.0.0 as usize);
+                let q = qubit(backend, msg.0.0)?;
+                backend.state().$method(q);
                 Ok(())
             }
         }
@@ -56,7 +83,8 @@ macro_rules! two_qubit_execute {
                 backend: &mut B,
                 msg: Self::Message,
             ) -> eyre::Result<()> {
-                backend.state().$method(msg.0.0 as usize, msg.0.1 as usize);
+                let (a, b) = (qubit(backend, msg.0.0)?, qubit(backend, msg.0.1)?);
+                backend.state().$method(a, b);
                 Ok(())
             }
         }
@@ -74,7 +102,8 @@ macro_rules! single_qubit_rotation_execute {
                 backend: &mut B,
                 msg: Self::Message,
             ) -> eyre::Result<()> {
-                backend.state().$method(msg.0.0 as usize, msg.0.1);
+                let q = qubit(backend, msg.0.0)?;
+                backend.state().$method(q, msg.0.1);
                 Ok(())
             }
         }
@@ -92,9 +121,8 @@ macro_rules! two_qubit_rotation_execute {
                 backend: &mut B,
                 msg: Self::Message,
             ) -> eyre::Result<()> {
-                backend
-                    .state()
-                    .$method(msg.0.0 as usize, msg.0.1 as usize, msg.0.2);
+                let (a, b) = (qubit(backend, msg.0.0)?, qubit(backend, msg.0.1)?);
+                backend.state().$method(a, b, msg.0.2);
                 Ok(())
             }
         }
@@ -112,6 +140,7 @@ macro_rules! single_qubit_batch_execute {
                 backend: &mut B,
                 msg: Self::Message,
             ) -> eyre::Result<Self::Effect> {
+                check_qubits(backend, &msg.qubits)?;
                 backend.state().$method(&msg.qubits);
                 Ok(())
             }
@@ -173,6 +202,7 @@ macro_rules! single_qubit_rotation_batch_execute {
                 backend: &mut B,
                 msg: Self::Message,
             ) -> eyre::Result<()> {
+                check_qubits(backend, &msg.qubits)?;
                 backend.state().$method(&msg.qubits, msg.params);
                 Ok(())
             }
@@ -192,6 +222,7 @@ macro_rules! single_qubit_param_loop_execute {
                 backend: &mut B,
                 msg: Self::Message,
             ) -> eyre::Result<()> {
+                check_qubits(backend, &msg.qubits)?;
                 let state = backend.state();
                 for &q in &msg.qubits {
                     state.$method(q, msg.params);
@@ -213,6 +244,7 @@ macro_rules! two_qubit_batch_execute {
                 backend: &mut B,
                 msg: Self::Message,
             ) -> eyre::Result<()> {
+                check_pairs(backend, &msg.pairs)?;
                 backend.state().$method(&msg.pairs);
                 Ok(())
             }
@@ -232,6 +264,7 @@ macro_rules! two_qubit_param_loop_execute {
                 backend: &mut B,
                 msg: Self::Message,
             ) -> eyre::Result<()> {
+                check_pairs(backend, &msg.pairs)?;
                 let state = backend.state();
                 for &(a, b) in &msg.pairs {
                     state.$method(a, b, msg.params);
@@ -265,6 +298,7 @@ impl CircuitOp for circuit::U3Many {
     type Message = QubitBatch<[f64; 3]>;
 
     fn apply<B: CircuitBackend>(&self, backend: &mut B, msg: Self::Message) -> eyre::Result<()> {
+        check_qubits(backend, &msg.qubits)?;
         let [theta, phi, lambda] = msg.params;
         let state = backend.state();
         for &q in &msg.qubits {
@@ -283,6 +317,7 @@ impl CircuitOp for circuit::MeasureMany {
         backend: &mut B,
         msg: Self::Message,
     ) -> eyre::Result<Self::Effect> {
+        check_qubits(backend, &msg.qubits)?;
         let mut measurement_results = MeasurementResult::with_capacity(msg.qubits.len());
         for &q in &msg.qubits {
             measurement_results.push(backend.measure(q)?);
@@ -300,9 +335,8 @@ impl CircuitOp for circuit::U3 {
     type Message = PopFromStack<(u64, f64, f64, f64)>;
 
     fn apply<B: CircuitBackend>(&self, backend: &mut B, msg: Self::Message) -> eyre::Result<()> {
-        backend
-            .state()
-            .u3(msg.0.0 as usize, msg.0.1, msg.0.2, msg.0.3);
+        let q = qubit(backend, msg.0.0)?;
+        backend.state().u3(q, msg.0.1, msg.0.2, msg.0.3);
         Ok(())
     }
 }
@@ -312,7 +346,8 @@ impl CircuitOp for circuit::R {
     type Message = PopFromStack<(u64, f64, f64)>;
 
     fn apply<B: CircuitBackend>(&self, backend: &mut B, msg: Self::Message) -> eyre::Result<()> {
-        backend.state().r(msg.0.0 as usize, msg.0.1, msg.0.2);
+        let q = qubit(backend, msg.0.0)?;
+        backend.state().r(q, msg.0.1, msg.0.2);
         Ok(())
     }
 }
@@ -322,7 +357,8 @@ impl CircuitOp for circuit::Leakage {
     type Message = PopFromStack<(u64, f64, f64)>;
 
     fn apply<B: CircuitBackend>(&self, backend: &mut B, msg: Self::Message) -> eyre::Result<()> {
-        backend.leakage(msg.0.0 as usize, msg.0.1, msg.0.2)?;
+        let q = qubit(backend, msg.0.0)?;
+        backend.leakage(q, msg.0.1, msg.0.2)?;
         Ok(())
     }
 }
@@ -332,9 +368,8 @@ impl CircuitOp for circuit::PauliError {
     type Message = PopFromStack<(u64, f64, f64, f64)>;
 
     fn apply<B: CircuitBackend>(&self, backend: &mut B, msg: Self::Message) -> eyre::Result<()> {
-        backend
-            .state()
-            .pauli_error(msg.0.0 as usize, [msg.0.1, msg.0.2, msg.0.3]);
+        let q = qubit(backend, msg.0.0)?;
+        backend.state().pauli_error(q, [msg.0.1, msg.0.2, msg.0.3]);
         Ok(())
     }
 }
@@ -344,6 +379,7 @@ impl CircuitOp for circuit::TwoQubitPauliError {
     type Message = TwoQubitPauliErrorMsg;
 
     fn apply<B: CircuitBackend>(&self, backend: &mut B, msg: Self::Message) -> eyre::Result<()> {
+        check_qubits(backend, &[msg.q0, msg.q1])?;
         backend
             .state()
             .two_qubit_pauli_error(msg.q0, msg.q1, msg.ps);
@@ -356,11 +392,10 @@ impl CircuitOp for circuit::CorrelatedLoss {
     type Message = PopFromStack<(u64, u64, f64, f64, f64)>;
 
     fn apply<B: CircuitBackend>(&self, backend: &mut B, msg: Self::Message) -> eyre::Result<()> {
-        backend.state().correlated_loss_channel(
-            msg.0.0 as usize,
-            msg.0.1 as usize,
-            [msg.0.2, msg.0.3, msg.0.4],
-        );
+        let (a, b) = (qubit(backend, msg.0.0)?, qubit(backend, msg.0.1)?);
+        backend
+            .state()
+            .correlated_loss_channel(a, b, [msg.0.2, msg.0.3, msg.0.4]);
         Ok(())
     }
 }
@@ -374,7 +409,8 @@ impl CircuitOp for circuit::Measure {
         backend: &mut B,
         msg: Self::Message,
     ) -> eyre::Result<Self::Effect> {
-        let outcome = backend.measure(msg.0.0 as usize)?;
+        let q = qubit(backend, msg.0.0)?;
+        let outcome = backend.measure(q)?;
         Ok(Effects::one(CircuitOutcomeEffect::Measurement(
             MeasurementEffect {
                 measurement_results: smallvec::smallvec![outcome],

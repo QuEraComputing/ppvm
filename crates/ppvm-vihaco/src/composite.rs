@@ -223,8 +223,7 @@ impl PPVM {
     /// running program.
     ///
     /// The operand stack is not touched: outcomes land in the measurement and
-    /// trace records only. Qubit indices are not range-checked here; callers
-    /// building messages by hand should check them against `n_qubits`.
+    /// trace records only. A qubit index outside the device is an error.
     pub fn send<I>(&mut self, instruction: &I, message: I::Message) -> eyre::Result<()>
     where
         I: CircuitOp,
@@ -566,6 +565,22 @@ mod tests {
             &["circuit::circuit::h", "execution::program::ret 0"],
         );
         assert!(run_source(&source).is_err());
+    }
+
+    #[test]
+    fn out_of_range_qubit_is_an_error() {
+        // q5 does not exist on a 1-qubit device; the run must fail, not panic.
+        let source = program(
+            "circuit.n_qubits 1;",
+            &[],
+            &[
+                "execution::program::const_u64 5",
+                "circuit::circuit::measure",
+                "execution::program::ret 0",
+            ],
+        );
+        let err = run_source(&source).err().expect("run should fail");
+        assert!(format!("{err:?}").contains("out of range"), "err: {err:?}");
     }
 
     #[test]

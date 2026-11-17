@@ -205,15 +205,15 @@ impl<S: Scale, P> Sum<S, P> {
 
 impl<S: Pair, P> Sum<S, P> {
     /// Sum products of matching coefficients, without conjugation.
-    /// Panics if the sums have different widths.
-    pub fn overlap(&self, other: &Self) -> S::Coeff {
+    /// Policies may differ. Panics if the sums have different widths.
+    pub fn overlap<P2>(&self, other: &Sum<S, P2>) -> S::Coeff {
         assert_eq!(self.n_sites, other.n_sites, "overlap requires equal widths");
         self.storage.overlap(&other.storage)
     }
 
     /// Sum products of matching coefficients, conjugating this sum's coefficients.
-    /// Panics if the sums have different widths.
-    pub fn hermitian_overlap(&self, other: &Self) -> S::Coeff
+    /// Policies may differ. Panics if the sums have different widths.
+    pub fn hermitian_overlap<P2>(&self, other: &Sum<S, P2>) -> S::Coeff
     where
         S::Coeff: Conjugate,
     {
@@ -254,7 +254,7 @@ where
             self.storage.retain(keep);
         } else {
             self.storage
-                .retain(|key, coeff| self.preserved_keys.contains(key) || keep(key, coeff));
+                .retain(|key, coeff| keep(key, coeff) || self.preserved_keys.contains(key));
         }
     }
 }

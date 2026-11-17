@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-use hashbrown::{HashMap, hash_map::Entry};
+use std::collections::HashMap;
+
 use ppvm_traits_2::{
     Accumulate, Coefficient, IdentityBuildHasher, Indexable, Pair, Retain, Scale, Support,
     TermBatch,
@@ -79,19 +80,15 @@ where
 
     #[inline]
     fn get(&self, key: &K) -> Option<C> {
-        self.terms.get(key).cloned()
+        Support::get(&self.terms, key)
     }
 
     fn iter(&self) -> impl Iterator<Item = (K, C)> {
-        self.terms
-            .iter()
-            .map(|(key, coeff)| (key.clone(), coeff.clone()))
+        Support::iter(&self.terms)
     }
 
-    fn for_each_ref(&self, mut f: impl FnMut(&K, &C)) {
-        for (key, coeff) in &self.terms {
-            f(key, coeff);
-        }
+    fn for_each_ref(&self, f: impl FnMut(&K, &C)) {
+        self.terms.for_each_ref(f);
     }
 }
 
@@ -101,27 +98,16 @@ where
     C: Coefficient,
 {
     fn accumulate_batch(&mut self, terms: &TermBatch<K, C>) {
-        for (key, coeff) in terms.iter() {
-            if let Some(value) = self.terms.get_mut(key) {
-                *value += coeff;
-            } else {
-                self.terms.insert(key.clone(), coeff.clone());
-            }
-        }
+        self.terms.accumulate_batch(terms);
     }
 
     #[inline]
     fn accumulate(&mut self, key: K, coeff: C) {
-        match self.terms.entry(key) {
-            Entry::Occupied(mut entry) => *entry.get_mut() += &coeff,
-            Entry::Vacant(entry) => {
-                entry.insert(coeff);
-            }
-        }
+        self.terms.accumulate(key, coeff);
     }
 
     fn reduce(&mut self) {
-        self.terms.retain(|_, coeff| !coeff.is_zero());
+        self.terms.reduce();
     }
 }
 
@@ -131,9 +117,7 @@ where
     C: Coefficient,
 {
     fn scale(&mut self, scalar: &C) {
-        for coeff in self.terms.values_mut() {
-            *coeff *= scalar;
-        }
+        self.terms.scale(scalar);
     }
 }
 
@@ -144,34 +128,9 @@ where
 {
 }
 
-impl<K: Indexable, C: Coefficient> RekeyBijective for HashMapStore<K, C> {
-    fn rekey_bijective(&mut self, mut transform: impl FnMut(K, C) -> (K, C)) {
-        self.scratch.clear();
-        self.scratch.reserve(self.terms.len());
-        // Changed keys must be reinserted into their new hash buckets.
-        for (key, coeff) in self.terms.drain() {
-            let (new_key, new_coeff) = transform(key, coeff);
-            let replaced = self.scratch.insert(new_key, new_coeff);
-            debug_assert!(replaced.is_none(), "rekey must preserve distinct keys");
-        }
-        // Keep the emptied source map for the next gate to reuse.
-        std::mem::swap(&mut self.terms, &mut self.scratch);
-    }
-}
-
-impl<K: Indexable, C: Coefficient> SignFlipByKey for HashMapStore<K, C> {
-    fn flip_sign_by_key(&mut self, negate: impl Fn(&K) -> bool) {
-        for (key, coeff) in &mut self.terms {
-            if negate(key) {
-                coeff.mul_sign_assign(-1);
-            }
-        }
-    }
-}
-
-impl<K, C> Retain<K, C> for HashMapStore<K, C> {
+impl<K: Indexable, C: Coefficient> Retain<K, C> for HashMapStore<K, C> {
     fn retain(&mut self, keep: impl Fn(&K, &C) -> bool) {
-        self.terms.retain(|key, coeff| keep(key, coeff));
+        Retain::retain(&mut self.terms, keep);
     }
 }
 

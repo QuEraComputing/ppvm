@@ -52,6 +52,17 @@ where
     K: Indexable,
     C: Coefficient,
 {
+    /// Accumulate an owned term without allocating a singleton batch.
+    #[inline]
+    fn accumulate(&mut self, key: K, coeff: C) {
+        match self.entry(key) {
+            Entry::Occupied(mut entry) => *entry.get_mut() += &coeff,
+            Entry::Vacant(entry) => {
+                entry.insert(coeff);
+            }
+        }
+    }
+
     /// Build side of the hash join: probe each produced term, accumulate its
     /// coefficient onto a matching key, insert on a miss.
     #[inline]

@@ -197,3 +197,76 @@ fn observable_terms(info: &PPVMDeviceInfo) -> Result<Vec<(String, f64)>> {
     })?;
     crate::observable::parse_pauli_sum_terms(observable, info.n_qubits)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::component::MAX_QUBITS;
+    use crate::measurements::{CircuitOutcomeEffect, MeasurementOutcome};
+    use vihaco::PopFromStack;
+
+    fn info(n_qubits: usize) -> PPVMDeviceInfo {
+        PPVMDeviceInfo {
+            n_qubits,
+            ..Default::default()
+        }
+    }
+
+    /// Measure `addr` and read the outcome out of the returned effect.
+    fn measure(circuit: &mut Circuit, addr: u64) -> MeasurementOutcome {
+        let effects = circuit
+            .execute(&circuit::Measure, PopFromStack((addr,)))
+            .unwrap();
+        match effects.into_iter().next() {
+            Some(CircuitOutcomeEffect::Measurement(m)) => m.measurement_results[0],
+            other => panic!("expected a measurement effect, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tableau_backend_x_flips_qubit() {
+        let mut circuit = Circuit::tableau(&info(1)).unwrap();
+        circuit.execute(&circuit::X, PopFromStack((0,))).unwrap();
+        assert_eq!(measure(&mut circuit, 0), MeasurementOutcome::One);
+    }
+
+    #[test]
+    fn tableau_backend_cnot_propagates_flip() {
+        // X(0); CNOT(0, 1) leaves both qubits in |1>.
+        let mut circuit = Circuit::tableau(&info(2)).unwrap();
+        circuit.execute(&circuit::X, PopFromStack((0,))).unwrap();
+        circuit
+            .execute(&circuit::CNOT, PopFromStack((0, 1)))
+            .unwrap();
+        assert_eq!(measure(&mut circuit, 0), MeasurementOutcome::One);
+        assert_eq!(measure(&mut circuit, 1), MeasurementOutcome::One);
+    }
+
+    // The widest bucket is 2048 qubits; beyond it constructors must error
+    // rather than panic, since a panic would tear down the TUI.
+
+    #[test]
+    fn tableau_rejects_more_than_2048_qubits() {
+        assert!(Circuit::tableau(&info(MAX_QUBITS + 1)).is_err());
+    }
+
+    #[test]
+    fn tableau_with_seed_rejects_more_than_2048_qubits() {
+        assert!(Circuit::tableau_with_seed(&info(MAX_QUBITS + 1), 0).is_err());
+    }
+
+    #[test]
+    fn paulisum_rejects_more_than_2048_qubits() {
+        assert!(Circuit::paulisum(&info(MAX_QUBITS + 1), &[]).is_err());
+    }
+
+    #[test]
+    fn lossy_paulisum_rejects_more_than_2048_qubits() {
+        assert!(Circuit::lossy_paulisum(&info(MAX_QUBITS + 1), &[]).is_err());
+    }
+
+    #[test]
+    fn constructs_at_the_2048_qubit_boundary() {
+        assert!(Circuit::tableau(&info(MAX_QUBITS)).is_ok());
+    }
+}

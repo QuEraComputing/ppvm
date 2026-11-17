@@ -1,17 +1,44 @@
-device circuit.n_qubits 2;
-device circuit.backend paulisum;
-device circuit.observable 1.0*ZZ+0.5*XX;
-device circuit.coefficient_threshold 1e-10;
+sst v1
+.section(root):
+    .section(ppvm):
+    .header(ppvm):
+        circuit.n_qubits 2;
+        circuit.backend paulisum;
+        circuit.observable 1.0*ZZ+0.5*XX;
+        circuit.coefficient_threshold 1e-10;
+        metadata {
+            strings: ["main", "heisenberg_zz.old.sst", "[XZ]?*"],
+            functions: [
+                {
+                    name: 0, // main
+                    signature: { params: [], ret: [] },
+                    local_count: 0,
+                    start_address: 0,
+                    end_address: 3,
+                    file: 1,
+                },
+            ],
+            labels: [],
+            constants: [],
+            main_function: 0, // main
+            source_symbols: [],
+            extra: {},
+        };
+    .header(ppvm).
+    .text(ppvm):
+        fn @main() {
+            // Heisenberg-picture run on a PauliSum target. The header observable
+            // `1.0*ZZ + 0.5*XX` seeds two terms; tracing `[XZ]?*` filters both ZZ
+            // (coef 1.0) and XX (coef 0.5), so the trace is their coefficient sum.
+            //
+            // No gates here, so the trace returns the seeded observable's coefficient
+            // sum directly: 1.0 + 0.5 = 1.5. Add `circuit::circuit::cnot`, `::h`, and
+            // `::truncate` in textbook-reversed order to evolve before tracing.
 
-// Heisenberg-picture run on a PauliSum target. The header observable
-// `1.0*ZZ + 0.5*XX` seeds two terms; tracing `[XZ]?*` filters both ZZ
-// (coef 1.0) and XX (coef 0.5), so the trace is their coefficient sum.
-//
-// No gates here, so the trace returns the seeded observable's coefficient
-// sum directly: 1.0 + 0.5 = 1.5. Add `circuit.cnot; circuit.h; circuit.truncate`
-// in textbook-reversed order to evolve before tracing.
-fn @main() {
-    cpu::cpu.const str, "[XZ]?*"
-    circuit::circuit.trace
-    cpu::cpu.ret 0
-}
+            execution::program::const_string "[XZ]?*"
+            circuit::circuit::trace
+            execution::program::ret 0
+        }
+    .text(ppvm).
+    .section(ppvm).
+.section(root).

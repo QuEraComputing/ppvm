@@ -318,7 +318,7 @@ fn events(
 
 fn skip(log1m_p: f64, rng: &mut SmallRng) -> usize {
     let u: f64 = rng.random();
-    ((-u).ln_1p() / log1m_p) as usize
+    (u.ln() / log1m_p) as usize
 }
 
 fn bernoulli(log1m_p: f64, rng: &mut SmallRng) -> Bits {

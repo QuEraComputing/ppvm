@@ -7,9 +7,11 @@ use crate::measurements::{
 };
 use eyre;
 use vihaco::{
-    BuildMessage, Effects, Execute, ExecutionState, HasInstructionSet, PushToStack,
+    Apply, BuildMessage, Effects, Execute, ExecutionState, HasInstructionSet, PushToStack,
     ReusableMessageRecipe, Step, Type, Value, composite, field, module::LocalModule,
 };
+use vihaco_stdlib::debugger::Debugger;
+use vihaco_stdlib::debugger::{DebuggerState, HasBreakpointInstruction, dialect::debug};
 
 // Device configuration lives in `device_info` (shipped with the circuit
 // component so it compiles without the composite). Re-exported here so the
@@ -21,7 +23,7 @@ pub use crate::device_info::{BackendKind, PPVM_MAGIC, PPVMDeviceInfo};
 pub struct PPVM {
     #[device(0)]
     #[program]
-    execution: vihaco_stdlib::ExecutionState,
+    execution: vihaco_stdlib::ExecutionState<vihaco_stdlib::debugger::DebuggerState>,
 
     #[device(1)]
     cpu: vihaco_cpu::CPU,
@@ -30,17 +32,48 @@ pub struct PPVM {
     #[device(2)]
     circuit: crate::component::Circuit,
 
-    measurement_record: MeasurementObserver,
+    #[device(3)]
+    debugger: vihaco_stdlib::debugger::Debugger<u32, Instruction>,
 
+    measurement_record: MeasurementObserver,
     trace_record: TraceObserver,
 }
 
+type Execution = ExecutionState<DebuggerState>;
 type Instruction = <PPVM as HasInstructionSet>::Runtime;
 
 /// A lowered PPVM program; `extra` carries the header's device configuration.
 pub type PPVMModule = LocalModule<Instruction, Value, Type, PPVMDeviceInfo>;
 
 type Program = PPVMModule;
+
+impl<I, M> BuildMessage<field!(PPVM::debugger), I, Program, M> for PPVM
+where
+    vihaco_stdlib::debugger::Debugger<u32, Instruction>: Execute<I, Message = M>,
+    M: ReusableMessageRecipe<Self, field!(PPVM::debugger), I, Program>,
+{
+    fn build_message(&mut self, instruction: &I, module: &Program) -> eyre::Result<M> {
+        M::prepare(self, instruction, module)
+    }
+}
+
+// A breakpoint suspends the invocation via the debugger's `Break` effect.
+impl Step<field!(PPVM::debugger), debug::Breakpoint, Program> for PPVM {
+    fn step(&mut self, instruction: &debug::Breakpoint, module: &Program) -> eyre::Result<()> {
+        let message = <Self as BuildMessage<field!(PPVM::debugger), debug::Breakpoint, Program>>::build_message(
+            self, instruction, module,
+        )?;
+        let effect = self.debugger.execute(instruction, message)?;
+        self.execution.apply(effect);
+        Ok(())
+    }
+}
+
+impl HasBreakpointInstruction for Instruction {
+    fn new_breakpoint() -> Self {
+        Self::V_debugger__debug__Breakpoint(debug::Breakpoint)
+    }
+}
 
 impl PPVM {
     /// A fresh machine for the device described by `info`, ready to execute.
@@ -49,11 +82,12 @@ impl PPVM {
             eyre::bail!("circuit.n_qubits must be declared");
         }
         Ok(Self {
-            execution: ExecutionState::new(),
+            execution: ExecutionState::default(),
             cpu: vihaco_cpu::CPU::default(),
             circuit: Circuit::new(info, seed)?,
             measurement_record: MeasurementObserver::default(),
             trace_record: TraceObserver::default(),
+            debugger: Debugger::default(),
         })
     }
 
@@ -74,7 +108,7 @@ impl PPVM {
 // Every field builds its messages through the message type's recipe.
 impl<I, M> BuildMessage<field!(PPVM::execution), I, Program, M> for PPVM
 where
-    ExecutionState: Execute<I, Message = M>,
+    Execution: Execute<I, Message = M>,
     M: ReusableMessageRecipe<Self, field!(PPVM::execution), I, Program>,
 {
     fn build_message(&mut self, instruction: &I, module: &Program) -> eyre::Result<M> {
@@ -106,7 +140,7 @@ where
 impl<I> Step<field!(PPVM::execution), I, Program> for PPVM
 where
     Self: BuildMessage<field!(PPVM::execution), I, Program>,
-    ExecutionState: Execute<I, Effect = (), Error = eyre::Report>,
+    Execution: Execute<I, Effect = (), Error = eyre::Report>,
 {
     fn step(&mut self, instruction: &I, module: &Program) -> eyre::Result<()> {
         let message = <Self as BuildMessage<field!(PPVM::execution), I, Program>>::build_message(
@@ -123,7 +157,7 @@ impl<I> Step<field!(PPVM::cpu), I, Program> for PPVM
 where
     Self: BuildMessage<field!(PPVM::cpu), I, Program>,
     vihaco_cpu::CPU: Execute<I, Error = eyre::Report>,
-    ExecutionState: vihaco::Apply<<vihaco_cpu::CPU as Execute<I>>::Effect>,
+    Execution: vihaco::Apply<<vihaco_cpu::CPU as Execute<I>>::Effect>,
 {
     fn step(&mut self, instruction: &I, module: &Program) -> eyre::Result<()> {
         let message = <Self as BuildMessage<field!(PPVM::cpu), I, Program>>::build_message(
@@ -218,7 +252,30 @@ impl PPVM {
 
     /// Run the started program until it halts, returns, or hits a breakpoint.
     pub fn resume(&mut self, module: &Program) -> eyre::Result<()> {
-        vihaco::resume(module, self)
+        vihaco_stdlib::debugger::resume_with_breaks::<field!(PPVM::debugger), _, _, _, _, _>(
+            module,
+            self,
+            vihaco_stdlib::debugger::DebugAction::Continue,
+        )
+    }
+
+    /// Start `module` and run it to the end, continuing past every breakpoint.
+    pub fn run(&mut self, module: &Program) -> eyre::Result<()> {
+        self.start(module)?;
+        // Breakpoints only pause the interactive debugger; a batch run skips past them.
+        self.resume(module)?;
+        while self.is_paused() {
+            self.resume(module)?;
+        }
+        Ok(())
+    }
+
+    pub fn single_step(&mut self, module: &Program) -> eyre::Result<()> {
+        vihaco_stdlib::debugger::resume_with_breaks::<field!(PPVM::debugger), _, _, _, _, _>(
+            module,
+            self,
+            vihaco_stdlib::debugger::DebugAction::Step,
+        )
     }
 
     /// Index of the next instruction to execute.
@@ -228,7 +285,10 @@ impl PPVM {
 
     /// True while a breakpoint has suspended the running program.
     pub fn is_paused(&self) -> bool {
-        self.execution.is_halted()
+        matches!(
+            self.execution.run_state(),
+            vihaco_stdlib::RunState::Other(DebuggerState::Breakpoint { .. })
+        )
     }
 
     /// True once the program has finished (or before one was started).

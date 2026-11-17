@@ -25,7 +25,7 @@ sst v1
     .text(ppvm):
         fn @main() {
             // Pause, then measure q0 in |0> (0 unless a gate is injected at the pause).
-            execution::program::breakpoint
+            debugger::debug::breakpoint
             execution::program::const_u64 0
             circuit::circuit::measure
             execution::program::ret 0

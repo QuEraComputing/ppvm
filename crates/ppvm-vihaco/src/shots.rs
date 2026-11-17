@@ -42,7 +42,7 @@ fn shot_seed(base: Option<u64>, index: usize) -> Option<u64> {
 fn run_one_shot(module: &PPVMModule, seed: Option<u64>) -> eyre::Result<ShotRecord> {
     let mut machine = PPVM::new(&module.extra, seed)?;
     // The module is only borrowed, so all shots share one compiled program.
-    vihaco::execute(module, &mut machine, &[])?;
+    machine.run(module)?;
     let (measurements, traces) = machine.into_records();
     Ok(ShotRecord {
         measurements,

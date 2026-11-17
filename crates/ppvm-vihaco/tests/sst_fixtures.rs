@@ -7,6 +7,7 @@
 use ppvm_vihaco::composite::{PPVM, PPVMModule};
 use ppvm_vihaco::load_module_file;
 use ppvm_vihaco::measurements::MeasurementOutcome;
+use ppvm_vihaco::shots::run_shots;
 
 /// Run a compiled fixture on a fresh machine for its declared device.
 fn run_module(module: &PPVMModule) -> eyre::Result<PPVM> {
@@ -119,6 +120,20 @@ fn tableau_leakage_pins_to_one_and_skips_x() {
 fn run_file_via_library_helper() {
     let machine = run_file("tests/bell.sst").unwrap_or_else(|e| panic!("run bell.sst: {e:?}"));
     assert_eq!(machine.measurement_record().len(), 2);
+}
+
+#[test]
+fn batch_runs_ignore_breakpoints() {
+    // The breakpoint precedes the only measurement, so a shot cut off there
+    // records nothing; a full run measures |0> and must get 0.
+    let module = load_module_file("tests/breakpoint_measure.sst")
+        .unwrap_or_else(|e| panic!("load breakpoint_measure.sst: {e:?}"));
+    let shots = run_shots(&module, 3, Some(7)).unwrap_or_else(|e| panic!("run shots: {e:?}"));
+    assert_eq!(shots.len(), 3);
+    for shot in &shots {
+        assert_eq!(shot.measurements.len(), 1, "shot stopped at the breakpoint");
+        assert_eq!(shot.measurements[0].as_slice(), &[MeasurementOutcome::Zero]);
+    }
 }
 
 #[test]

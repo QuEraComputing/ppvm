@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["MeasureScratch"]};
+window.SIDEBAR_ITEMS = {"struct":["ImpossibleOutcome","MeasureScratch"]};

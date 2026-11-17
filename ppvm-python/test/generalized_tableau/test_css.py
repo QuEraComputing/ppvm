@@ -90,3 +90,13 @@ def test_css_method_rejects_other_circuits():
         sample_stim(StimProgram.parse("S 0\nM 0"), num_shots=1, method="css")
     with pytest.raises(ValueError, match="method"):
         sample_stim(CIRCUIT, num_shots=1, method="frame")  # ty: ignore[no-matching-overload]
+
+
+def test_n_qubits_must_cover_the_program():
+    prog = StimProgram.parse("X 3\nM 3")
+    for method in ("auto", "css", "tableau"):
+        with pytest.raises(ValueError, match="n_qubits"):
+            sample_stim(prog, n_qubits=2, num_shots=1, method=method)
+        assert sample_stim(prog, n_qubits=8, num_shots=1, method=method) == [
+            [MeasurementResult.ONE]
+        ]

@@ -3,8 +3,8 @@
 
 //! Exact sampling of CSS circuits with atom loss and leakage, many shots per machine word.
 //!
-//! A circuit is *CSS up to Hadamards* when conjugating some of its qubit segments (from one
-//! reset to the next) by `H` turns every two-qubit gate into a `CX`. Preparations and
+//! A circuit is *CSS up to Hadamards* when conjugating some of its qubit segments (between resets
+//! and measurements) by `H` turns every two-qubit gate into a `CX`. Preparations and
 //! measurements may use either basis. Following Gidney & Jones, *CSS Circuits: useful quantum
 //! circuits that can be simulated with O(1) cost per gate* ([arXiv:2611.14944]), the all-zero
 //! record is then a valid noiseless outcome for every pattern of gates cancelled by loss, so a

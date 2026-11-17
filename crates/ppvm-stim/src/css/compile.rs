@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
+use std::collections::HashMap;
+
 use stim_parser::prelude::{
     ExtendedInstruction, ExtendedProgram, GateName, GateOp, LineMap, MeasureName, MeasureOp,
     NoiseName, NoiseOp, Span, Target,
@@ -43,7 +45,7 @@ pub(crate) enum Op {
         z: bool,
     },
     Feedback {
-        record: usize,
+        lookback: usize,
         q: usize,
         x: bool,
         z: bool,
@@ -55,6 +57,13 @@ pub(crate) enum Op {
     Loss(Box<Channel<usize>>),
     Leakage(Box<Channel<usize>>),
     CorrelatedLoss(Box<PairLoss>),
+    Repeat(Box<Repeat>),
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct Repeat {
+    pub count: u64,
+    pub body: Vec<Op>,
 }
 
 /// Events at rate `p` per target and shot; each event's outcome is drawn from `cdf`.
@@ -99,7 +108,7 @@ impl CssProgram {
         let mut compiler = Compiler {
             line_map: &program.line_map,
             ops: Vec::new(),
-            num_measurements: 0,
+            emit: true,
             segment: (0..num_qubits).map(|_| labels.add()).collect(),
             hadamard: vec![false; num_qubits],
             labels,
@@ -108,13 +117,13 @@ impl CssProgram {
         Ok(Self {
             ops: compiler.ops,
             num_qubits,
-            num_measurements: compiler.num_measurements,
+            num_measurements: program.measurement_count(),
         })
     }
 }
 
-/// Union-find over the Hadamard labels of qubit segments (a segment starts at a reset), with the
-/// parity of each label relative to its root.
+/// Union-find over the Hadamard labels of qubit segments (a segment starts at a reset or a
+/// measurement), with the parity of each label relative to its root.
 #[derive(Default)]
 struct Labels {
     parent: Vec<usize>,
@@ -162,7 +171,8 @@ impl Labels {
 struct Compiler<'a> {
     line_map: &'a LineMap,
     ops: Vec<Op>,
-    num_measurements: usize,
+    /// False while re-running a `REPEAT` body only to check its labels.
+    emit: bool,
     labels: Labels,
     segment: Vec<usize>,
     hadamard: Vec<bool>,
@@ -182,7 +192,7 @@ impl Compiler<'_> {
             I::Annotation(_) => Ok(()),
             I::Loss { p, targets, span } => {
                 if let Some(c) = self.channel(targets, &[*p], "I_ERROR[loss]", *span)? {
-                    self.ops.push(Op::Loss(c));
+                    self.push(Op::Loss(c));
                 }
                 Ok(())
             }
@@ -193,35 +203,33 @@ impl Compiler<'_> {
                 span,
             } => {
                 if let Some(c) = self.channel(targets, &[*p0, *p1], "I_ERROR[leakage]", *span)? {
-                    self.ops.push(Op::Leakage(c));
+                    self.push(Op::Leakage(c));
                 }
                 Ok(())
             }
             I::CorrelatedLoss { ps, targets, span } => self.correlated_loss(*ps, targets, *span),
             I::ResetLoss { targets, .. } => {
-                self.ops.extend(targets.iter().map(|&q| Op::ResetLoss(q)));
+                targets.iter().for_each(|&q| self.push(Op::ResetLoss(q)));
                 Ok(())
             }
             I::ResetLeakage { targets, .. } => {
-                self.ops
-                    .extend(targets.iter().map(|&q| Op::ResetLeakage(q)));
+                targets.iter().for_each(|&q| self.push(Op::ResetLeakage(q)));
                 Ok(())
             }
             I::ResetState { targets, .. } => {
                 for &q in targets {
-                    self.ops.push(Op::ResetState(q));
+                    self.push(Op::ResetState(q));
                     self.new_segment(q);
                 }
                 Ok(())
             }
             I::MPad { prob, bits, .. } => {
                 let log1m_flip = log1m(prob.unwrap_or(0.0));
-                self.ops
-                    .extend(bits.iter().map(|&bit| Op::Pad { bit, log1m_flip }));
-                self.num_measurements += bits.len();
+                bits.iter()
+                    .for_each(|&bit| self.push(Op::Pad { bit, log1m_flip }));
                 Ok(())
             }
-            I::Repeat { count, body, .. } => (0..*count).try_for_each(|_| self.block(body)),
+            I::Repeat { count, body, .. } => self.repeat(*count, body),
             I::Mpp(op) => Err(self.unsupported("MPP", op.span)),
             I::T { span, .. } => Err(self.unsupported("T", *span)),
             I::TDag { span, .. } => Err(self.unsupported("T_DAG", *span)),
@@ -263,12 +271,7 @@ impl Compiler<'_> {
         for pair in op.targets.as_chunks::<2>().0 {
             let q = qubit(pair[1]);
             match pair[0] {
-                Target::Rec(k) => self.ops.push(Op::Feedback {
-                    record: self.num_measurements - k,
-                    q,
-                    x,
-                    z,
-                }),
+                Target::Rec(lookback) => self.push(Op::Feedback { lookback, q, x, z }),
                 Target::Qubit(_) if x && z => {
                     return Err(self.unsupported(op.name.canonical_name(), op.span));
                 }
@@ -280,7 +283,7 @@ impl Compiler<'_> {
                             line: op.span.line(self.line_map),
                         });
                     }
-                    self.ops.push(if z { Op::Cz(c, q) } else { Op::Cx(c, q) });
+                    self.push(if z { Op::Cz(c, q) } else { Op::Cx(c, q) });
                 }
             }
         }
@@ -308,7 +311,7 @@ impl Compiler<'_> {
 
     fn pauli1(&mut self, op: &NoiseOp, probs: [f64; 3]) -> Result<(), CssError> {
         if let Some(c) = self.channel(&op.targets, &probs, op.name.canonical_name(), op.span)? {
-            self.ops.push(Op::Pauli1(c));
+            self.push(Op::Pauli1(c));
         }
         Ok(())
     }
@@ -316,7 +319,7 @@ impl Compiler<'_> {
     fn pauli2(&mut self, op: &NoiseOp, probs: &[f64]) -> Result<(), CssError> {
         let pairs = op.targets.as_chunks::<2>().0;
         if let Some(c) = self.channel(pairs, probs, op.name.canonical_name(), op.span)? {
-            self.ops.push(Op::Pauli2(c));
+            self.push(Op::Pauli2(c));
         }
         Ok(())
     }
@@ -331,17 +334,14 @@ impl Compiler<'_> {
         };
         let log1m_flip = log1m(op.args.first().copied().unwrap_or(0.0));
         for &q in &op.targets {
-            self.ops.push(Op::Measure {
+            self.push(Op::Measure {
                 q,
                 basis,
                 reset,
                 log1m_flip,
             });
-            if reset {
-                self.new_segment(q);
-            }
+            self.new_segment(q);
         }
-        self.num_measurements += op.targets.len();
         Ok(())
     }
 
@@ -355,9 +355,9 @@ impl Compiler<'_> {
         for p in [p0, p1, p2, p0 + 2.0 * p1] {
             self.check(p, name, span)?;
         }
-        let p = (p0 + 2.0 * p1).max(p2);
+        let p = (p0 + 2.0 * p1).max(p2).min(1.0);
         if p > 0.0 && !targets.is_empty() {
-            self.ops.push(Op::CorrelatedLoss(Box::new(PairLoss {
+            self.push(Op::CorrelatedLoss(Box::new(PairLoss {
                 pairs: targets.iter().map(|&(a, b)| [a, b]).collect(),
                 log1m_p: log1m(p),
                 both: p0 / p,
@@ -379,7 +379,8 @@ impl Compiler<'_> {
         for &p in probs {
             self.check(p, name, span)?;
         }
-        let total = self.check(probs.iter().sum(), name, span)?;
+        let total: f64 = probs.iter().sum();
+        self.check(total, name, span)?;
         if total == 0.0 || targets.is_empty() {
             return Ok(None);
         }
@@ -392,14 +393,14 @@ impl Compiler<'_> {
             .collect();
         Ok(Some(Box::new(Channel {
             targets: targets.to_vec(),
-            log1m_p: log1m(total),
+            log1m_p: log1m(total.min(1.0)),
             cdf,
         })))
     }
 
-    fn check(&self, p: f64, name: &str, span: Span) -> Result<f64, CssError> {
+    fn check(&self, p: f64, name: &str, span: Span) -> Result<(), CssError> {
         if (0.0..=1.0 + 1e-12).contains(&p) {
-            Ok(p.min(1.0))
+            Ok(())
         } else {
             Err(ExecError::InvalidProbability {
                 name: name.to_string(),
@@ -418,17 +419,61 @@ impl Compiler<'_> {
         .into()
     }
 
+    /// Compile the body once and check its labels iteration by iteration. Once the labels of the
+    /// live segments repeat, every further period adds the same constraints, so whole periods are
+    /// skipped and only the remainder is checked.
+    fn repeat(&mut self, count: u64, body: &[ExtendedInstruction]) -> Result<(), CssError> {
+        let outer = std::mem::take(&mut self.ops);
+        let emit = self.emit;
+        let mut seen = HashMap::new();
+        let mut iteration = 0;
+        while iteration < count {
+            if let Some(start) = seen.insert(self.label_state(), iteration) {
+                iteration = count - (count - iteration) % (iteration - start);
+                seen.clear();
+                continue;
+            }
+            self.block(body)?;
+            self.emit = false;
+            iteration += 1;
+        }
+        self.emit = emit;
+        let body = std::mem::replace(&mut self.ops, outer);
+        self.push(Op::Repeat(Box::new(Repeat { count, body })));
+        Ok(())
+    }
+
+    /// Hadamard parity and label class of each qubit's live segment, with classes numbered in
+    /// order of first appearance and labels relative to the class's first qubit.
+    fn label_state(&mut self) -> Vec<(usize, bool, bool)> {
+        let mut classes = HashMap::new();
+        let mut state = Vec::with_capacity(self.segment.len());
+        for (&segment, &hadamard) in self.segment.iter().zip(&self.hadamard) {
+            let (root, parity) = self.labels.find(segment);
+            let next = classes.len();
+            let &mut (class, first) = classes.entry(root).or_insert((next, parity));
+            state.push((class, parity ^ first, hadamard));
+        }
+        state
+    }
+
+    fn push(&mut self, op: Op) {
+        if self.emit {
+            self.ops.push(op);
+        }
+    }
+
     fn reset(&mut self, q: usize, basis: Basis) {
-        self.ops.push(Op::Reset { q, basis });
+        self.push(Op::Reset { q, basis });
         self.new_segment(q);
     }
 
     fn pauli(&mut self, q: usize, x: bool, z: bool) {
-        self.ops.push(Op::Pauli { q, x, z });
+        self.push(Op::Pauli { q, x, z });
     }
 
     fn hadamard(&mut self, q: usize) {
-        self.ops.push(Op::H(q));
+        self.push(Op::H(q));
         self.hadamard[q] ^= true;
     }
 

@@ -381,8 +381,8 @@ macro_rules! create_interface {
                 // use the validated path to skip redundant re-validation.
                 let raw = py.detach(|| {
                     ppvm_stim::sample_validated(
-                        &prog.0.instructions,
-                        prog.0.measurement_count(),
+                        &prog.program.instructions,
+                        prog.program.measurement_count(),
                         num_shots,
                         |i| match seed {
                             Some(s) => GeneralizedTableau::<$type, $indexType>::new_with_seed(

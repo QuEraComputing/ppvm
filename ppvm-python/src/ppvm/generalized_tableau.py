@@ -559,8 +559,16 @@ class GeneralizedTableau(
         if n_qubits is None:
             n_qubits = max(1, prog.num_qubits)
         native_cls = _native_tableau_cls(n_qubits)
+        _check_n_qubits(prog, n_qubits)
         buf, shape = native_cls.sample(prog, n_qubits, min_abs_coeff, num_shots, seed)
         return _shots(buf, shape, as_numpy)
+
+
+def _check_n_qubits(prog: StimProgram, n_qubits: int | None) -> None:
+    if n_qubits is not None and n_qubits < prog.num_qubits:
+        raise ValueError(
+            f"n_qubits={n_qubits} is less than the {prog.num_qubits} qubits the program uses"
+        )
 
 
 def _shots(
@@ -626,7 +634,7 @@ def sample_stim(
     ``method="tableau"`` runs `GeneralizedTableau.sample`. ``method="css"`` runs the
     CSS frame sampler, which simulates loss and leakage exactly with many shots per
     machine word, but only for circuits that are CSS up to Hadamard gates (see
-    `StimProgram.is_css`); ``n_qubits`` and ``min_abs_coeff`` do not apply to it.
+    `StimProgram.is_css`); it ignores ``min_abs_coeff`` and needs no ``n_qubits``.
     ``method="auto"`` (the default) uses the CSS sampler whenever the program allows
     it. Both samplers draw from the same distribution, but a given seed yields
     different shots in each.
@@ -639,6 +647,7 @@ def sample_stim(
     if method not in ("auto", "tableau", "css"):
         raise ValueError(f"method must be 'auto', 'tableau' or 'css', got {method!r}")
     if method == "css" or (method == "auto" and prog.is_css):
+        _check_n_qubits(prog, n_qubits)
         buf, shape = prog._sample_css(num_shots, seed)
         return _shots(buf, shape, as_numpy)
     return GeneralizedTableau.sample(

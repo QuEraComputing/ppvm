@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use rand::rngs::SmallRng;
-use rand::{Rng, RngExt, SeedableRng};
+use rand::{RngExt, SeedableRng};
 
 use super::CssProgram;
 use super::bits::{Bits, LANES, SHOTS};
@@ -14,11 +14,26 @@ impl CssProgram {
     ///
     /// The result depends only on `seed`, not on how shots are split across threads.
     pub fn sample(&self, num_shots: usize, seed: u64) -> Vec<u8> {
+        let mut out = vec![0; num_shots * self.num_measurements];
+        self.sample_into(&mut out, seed);
+        out
+    }
+
+    /// Like [`sample`](Self::sample), writing `out.len() / num_measurements()` shots into `out`.
+    ///
+    /// # Panics
+    ///
+    /// If `out.len()` is not a multiple of [`num_measurements`](Self::num_measurements).
+    pub fn sample_into(&self, out: &mut [u8], seed: u64) {
         let m = self.num_measurements;
-        let mut out = vec![0; num_shots * m];
         if m == 0 {
-            return out;
+            return;
         }
+        assert!(
+            out.len().is_multiple_of(m),
+            "output length {} is not a multiple of {m} measurements",
+            out.len()
+        );
         let base = SmallRng::seed_from_u64(seed).random::<u64>();
         let run = |batch: &mut Batch, (i, chunk): (usize, &mut [u8])| {
             let mut rng = SmallRng::seed_from_u64(base.wrapping_add(i as u64));
@@ -39,7 +54,6 @@ impl CssProgram {
                 run(&mut batch, item);
             }
         }
-        out
     }
 }
 
@@ -48,7 +62,7 @@ impl CssProgram {
 struct Batch {
     x: Vec<Bits>,
     z: Vec<Bits>,
-    /// Lost or leaked: gates skip the qubit.
+    /// Lost or leaked: gates skip the qubit, and its frame is unused until a reload rewrites it.
     inactive: Vec<Bits>,
     leaked: Vec<Bits>,
     /// What a leaked qubit reads.
@@ -57,6 +71,7 @@ struct Batch {
     values: Vec<u64>,
     lost: Vec<u64>,
     num_measurements: usize,
+    recorded: usize,
 }
 
 impl Batch {
@@ -72,6 +87,7 @@ impl Batch {
             values: vec![0; records],
             lost: vec![0; records],
             num_measurements: program.num_measurements,
+            recorded: 0,
         }
     }
 
@@ -79,8 +95,12 @@ impl Batch {
         for q in 0..program.num_qubits {
             self.reload(q, Basis::Z, Bits::ONES, rng);
         }
-        let mut m = 0;
-        for op in &program.ops {
+        self.recorded = 0;
+        self.execute(&program.ops, rng);
+    }
+
+    fn execute(&mut self, ops: &[Op], rng: &mut SmallRng) {
+        for op in ops {
             match *op {
                 Op::Reset { q, basis } => self.reload(q, basis, Bits::ONES, rng),
                 Op::ResetState(q) => self.prepare(q, Basis::Z, Bits::ONES, rng),
@@ -95,8 +115,7 @@ impl Batch {
                     reset,
                     log1m_flip,
                 } => {
-                    self.measure(m, q, basis, log1m_flip, rng);
-                    m += 1;
+                    self.measure(q, basis, log1m_flip, rng);
                     if reset {
                         self.reload(q, basis, Bits::ONES, rng);
                     } else if basis == Basis::Z {
@@ -107,14 +126,14 @@ impl Batch {
                 }
                 Op::Pad { bit, log1m_flip } => {
                     let value = if bit { Bits::ONES } else { Bits::ZERO };
-                    self.record(m, value ^ bernoulli(log1m_flip, rng), Bits::ZERO);
-                    m += 1;
+                    self.record(value ^ bernoulli(log1m_flip, rng), Bits::ZERO);
                 }
                 Op::H(q) => std::mem::swap(&mut self.x[q], &mut self.z[q]),
                 Op::Pauli { q, x, z } => self.pauli(q, Bits::ONES, x, z),
-                Op::Feedback { record, q, x, z } => {
+                Op::Feedback { lookback, q, x, z } => {
+                    let m = self.recorded - lookback;
                     let value = Bits(std::array::from_fn(|w| {
-                        self.values[w * self.num_measurements + record]
+                        self.values[w * self.num_measurements + m]
                     }));
                     self.pauli(q, value, x, z);
                 }
@@ -135,6 +154,11 @@ impl Batch {
                 Op::Loss(ref c) => self.loss(c, rng),
                 Op::Leakage(ref c) => self.leakage(c, rng),
                 Op::CorrelatedLoss(ref c) => self.correlated_loss(c, rng),
+                Op::Repeat(ref r) => {
+                    for _ in 0..r.count {
+                        self.execute(&r.body, rng);
+                    }
+                }
             }
         }
     }
@@ -156,21 +180,23 @@ impl Batch {
         self.prepare(q, basis, mask, rng);
     }
 
-    fn measure(&mut self, m: usize, q: usize, basis: Basis, log1m_flip: f64, rng: &mut SmallRng) {
+    fn measure(&mut self, q: usize, basis: Basis, log1m_flip: f64, rng: &mut SmallRng) {
         let frame = match basis {
             Basis::Z => self.x[q],
             Basis::X => self.z[q],
         };
         let (inactive, leaked) = (self.inactive[q], self.leaked[q]);
         let value = (frame & !inactive) | (self.pin[q] & leaked);
-        self.record(m, value ^ bernoulli(log1m_flip, rng), inactive & !leaked);
+        self.record(value ^ bernoulli(log1m_flip, rng), inactive & !leaked);
     }
 
-    fn record(&mut self, m: usize, value: Bits, lost: Bits) {
+    fn record(&mut self, value: Bits, lost: Bits) {
+        let m = self.recorded;
         for w in 0..LANES {
             self.values[w * self.num_measurements + m] = value.0[w] & !lost.0[w];
             self.lost[w * self.num_measurements + m] = lost.0[w];
         }
+        self.recorded += 1;
     }
 
     fn pauli(&mut self, q: usize, mask: Bits, x: bool, z: bool) {
@@ -251,15 +277,21 @@ impl Batch {
         });
     }
 
-    /// Write the records of this batch's first `chunk.len() / num_measurements` shots.
+    /// Write the records of this batch's first `chunk.len() / num_measurements` shots, eight
+    /// shots at a time through byte-wide copies of their record bits.
     fn write(&self, chunk: &mut [u8]) {
         let m = self.num_measurements;
-        for (shot, row) in chunk.chunks_exact_mut(m).enumerate() {
-            let (lane, bit) = (shot / 64, shot % 64);
-            let values = &self.values[lane * m..][..m];
-            let lost = &self.lost[lane * m..][..m];
-            for ((out, &v), &l) in row.iter_mut().zip(values).zip(lost) {
-                *out = ((v >> bit & 1) | (l >> bit & 1) << 1) as u8;
+        let (mut values, mut lost) = (vec![0u8; m], vec![0u8; m]);
+        for (group, rows) in chunk.chunks_mut(8 * m).enumerate() {
+            let (lane, shift) = (group / 8, group % 8 * 8);
+            for k in 0..m {
+                values[k] = (self.values[lane * m + k] >> shift) as u8;
+                lost[k] = (self.lost[lane * m + k] >> shift) as u8;
+            }
+            for (bit, row) in rows.chunks_exact_mut(m).enumerate() {
+                for ((out, &v), &l) in row.iter_mut().zip(&values).zip(&lost) {
+                    *out = (v >> bit & 1) | (l >> bit & 1) << 1;
+                }
             }
         }
     }
@@ -284,7 +316,7 @@ fn events(
     }
 }
 
-fn skip(log1m_p: f64, rng: &mut impl Rng) -> usize {
+fn skip(log1m_p: f64, rng: &mut SmallRng) -> usize {
     let u: f64 = rng.random();
     ((-u).ln_1p() / log1m_p) as usize
 }

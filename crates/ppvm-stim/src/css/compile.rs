@@ -108,7 +108,6 @@ impl CssProgram {
         let mut compiler = Compiler {
             line_map: &program.line_map,
             ops: Vec::new(),
-            emit: true,
             segment: (0..num_qubits).map(|_| labels.add()).collect(),
             hadamard: vec![false; num_qubits],
             labels,
@@ -171,8 +170,6 @@ impl Labels {
 struct Compiler<'a> {
     line_map: &'a LineMap,
     ops: Vec<Op>,
-    /// False while re-running a `REPEAT` body only to check its labels.
-    emit: bool,
     labels: Labels,
     segment: Vec<usize>,
     hadamard: Vec<bool>,
@@ -192,7 +189,7 @@ impl Compiler<'_> {
             I::Annotation(_) => Ok(()),
             I::Loss { p, targets, span } => {
                 if let Some(c) = self.channel(targets, &[*p], "I_ERROR[loss]", *span)? {
-                    self.push(Op::Loss(c));
+                    self.ops.push(Op::Loss(c));
                 }
                 Ok(())
             }
@@ -203,22 +200,26 @@ impl Compiler<'_> {
                 span,
             } => {
                 if let Some(c) = self.channel(targets, &[*p0, *p1], "I_ERROR[leakage]", *span)? {
-                    self.push(Op::Leakage(c));
+                    self.ops.push(Op::Leakage(c));
                 }
                 Ok(())
             }
             I::CorrelatedLoss { ps, targets, span } => self.correlated_loss(*ps, targets, *span),
             I::ResetLoss { targets, .. } => {
-                targets.iter().for_each(|&q| self.push(Op::ResetLoss(q)));
+                targets
+                    .iter()
+                    .for_each(|&q| self.ops.push(Op::ResetLoss(q)));
                 Ok(())
             }
             I::ResetLeakage { targets, .. } => {
-                targets.iter().for_each(|&q| self.push(Op::ResetLeakage(q)));
+                targets
+                    .iter()
+                    .for_each(|&q| self.ops.push(Op::ResetLeakage(q)));
                 Ok(())
             }
             I::ResetState { targets, .. } => {
                 for &q in targets {
-                    self.push(Op::ResetState(q));
+                    self.ops.push(Op::ResetState(q));
                     self.new_segment(q);
                 }
                 Ok(())
@@ -226,7 +227,7 @@ impl Compiler<'_> {
             I::MPad { prob, bits, .. } => {
                 let log1m_flip = log1m(prob.unwrap_or(0.0));
                 bits.iter()
-                    .for_each(|&bit| self.push(Op::Pad { bit, log1m_flip }));
+                    .for_each(|&bit| self.ops.push(Op::Pad { bit, log1m_flip }));
                 Ok(())
             }
             I::Repeat { count, body, .. } => self.repeat(*count, body),
@@ -271,7 +272,7 @@ impl Compiler<'_> {
         for pair in op.targets.as_chunks::<2>().0 {
             let q = qubit(pair[1]);
             match pair[0] {
-                Target::Rec(lookback) => self.push(Op::Feedback { lookback, q, x, z }),
+                Target::Rec(lookback) => self.ops.push(Op::Feedback { lookback, q, x, z }),
                 Target::Qubit(_) if x && z => {
                     return Err(self.unsupported(op.name.canonical_name(), op.span));
                 }
@@ -283,7 +284,7 @@ impl Compiler<'_> {
                             line: op.span.line(self.line_map),
                         });
                     }
-                    self.push(if z { Op::Cz(c, q) } else { Op::Cx(c, q) });
+                    self.ops.push(if z { Op::Cz(c, q) } else { Op::Cx(c, q) });
                 }
             }
         }
@@ -311,7 +312,7 @@ impl Compiler<'_> {
 
     fn pauli1(&mut self, op: &NoiseOp, probs: [f64; 3]) -> Result<(), CssError> {
         if let Some(c) = self.channel(&op.targets, &probs, op.name.canonical_name(), op.span)? {
-            self.push(Op::Pauli1(c));
+            self.ops.push(Op::Pauli1(c));
         }
         Ok(())
     }
@@ -319,7 +320,7 @@ impl Compiler<'_> {
     fn pauli2(&mut self, op: &NoiseOp, probs: &[f64]) -> Result<(), CssError> {
         let pairs = op.targets.as_chunks::<2>().0;
         if let Some(c) = self.channel(pairs, probs, op.name.canonical_name(), op.span)? {
-            self.push(Op::Pauli2(c));
+            self.ops.push(Op::Pauli2(c));
         }
         Ok(())
     }
@@ -334,7 +335,7 @@ impl Compiler<'_> {
         };
         let log1m_flip = log1m(op.args.first().copied().unwrap_or(0.0));
         for &q in &op.targets {
-            self.push(Op::Measure {
+            self.ops.push(Op::Measure {
                 q,
                 basis,
                 reset,
@@ -357,7 +358,7 @@ impl Compiler<'_> {
         }
         let p = (p0 + 2.0 * p1).max(p2).min(1.0);
         if p > 0.0 && !targets.is_empty() {
-            self.push(Op::CorrelatedLoss(Box::new(PairLoss {
+            self.ops.push(Op::CorrelatedLoss(Box::new(PairLoss {
                 pairs: targets.iter().map(|&(a, b)| [a, b]).collect(),
                 log1m_p: log1m(p),
                 both: p0 / p,
@@ -419,27 +420,28 @@ impl Compiler<'_> {
         .into()
     }
 
-    /// Compile the body once and check its labels iteration by iteration. Once the labels of the
-    /// live segments repeat, every further period adds the same constraints, so whole periods are
-    /// skipped and only the remainder is checked.
+    /// Keep the ops of the first iteration and check the labels of the others. Once the labels of
+    /// the live segments repeat, every further period adds the same constraints, so whole periods
+    /// are skipped and only the remainder is checked.
     fn repeat(&mut self, count: u64, body: &[ExtendedInstruction]) -> Result<(), CssError> {
-        let outer = std::mem::take(&mut self.ops);
-        let emit = self.emit;
+        let start = self.ops.len();
         let mut seen = HashMap::new();
         let mut iteration = 0;
         while iteration < count {
-            if let Some(start) = seen.insert(self.label_state(), iteration) {
-                iteration = count - (count - iteration) % (iteration - start);
+            if let Some(first) = seen.insert(self.label_state(), iteration) {
+                iteration = count - (count - iteration) % (iteration - first);
                 seen.clear();
                 continue;
             }
+            let len = self.ops.len();
             self.block(body)?;
-            self.emit = false;
+            if iteration > 0 {
+                self.ops.truncate(len);
+            }
             iteration += 1;
         }
-        self.emit = emit;
-        let body = std::mem::replace(&mut self.ops, outer);
-        self.push(Op::Repeat(Box::new(Repeat { count, body })));
+        let body = self.ops.split_off(start);
+        self.ops.push(Op::Repeat(Box::new(Repeat { count, body })));
         Ok(())
     }
 
@@ -457,23 +459,17 @@ impl Compiler<'_> {
         state
     }
 
-    fn push(&mut self, op: Op) {
-        if self.emit {
-            self.ops.push(op);
-        }
-    }
-
     fn reset(&mut self, q: usize, basis: Basis) {
-        self.push(Op::Reset { q, basis });
+        self.ops.push(Op::Reset { q, basis });
         self.new_segment(q);
     }
 
     fn pauli(&mut self, q: usize, x: bool, z: bool) {
-        self.push(Op::Pauli { q, x, z });
+        self.ops.push(Op::Pauli { q, x, z });
     }
 
     fn hadamard(&mut self, q: usize) {
-        self.push(Op::H(q));
+        self.ops.push(Op::H(q));
         self.hadamard[q] ^= true;
     }
 

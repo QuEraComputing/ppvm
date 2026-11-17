@@ -746,7 +746,7 @@ checksum = "af491d569909a7e4dee0ad7db7f5341fef5c614d5b8ec8cf765732aba3cff681"
 dependencies = [
  "serde",
  "termcolor",
- "unicode-width 0.1.14",
+ "unicode-width 0.2.0",
 ]
 
 [[package]]
@@ -761,7 +761,7 @@ version = "3.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "faf9468729b8cbcea668e36183cb69d317348c2e08e994829fb56ebfdfbaac34"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1208,7 +1208,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2902,7 +2902,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.11.0",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3237,7 +3237,7 @@ dependencies = [
  "getrandom 0.3.3",
  "once_cell",
  "rustix 1.1.2",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3451,8 +3451,9 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vihaco"
-version = "0.7.0"
-source = "git+https://github.com/QuEraComputing/vihaco?branch=feat%2Fprogram-breakpoint-span#ce4e18d31c6cd67785de20ba08abc3a6cae640de"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87ff9f708c02bf49013e897422bf12d17a6a56a25146fb4383858018b5459b4a"
 dependencies = [
  "byteorder",
  "chumsky 0.10.1",
@@ -3474,8 +3475,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-abi"
-version = "0.7.0"
-source = "git+https://github.com/QuEraComputing/vihaco?branch=feat%2Fprogram-breakpoint-span#ce4e18d31c6cd67785de20ba08abc3a6cae640de"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c8d35406059c26eb577c0860e4613b0f001793563f7f742bed81e593beb53fe"
 dependencies = [
  "byteorder",
  "chumsky 0.10.1",
@@ -3487,8 +3489,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-abi-derive"
-version = "0.7.0"
-source = "git+https://github.com/QuEraComputing/vihaco?branch=feat%2Fprogram-breakpoint-span#ce4e18d31c6cd67785de20ba08abc3a6cae640de"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a65cd9383ce24d12bd8a283fad1517e5e931dc476284ba3d1e468fac99db334c"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -3498,8 +3501,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-bytecode"
-version = "0.7.0"
-source = "git+https://github.com/QuEraComputing/vihaco?branch=feat%2Fprogram-breakpoint-span#ce4e18d31c6cd67785de20ba08abc3a6cae640de"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4faba6dc3c5d385b4ca72ac99351991b14cfe626a4772e2c4ae0f5e3ea733cb8"
 dependencies = [
  "byteorder",
  "chumsky 0.10.1",
@@ -3519,8 +3523,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-cpu"
-version = "0.7.0"
-source = "git+https://github.com/QuEraComputing/vihaco?branch=feat%2Fprogram-breakpoint-span#ce4e18d31c6cd67785de20ba08abc3a6cae640de"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc9ce858874644fcb913c3033c66f8e15cb5c6f203cddaecc8a594acd9ba7a9d"
 dependencies = [
  "chumsky 0.10.1",
  "codespan",
@@ -3535,8 +3540,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-module"
-version = "0.7.0"
-source = "git+https://github.com/QuEraComputing/vihaco?branch=feat%2Fprogram-breakpoint-span#ce4e18d31c6cd67785de20ba08abc3a6cae640de"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d340f2263216a26650e8711a02baca2756616aea50b074a72dc18fed9b4e5c7e"
 dependencies = [
  "chumsky 0.10.1",
  "colored",
@@ -3549,8 +3555,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-parser"
-version = "0.7.0"
-source = "git+https://github.com/QuEraComputing/vihaco?branch=feat%2Fprogram-breakpoint-span#ce4e18d31c6cd67785de20ba08abc3a6cae640de"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d30ef40bb8adfaf529b6af7d394253f9d039144c75ac8e9953bdc73cdc7b720"
 dependencies = [
  "byteorder",
  "chumsky 0.10.1",
@@ -3559,8 +3566,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-parser-derive"
-version = "0.7.0"
-source = "git+https://github.com/QuEraComputing/vihaco?branch=feat%2Fprogram-breakpoint-span#ce4e18d31c6cd67785de20ba08abc3a6cae640de"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "709f6dab7563d5b570514bd7fdaff3592615d5aef6e8316aab3dd61ee730ea2d"
 dependencies = [
  "chumsky 0.10.1",
  "eyre",
@@ -3572,8 +3580,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-runtime"
-version = "0.7.0"
-source = "git+https://github.com/QuEraComputing/vihaco?branch=feat%2Fprogram-breakpoint-span#ce4e18d31c6cd67785de20ba08abc3a6cae640de"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2dce0dfe9ab6e0a026ed59912471b7389610fa99e98d2f1d0207ff77966721d9"
 dependencies = [
  "chumsky 0.10.1",
  "eyre",
@@ -3588,8 +3597,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-runtime-derive"
-version = "0.7.0"
-source = "git+https://github.com/QuEraComputing/vihaco?branch=feat%2Fprogram-breakpoint-span#ce4e18d31c6cd67785de20ba08abc3a6cae640de"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "305c7fc6066150f720dd767e0e70afd0c59b40c2a133bbf79fe16b48f76c06e5"
 dependencies = [
  "convert_case",
  "proc-macro-crate",
@@ -3600,8 +3610,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-stdlib"
-version = "0.7.0"
-source = "git+https://github.com/QuEraComputing/vihaco?branch=feat%2Fprogram-breakpoint-span#ce4e18d31c6cd67785de20ba08abc3a6cae640de"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8f652472324851594c9cb45e3fe0bff28fd1a71b548da3bfbd85ed71a4f5c53"
 dependencies = [
  "chumsky 0.10.1",
  "eyre",
@@ -3616,8 +3627,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-syntax"
-version = "0.7.0"
-source = "git+https://github.com/QuEraComputing/vihaco?branch=feat%2Fprogram-breakpoint-span#ce4e18d31c6cd67785de20ba08abc3a6cae640de"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "91c97335fd6c6e73f2ddebcdbe42b8d93b0f726a0ef04f31d5af0ee11e5d4dfa"
 dependencies = [
  "chumsky 0.10.1",
  "eyre",
@@ -3820,7 +3832,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -4,7 +4,7 @@
 //! Custom circuit messages that don't fit vihaco's standard stack protocols.
 
 use smallvec::SmallVec;
-use vihaco::runtime::{AutomaticMessage, PrepareMessage};
+use vihaco::runtime::ReusableMessageRecipe;
 use vihaco::word::Word;
 use vihaco::{Composite, Execute, Field, HasOperandStack, PopStack};
 
@@ -140,9 +140,7 @@ where
 // any composite; switch to a public extension point once QuEraComputing/vihaco#169 lands.
 macro_rules! automatic_batch_message {
     ($msg:ident, $pop:ident) => {
-        impl<P> AutomaticMessage for $msg<P> {}
-
-        impl<C, F, I, Ctx: ?Sized, P> PrepareMessage<C, F, I, Ctx> for $msg<P>
+        impl<C, F, I, Ctx: ?Sized, P> ReusableMessageRecipe<C, F, I, Ctx> for $msg<P>
         where
             C: Composite + Field<F> + HasOperandStack<I>,
             C::Child: Execute<I, Message = $msg<P>>,
@@ -159,9 +157,7 @@ macro_rules! automatic_batch_message {
 automatic_batch_message!(QubitBatch, pop_qubit_batch);
 automatic_batch_message!(QubitPairBatch, pop_qubit_pair_batch);
 
-impl AutomaticMessage for TwoQubitPauliErrorMsg {}
-
-impl<C, F, I, Ctx: ?Sized> PrepareMessage<C, F, I, Ctx> for TwoQubitPauliErrorMsg
+impl<C, F, I, Ctx: ?Sized> ReusableMessageRecipe<C, F, I, Ctx> for TwoQubitPauliErrorMsg
 where
     C: Composite + Field<F> + HasOperandStack<I>,
     C::Child: Execute<I, Message = TwoQubitPauliErrorMsg>,
@@ -172,9 +168,7 @@ where
     }
 }
 
-impl AutomaticMessage for TraceMessage {}
-
-impl<C, F, I, Ctx> PrepareMessage<C, F, I, Ctx> for TraceMessage
+impl<C, F, I, Ctx> ReusableMessageRecipe<C, F, I, Ctx> for TraceMessage
 where
     C: Composite + Field<F> + HasOperandStack<I>,
     C::Child: Execute<I, Message = TraceMessage>,

@@ -10,4 +10,4 @@ description = "Quantum-circuit instruction set for the vihaco virtual machine, u
 chumsky = "0.10"
 eyre = "0.6.12"
 smallvec = "1.15.1"
-vihaco = { version = "0.7.0", features = ["program-image-execution"] }
+vihaco = { version = "0.8.0", features = ["program-image-execution"] }

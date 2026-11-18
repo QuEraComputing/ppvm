@@ -11,7 +11,7 @@
 use ppvm_pauli_kernels::heisenberg;
 
 use super::InverseTableau;
-use super::bitword::{BitWord, LANES, ZERO, flip_bit, get_bit, transpose_64x64};
+use super::bitword::{BitWord, LANES, ZERO, bit_position, flip_bit, get_bit, transpose_64x64};
 
 pub(super) struct TransposedTableau {
     n: usize,
@@ -120,12 +120,21 @@ impl TransposedTableau {
         ]
     }
 
-    pub(super) fn negative(&self, k: usize, i: usize) -> bool {
-        get_bit(&self.signs[k], i)
+    /// Columns where row `i` of block `k` has an X bit, ascending, into `out`:
+    /// word `i / 64` of each column, without touching the Z bits.
+    pub(super) fn x_support(&self, k: usize, i: usize, out: &mut Vec<usize>) {
+        let (w, mask) = bit_position(i);
+        let words = self.x[k][w..].iter().step_by(self.stride);
+        out.extend(
+            words
+                .enumerate()
+                .filter(|&(_, &word)| word & mask != ZERO)
+                .map(|(c, _)| c),
+        );
     }
 
-    pub(super) fn num_qubits(&self) -> usize {
-        self.n
+    pub(super) fn negative(&self, k: usize, i: usize) -> bool {
+        get_bit(&self.signs[k], i)
     }
 
     /// [`InverseTableau::fan_out`] without CZ targets, on columns: the rules

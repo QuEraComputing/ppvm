@@ -107,7 +107,7 @@ impl Collapse for InverseTableau {
 
 impl Collapse for TransposedTableau {
     fn iz_x_support(&self, q: usize, out: &mut Vec<usize>) {
-        out.extend((0..self.num_qubits()).filter(|&c| self.bits(1, q, c)[0]));
+        self.x_support(1, q, out);
     }
 
     fn iz_z_bit(&self, q: usize, c: usize) -> bool {

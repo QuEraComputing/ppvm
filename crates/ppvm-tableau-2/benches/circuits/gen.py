@@ -14,7 +14,8 @@ size (118 qubits). Run with the `run_stim` example; per-operation cost is
 - mr_unfused: mr_split with a TICK after each MR, which Stim cannot merge:
   really one target per instruction.
 
-Regenerate with `python3 gen.py` in this directory (seeded, deterministic).
+Generate with `python3 gen.py` in this directory (seeded, deterministic); the
+output is not tracked.
 """
 import random
 n = 118

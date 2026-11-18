@@ -45,17 +45,27 @@ impl<V: VirtualState> Measure for GeneralizedTableau<V> {
         Some(self.sample_z(q))
     }
 
-    /// With no active and no lost qubits, the whole batch runs on the
-    /// tableau's `measure_many`; otherwise one target at a time.
+    /// With no active qubits, the live targets run as one batch on the
+    /// tableau's `measure_many` and lost ones give `None`; otherwise one target
+    /// at a time.
     fn measure_many(&mut self, targets: &[usize]) -> Vec<Option<bool>> {
-        if !self.state.is_zero() || targets.iter().any(|&q| self.is_lost(q)) {
+        if !self.state.is_zero() {
             return targets.iter().map(|&q| self.measure(q)).collect();
         }
-        let mut outcomes = vec![false; targets.len()];
+        let live: Vec<usize> = targets
+            .iter()
+            .copied()
+            .filter(|&q| !self.is_lost(q))
+            .collect();
+        let mut outcomes = vec![false; live.len()];
         let rng = &mut self.rng;
         self.tableau
-            .measure_many(targets, || rng.random(), &mut outcomes);
-        outcomes.into_iter().map(Some).collect()
+            .measure_many(&live, || rng.random(), &mut outcomes);
+        let mut outcomes = outcomes.into_iter();
+        targets
+            .iter()
+            .map(|&q| (!self.is_lost(q)).then(|| outcomes.next().unwrap()))
+            .collect()
     }
 }
 

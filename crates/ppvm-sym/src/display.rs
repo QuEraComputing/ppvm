@@ -27,12 +27,9 @@ impl Display for crate::term::Sum {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[")?;
         if self.c0 != 0.0 {
-            write!(f, "{:.3} ", self.c0)?;
-
-            if self.terms.is_empty() {
-                return Ok(());
-            } else {
-                write!(f, "+ ")?;
+            write!(f, "{:.3}", self.c0)?;
+            if !self.terms.is_empty() {
+                write!(f, " + ")?;
             }
         }
 
@@ -84,6 +81,10 @@ mod tests {
 
     #[test]
     fn test_display_term() {
+        let mut c = crate::Sum::new();
+        c += 3.0;
+        assert_eq!(c.to_string(), "[3.000]");
+
         let mut s = Term::from_f64(3.0);
         s += Term::var(1).sin();
         s += Term::var(2).cos();

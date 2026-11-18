@@ -103,6 +103,19 @@ impl<V: VirtualState> TwoQubitPauliError<f64> for GeneralizedTableau<V> {
             self.pauli(b, (k + 1) % 4);
         }
     }
+
+    /// Skip sampling over pairs, as for `pauli_error_many`.
+    fn two_qubit_pauli_error_many(&mut self, pairs: &[(usize, usize)], p: [f64; 15]) {
+        let total: f64 = p.iter().sum();
+        let mut i = self.next_error(0, total);
+        while i < pairs.len() {
+            let k = self.draw_given_event(&p, total);
+            let (a, b) = pairs[i];
+            self.pauli(a, (k + 1) / 4);
+            self.pauli(b, (k + 1) % 4);
+            i = self.next_error(i + 1, total);
+        }
+    }
 }
 
 /// Stim's `DEPOLARIZE1(p)`: each of `X`, `Y`, `Z` with probability `p/3`.
@@ -121,6 +134,10 @@ impl<V: VirtualState> Depolarizing<f64> for GeneralizedTableau<V> {
 impl<V: VirtualState> Depolarizing2<f64> for GeneralizedTableau<V> {
     fn depolarize2(&mut self, a: usize, b: usize, p: f64) {
         self.two_qubit_pauli_error(a, b, [p / 15.0; 15]);
+    }
+
+    fn depolarize2_many(&mut self, pairs: &[(usize, usize)], p: f64) {
+        self.two_qubit_pauli_error_many(pairs, [p / 15.0; 15]);
     }
 }
 
@@ -265,5 +282,72 @@ mod tests {
         assert!(none.iter().all(|&b| b == bits('I')));
         let all = applied(50, 0, |s| s.x_error_many(&targets, 1.0));
         assert!(all.iter().all(|&b| b == bits('X')));
+    }
+
+    /// Batched two-qubit channels act on each pair independently: each of the
+    /// 15 Paulis at its rate (all distinct, so a mixed-up order shows), at
+    /// either end of the batch, and on neighbouring pairs.
+    #[test]
+    fn batched_two_qubit_channels_match_independent_rates() {
+        let (n, shots) = (400, 100);
+        let pairs: Vec<(usize, usize)> = (0..n / 2).map(|i| (2 * i, 2 * i + 1)).collect();
+        let rates: [f64; 15] = std::array::from_fn(|k| 0.0005 * (k + 1) as f64);
+        let total: f64 = rates.iter().sum();
+        let order: Vec<(bool, bool, bool, bool)> = "IX IY IZ XI XX XY XZ YI YX YY YZ ZI ZX ZY ZZ"
+            .split(' ')
+            .map(|pair| {
+                let c: Vec<char> = pair.chars().collect();
+                let ((xa, za), (xb, zb)) = (bits(c[0]), bits(c[1]));
+                (xa, za, xb, zb)
+            })
+            .collect();
+        let samples = |count: usize| (count * shots) as f64;
+        let within = |hits: usize, trials: f64, rate: f64| {
+            let sigma = (rate * (1.0 - rate) / trials).sqrt();
+            ((hits as f64 / trials) - rate).abs() <= 5.0 * sigma
+        };
+        let channels: [(&str, [f64; 15], f64, fn(&mut Sim, &[(usize, usize)])); 2] = [
+            ("PAULI_CHANNEL_2", rates, total, |s, t| {
+                s.two_qubit_pauli_error_many(t, std::array::from_fn(|k| 0.0005 * (k + 1) as f64))
+            }),
+            ("DEPOLARIZE2", [0.06 / 15.0; 15], 0.06, |s, t| {
+                s.depolarize2_many(t, 0.06)
+            }),
+        ];
+        for (name, rates, total, channel) in channels {
+            let (mut per_pauli, mut ends, mut both) = ([0; 15], [0; 2], 0);
+            let tenth = pairs.len() / 10;
+            for seed in 0..shots {
+                let got = applied(n, seed as u64, |s| channel(s, &pairs));
+                let kinds: Vec<Option<usize>> = got
+                    .chunks(2)
+                    .map(|q| {
+                        order
+                            .iter()
+                            .position(|&o| o == (q[0].0, q[0].1, q[1].0, q[1].1))
+                    })
+                    .collect();
+                for k in kinds.iter().flatten() {
+                    per_pauli[*k] += 1;
+                }
+                let hit: Vec<bool> = kinds.iter().map(Option::is_some).collect();
+                ends[0] += hit[..tenth].iter().filter(|&&h| h).count();
+                ends[1] += hit[hit.len() - tenth..].iter().filter(|&&h| h).count();
+                both += hit.windows(2).filter(|w| w[0] && w[1]).count();
+            }
+            for k in 0..15 {
+                assert!(
+                    within(per_pauli[k], samples(pairs.len()), rates[k]),
+                    "{name}: {per_pauli:?}"
+                );
+            }
+            for end in ends {
+                assert!(within(end, samples(tenth), total), "{name}: ends {ends:?}");
+            }
+            assert!(
+                within(both, samples(pairs.len() - 1), total * total),
+                "{name}: both {both}"
+            );
+        }
     }
 }

@@ -239,6 +239,7 @@ impl ApplyGateRule for InverseTableau {
     }
 
     fn apply_sign1(&mut self, q: usize, rule: impl Fn(bool, bool) -> ([bool; 2], bool)) {
+        assert!(q < self.n, "qubit {q} out of range");
         let ((x_bits, x_flip), (z_bits, z_flip)) = (rule(true, false), rule(false, true));
         debug_assert!(x_bits == [true, false] && z_bits == [false, true]);
         if x_flip {
@@ -320,5 +321,13 @@ mod tests {
                 assert_canonical_commutation(&t);
             }
         }
+    }
+
+    /// A sign-only gate past the last qubit would flip another row's sign.
+    #[test]
+    #[should_panic(expected = "out of range")]
+    fn sign_gate_out_of_range_panics() {
+        use ppvm_traits_2::Clifford;
+        InverseTableau::new(4).z(5);
     }
 }

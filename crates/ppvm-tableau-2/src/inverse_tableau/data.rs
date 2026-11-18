@@ -81,13 +81,13 @@ impl InverseTableau {
 
     /// Row `ix_q = C⁻¹ X_q C`.
     pub fn ix(&self, q: usize) -> RowRef<'_> {
-        debug_assert!(q < self.n);
+        assert!(q < self.n, "qubit {q} out of range");
         self.row(q)
     }
 
     /// Row `iz_q = C⁻¹ Z_q C`.
     pub fn iz(&self, q: usize) -> RowRef<'_> {
-        debug_assert!(q < self.n);
+        assert!(q < self.n, "qubit {q} out of range");
         self.row(self.n + q)
     }
 

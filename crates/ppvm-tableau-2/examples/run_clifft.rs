@@ -6,8 +6,12 @@
 //! simulator per shot.
 //!
 //! ```text
-//! cargo run --release -p ppvm-tableau-2 --example run_clifft -- <circuit.stim> [shots] [--records <file>]
+//! cargo run --release -p ppvm-tableau-2 --example run_clifft -- <circuit.stim> [shots] [--records <file>] [--loss <p>]
 //! ```
+//!
+//! `--loss p` applies a loss channel with probability `p` to each target after
+//! every gate. A lost qubit's measurement is recorded as `0`; a full reset
+//! brings it back.
 //!
 //! Clifft's plain `R_X(α)`, `R_Y(α)`, `R_Z(α)` and `U3(θ, φ, λ)` / `U(…)`
 //! lines (angles in half-turns) are rewritten into `stim-parser`'s `I[…]` tags before parsing.
@@ -24,7 +28,7 @@ use rand::{RngExt, SeedableRng};
 
 use ppvm_tableau_2::{ActiveDormant, DenseState, GeneralizedTableau};
 use ppvm_traits_2::{
-    Clifford, Depolarizing2, Measure, PauliError, Reset, RotationOne, TGate, U3Gate,
+    Clifford, Depolarizing2, LossChannel, Measure, PauliError, Reset, RotationOne, TGate, U3Gate,
 };
 use stim_parser::ast::{Axis, ExtendedInstruction, PauliAxis, PauliFactor, Target};
 use stim_parser::instructions::{AnnotationKind, GateName, MeasureName, NoiseName};
@@ -346,7 +350,7 @@ fn run(
             reset,
         } => {
             change_basis(s, basis, q, true);
-            let m = s.measure(q).expect("no loss");
+            let m = s.measure(q).unwrap_or(false);
             if reset && m {
                 s.x(q);
             }
@@ -361,7 +365,7 @@ fn run(
         } => {
             let targets = &measured[at..at + len];
             for (m, &q) in s.measure_many(targets).into_iter().zip(targets) {
-                let m = m.expect("no loss");
+                let m = m.unwrap_or(false);
                 if reset && m {
                     s.x(q);
                 }
@@ -392,7 +396,7 @@ fn run(
             for f in &product[1..] {
                 s.cnot(f.qubit, first);
             }
-            let m = s.measure(first).expect("no loss");
+            let m = s.measure(first).unwrap_or(false);
             for f in product[1..].iter().rev() {
                 s.cnot(f.qubit, first);
             }
@@ -401,6 +405,20 @@ fn run(
             }
             record.push(noisy(m, flip));
         }
+    }
+}
+
+/// Loss channel with probability `p` on each target of `op`, if it is a gate.
+fn lose_after(s: &mut Sim, op: Op, p: f64) {
+    match op {
+        Op::One(_, q) | Op::T(q) | Op::TDag(q) | Op::Rotation(_, _, q) | Op::U3(_, q) => {
+            s.loss_channel(q, p)
+        }
+        Op::Two(_, a, b) => {
+            s.loss_channel(a, p);
+            s.loss_channel(b, p);
+        }
+        _ => {}
     }
 }
 
@@ -425,11 +443,17 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let path = args
         .next()
-        .expect("usage: run_clifft <circuit.stim> [shots] [--records <file>]");
-    let (mut shots, mut records_path) = (1000usize, None);
+        .expect("usage: run_clifft <circuit.stim> [shots] [--records <file>] [--loss <p>]");
+    let (mut shots, mut records_path, mut loss) = (1000usize, None, 0.0);
     while let Some(arg) = args.next() {
         if arg == "--records" {
             records_path = Some(args.next().expect("--records needs a path"));
+        } else if arg == "--loss" {
+            loss = args
+                .next()
+                .expect("--loss needs p")
+                .parse()
+                .expect("loss p");
         } else {
             shots = arg.parse().expect("shots");
         }
@@ -456,6 +480,9 @@ fn main() {
         record.clear();
         for &op in &ops {
             run(&mut s, op, pools, &mut rng, &mut record);
+            if loss > 0.0 {
+                lose_after(&mut s, op, loss);
+            }
             let k = s.state().active().len();
             max_k = max_k.max(k);
             let count = match op {

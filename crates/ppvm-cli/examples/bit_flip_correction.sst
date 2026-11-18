@@ -1,66 +1,100 @@
-device circuit.n_qubits 5;
+sst v1
+.section(root):
+    .section(ppvm):
+    .header(ppvm):
+        circuit.n_qubits 5;
+        metadata {
+            strings: ["main", "bit_flip_correction.old.sst", "s12_one", "s12_zero", "correct_q0", "correct_q1", "correct_q2", "readout"],
+            functions: [
+                {
+                    name: 0, // main
+                    signature: { params: [], ret: [] },
+                    local_count: 0,
+                    start_address: 0,
+                    end_address: 45,
+                    file: 1,
+                },
+            ],
+            labels: [
+                { name: 2, address: 24 }, // s12_one
+                { name: 3, address: 27 }, // s12_zero
+                { name: 4, address: 30 }, // correct_q0
+                { name: 5, address: 33 }, // correct_q1
+                { name: 6, address: 36 }, // correct_q2
+                { name: 7, address: 38 }, // readout
+            ],
+            constants: [],
+            main_function: 0, // main
+            source_symbols: [],
+            extra: {},
+        };
+    .header(ppvm).
+    .text(ppvm):
+        fn @main() {
+            // Data: q0, q1, q2.
+            // Syndrome ancillas: q3, q4.
 
-// Data: q0, q1, q2.
-// Syndrome ancillas: q3, q4.
-fn @main() {
-    cpu::cpu.const u64, 1
-    cpu::cpu.const f64, 0.25
-    cpu::cpu.const f64, 0.0
-    cpu::cpu.const f64, 0.0
-    circuit::circuit.paulierror
+            execution::program::const_u64 1
+            execution::program::const_f64 0.25
+            execution::program::const_f64 0.0
+            execution::program::const_f64 0.0
+            circuit::circuit::paulierror
 
-    cpu::cpu.const u64, 0
-    cpu::cpu.const u64, 3
-    circuit::circuit.cnot
-    cpu::cpu.const u64, 1
-    cpu::cpu.const u64, 3
-    circuit::circuit.cnot
-    cpu::cpu.const u64, 3
-    circuit::circuit.measure
+            execution::program::const_u64 0
+            execution::program::const_u64 3
+            circuit::circuit::cnot
+            execution::program::const_u64 1
+            execution::program::const_u64 3
+            circuit::circuit::cnot
+            execution::program::const_u64 3
+            circuit::circuit::measure
 
-    cpu::cpu.const u64, 1
-    cpu::cpu.const u64, 4
-    circuit::circuit.cnot
-    cpu::cpu.const u64, 2
-    cpu::cpu.const u64, 4
-    circuit::circuit.cnot
-    cpu::cpu.const u64, 4
-    circuit::circuit.measure
+            execution::program::const_u64 1
+            execution::program::const_u64 4
+            circuit::circuit::cnot
+            execution::program::const_u64 2
+            execution::program::const_u64 4
+            circuit::circuit::cnot
+            execution::program::const_u64 4
+            circuit::circuit::measure
 
-    cpu::cpu.const u32, 1
-    cpu::cpu.eq u32
-    cpu::cpu.cond_br @s12_one, @s12_zero
+            execution::program::const_u32 1
+            cpu::cpu::eq_u32
+            execution::program::cond_br @s12_one, @s12_zero
 
-cpu::cpu.label @s12_one
-    cpu::cpu.const u32, 1
-    cpu::cpu.eq u32
-    cpu::cpu.cond_br @correct_q1, @correct_q2
+            label @s12_one
+                execution::program::const_u32 1
+                cpu::cpu::eq_u32
+                execution::program::cond_br @correct_q1, @correct_q2
 
-cpu::cpu.label @s12_zero
-    cpu::cpu.const u32, 1
-    cpu::cpu.eq u32
-    cpu::cpu.cond_br @correct_q0, @readout
+            label @s12_zero
+                execution::program::const_u32 1
+                cpu::cpu::eq_u32
+                execution::program::cond_br @correct_q0, @readout
 
-cpu::cpu.label @correct_q0
-    cpu::cpu.const u64, 0
-    circuit::circuit.x
-    cpu::cpu.br @readout
+            label @correct_q0
+                execution::program::const_u64 0
+                circuit::circuit::x
+                execution::program::br @readout
 
-cpu::cpu.label @correct_q1
-    cpu::cpu.const u64, 1
-    circuit::circuit.x
-    cpu::cpu.br @readout
+            label @correct_q1
+                execution::program::const_u64 1
+                circuit::circuit::x
+                execution::program::br @readout
 
-cpu::cpu.label @correct_q2
-    cpu::cpu.const u64, 2
-    circuit::circuit.x
+            label @correct_q2
+                execution::program::const_u64 2
+                circuit::circuit::x
 
-cpu::cpu.label @readout
-    cpu::cpu.const u64, 0
-    circuit::circuit.measure
-    cpu::cpu.const u64, 1
-    circuit::circuit.measure
-    cpu::cpu.const u64, 2
-    circuit::circuit.measure
-    cpu::cpu.ret 0
-}
+            label @readout
+                execution::program::const_u64 0
+                circuit::circuit::measure
+                execution::program::const_u64 1
+                circuit::circuit::measure
+                execution::program::const_u64 2
+                circuit::circuit::measure
+                execution::program::ret 0
+        }
+    .text(ppvm).
+    .section(ppvm).
+.section(root).

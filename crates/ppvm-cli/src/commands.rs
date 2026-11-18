@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use eyre::{Result, WrapErr};
-use ppvm_vihaco::composite::{PPVM, StepOutcome};
+use ppvm_vihaco::composite::{PPVM, PPVMModule};
 use ppvm_vihaco::measurements::MeasurementResult;
 use ppvm_vihaco::shots::ShotRecord;
 use std::io::{BufRead, Write};
@@ -120,8 +120,9 @@ pub fn parse(file: &str, format: Format) -> Result<()> {
         }
         Format::Pretty => {
             println!("Module:");
-            println!("  Headers: {}", parsed.header.len());
-            for (i, header) in parsed.header.iter().enumerate() {
+            let headers: Vec<_> = parsed.header.into_iter().collect();
+            println!("  Headers: {}", headers.len());
+            for (i, header) in headers.iter().enumerate() {
                 println!("    [{}] {:?}", i, header);
             }
             println!("  Functions: {}", parsed.functions.len());
@@ -169,9 +170,8 @@ enum DebugCommand {
     Quit,
 }
 
-/// Step through a program interactively, pausing at `cpu::cpu.breakpoint` instructions.
-/// With `break_at_start`, also pauses before the first instruction so any
-/// program can be stepped from the beginning.
+/// Run a program interactively, pausing at breakpoints. With `break_at_start`,
+/// also pauses before the first instruction.
 pub fn debug(file: &str, break_at_start: bool) -> Result<()> {
     let stdin = std::io::stdin();
     let mut input = stdin.lock();
@@ -186,81 +186,78 @@ fn debug_loop(
     input: &mut impl BufRead,
     output: &mut impl Write,
 ) -> Result<()> {
-    let mut machine = PPVM::default();
-    machine
-        .load_file(file)
-        .wrap_err_with(|| format!("failed to load {file}"))?;
-    machine.init()?;
+    let module =
+        ppvm_vihaco::load_module_file(file).wrap_err_with(|| format!("failed to load {file}"))?;
+    let mut machine = PPVM::new(&module.extra, None)?;
+    machine.start(&module)?;
 
     let mut paused = break_at_start;
     let mut ever_paused = paused;
 
     loop {
-        // Safety net: stop if execution has run off the end of the code.
-        if machine.current_instruction().is_none() {
-            writeln!(output, "Program counter past end of code.")?;
-            break;
-        }
-
         if paused {
-            print_location(&machine, output)?;
+            print_location(&machine, &module, output)?;
             match read_command(input, output)? {
                 DebugCommand::Quit => {
                     writeln!(output, "Quit.")?;
                     return Ok(());
                 }
-                DebugCommand::Continue => paused = false,
-                DebugCommand::Step => {}
+                DebugCommand::Continue => {}
+                DebugCommand::Step => {
+                    machine.single_step(&module)?;
+                    if machine.is_halted() {
+                        writeln!(output, "Program finished.")?;
+                        break;
+                    }
+                    continue;
+                }
             }
         }
 
-        match machine.step_once()? {
-            StepOutcome::Continue => {}
-            StepOutcome::Breakpoint => {
-                paused = true;
-                ever_paused = true;
-                writeln!(output, "-- cpu::cpu.breakpoint hit --")?;
-            }
-            StepOutcome::Return | StepOutcome::Halt => {
-                writeln!(output, "Program finished.")?;
-                break;
-            }
+        machine.resume(&module)?;
+        if machine.is_paused() {
+            paused = true;
+            ever_paused = true;
+            writeln!(output, "-- breakpoint hit --")?;
+        } else {
+            writeln!(output, "Program finished.")?;
+            break;
         }
     }
 
     writeln!(
         output,
         "Measurements: {}",
-        format_shot(&machine.measurement_record())
+        format_shot(machine.measurement_record())
     )?;
     let traces = machine.trace_record();
     if !traces.is_empty() {
-        writeln!(output, "Traces: {}", format_traces(&traces))?;
+        writeln!(output, "Traces: {}", format_traces(traces))?;
     }
     if !ever_paused {
         writeln!(
             output,
-            "(no cpu::cpu.breakpoint was hit; pass --break-at-start to step from the beginning)"
+            "(no breakpoint was hit; pass --break-at-start to pause before the first instruction)"
         )?;
     }
     Ok(())
 }
 
 /// Print the program counter, the next instruction, and measurements so far.
-fn print_location(machine: &PPVM, output: &mut impl Write) -> Result<()> {
-    let pc = machine.current_pc();
-    match machine.current_instruction() {
-        Some(inst) => writeln!(output, "pc={pc}  next: {inst}")?,
+fn print_location(machine: &PPVM, module: &PPVMModule, output: &mut impl Write) -> Result<()> {
+    let pc = machine.pc();
+    match module.code.get(pc as usize) {
+        Some(inst) => writeln!(output, "pc={pc}  next: {inst:?}")?,
         None => writeln!(output, "pc={pc}  (end of code)")?,
     }
     writeln!(
         output,
         "measurements: {}",
-        format_shot(&machine.measurement_record())
+        format_shot(machine.measurement_record())
     )?;
     let traces = machine.trace_record();
     if !traces.is_empty() {
-        writeln!(output, "traces: {}", format_traces(&traces))?;
+        writeln!(output, "traces: {}", format_traces(traces))?;
     }
     Ok(())
 }
@@ -291,8 +288,8 @@ mod tests {
     use ppvm_vihaco::measurements::MeasurementOutcome;
     use std::fs;
 
-    /// Minimal program that compiles and measures q0 in |0> (deterministic).
-    const PROGRAM: &str = "device circuit.n_qubits 1;\nfn @main() { cpu::cpu.const u64, 0\n circuit::circuit.measure\n cpu::cpu.ret 0 }\n";
+    /// Measures q0 in |0> (deterministic).
+    const PROGRAM: &str = include_str!("../../ppvm-vihaco/tests/measure_zero.sst");
 
     fn row(outcomes: &[MeasurementOutcome]) -> MeasurementResult {
         outcomes.iter().copied().collect()
@@ -405,12 +402,8 @@ mod tests {
 
     #[test]
     fn run_outputs_trace_record_for_paulisum_backend() {
-        // Single-qubit PauliSum with observable Z, no gates, trace `Z?*` → 1.0.
-        // The .sst-driven path should surface the trace value in `run`'s output.
-        const TRACE_PROGRAM: &str = "device circuit.n_qubits 1;\n\
-             device circuit.backend paulisum;\n\
-             device circuit.observable Z;\n\
-             fn @main() { cpu::cpu.const str, \"Z?*\"\n circuit::circuit.trace\n cpu::cpu.ret 0 }\n";
+        // PauliSum Bell circuit tracing ⟨ZZ⟩ = 1.0; `run` should surface the trace value.
+        const TRACE_PROGRAM: &str = include_str!("../../ppvm-vihaco/tests/paulisum_bell_trace.sst");
         let src = temp_file("ppvm_cli_run_trace.sst", TRACE_PROGRAM);
         let out = std::env::temp_dir().join("ppvm_cli_run_trace.txt");
         let _ = fs::remove_file(&out);
@@ -512,8 +505,8 @@ mod tests {
 
     // ─── debug ─────────────────────────────────────────────────────────
 
-    /// Program with a `cpu::cpu.breakpoint` before measuring q0 in |0> (deterministic).
-    const BREAKPOINT_PROGRAM: &str = "device circuit.n_qubits 1;\nfn @main() { cpu::cpu.breakpoint\n cpu::cpu.const u64, 0\n circuit::circuit.measure\n cpu::cpu.ret 0 }\n";
+    /// A breakpoint, then measuring q0 in |0> (deterministic).
+    const BREAKPOINT_PROGRAM: &str = include_str!("../../ppvm-vihaco/tests/breakpoint_measure.sst");
 
     /// Drive `debug_loop` with scripted input, returning the captured output.
     fn run_debug(program: &str, name: &str, break_at_start: bool, script: &str) -> String {
@@ -527,10 +520,10 @@ mod tests {
 
     #[test]
     fn debug_break_at_start_steps_through_to_finish() {
-        // PROGRAM is cpu::cpu.const u64, 0 / circuit::circuit.measure / ret = 3 steps.
+        // PROGRAM is const_u64 0 / measure / ret = 3 steps.
         let out = run_debug(PROGRAM, "ppvm_cli_debug_step.sst", true, "s\ns\ns\n");
         assert!(
-            out.contains("next: Measure"),
+            out.contains("pc=1  next: V_circuit__circuit__Measure"),
             "should display the gate: {out}"
         );
         assert!(out.contains("Program finished."), "{out}");
@@ -538,6 +531,35 @@ mod tests {
             out.contains("Measurements: 0"),
             "q0 in |0> measures 0: {out}"
         );
+    }
+
+    #[test]
+    fn debug_break_at_start_pauses_before_running() {
+        // One step runs only the const, so nothing is measured until continuing.
+        let out = run_debug(PROGRAM, "ppvm_cli_debug_start.sst", true, "s\nc\n");
+        assert!(out.contains("pc=0"), "should pause at the entry: {out}");
+        assert!(
+            out.contains("pc=1"),
+            "one step advances one instruction: {out}"
+        );
+        assert_eq!(out.matches("measurements: \n").count(), 2, "{out}");
+        assert!(out.contains("Program finished."), "{out}");
+        assert!(out.contains("Measurements: 0"), "{out}");
+    }
+
+    #[test]
+    fn debug_steps_past_authored_breakpoint() {
+        // Stepping from the breakpoint executes the instructions after it.
+        let out = run_debug(
+            BREAKPOINT_PROGRAM,
+            "ppvm_cli_debug_bp_step.sst",
+            false,
+            "s\ns\ns\n",
+        );
+        assert!(out.contains("-- breakpoint hit --"), "{out}");
+        assert!(out.contains("next: V_circuit__circuit__Measure"), "{out}");
+        assert!(out.contains("Program finished."), "{out}");
+        assert!(out.contains("Measurements: 0"), "{out}");
     }
 
     #[test]
@@ -549,12 +571,12 @@ mod tests {
 
     #[test]
     fn debug_honors_authored_breakpoint() {
-        // Not breaking at start: must run until the `cpu::cpu.breakpoint` pauses it.
+        // Not breaking at start: must run until the `breakpoint` pauses it.
         let out = run_debug(BREAKPOINT_PROGRAM, "ppvm_cli_debug_bp.sst", false, "c\n");
-        assert!(out.contains("-- cpu::cpu.breakpoint hit --"), "{out}");
+        assert!(out.contains("-- breakpoint hit --"), "{out}");
         assert!(out.contains("Program finished."), "{out}");
-        // A cpu::cpu.breakpoint was hit, so no "use --break-at-start" hint.
-        assert!(!out.contains("no cpu::cpu.breakpoint was hit"), "{out}");
+        // A breakpoint was hit, so no "use --break-at-start" hint.
+        assert!(!out.contains("no breakpoint was hit"), "{out}");
     }
 
     #[test]
@@ -570,10 +592,10 @@ mod tests {
 
     #[test]
     fn debug_without_breakpoint_prints_hint() {
-        // No cpu::cpu.breakpoint, no break-at-start, empty input: runs straight through
+        // No breakpoint, no break-at-start, empty input: runs straight through
         // and tells the user how to step.
         let out = run_debug(PROGRAM, "ppvm_cli_debug_hint.sst", false, "");
         assert!(out.contains("Program finished."), "{out}");
-        assert!(out.contains("no cpu::cpu.breakpoint was hit"), "{out}");
+        assert!(out.contains("no breakpoint was hit"), "{out}");
     }
 }

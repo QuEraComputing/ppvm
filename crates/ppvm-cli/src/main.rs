@@ -15,7 +15,7 @@ pub struct Cli {
     #[arg(short, long, global = true, default_value_t = 1, value_parser = clap::builder::RangedU64ValueParser::<usize>::new().range(1..))]
     threads: usize,
 
-    /// A .sst/.ssb file to open in the TUI (when no subcommand is given).
+    /// A .sst file to open in the TUI (when no subcommand is given).
     #[arg(value_name = "FILE")]
     file: Option<String>,
 
@@ -50,7 +50,6 @@ enum Commands {
         #[arg(short, long)]
         force: bool,
     },
-
     /// Run a .sst or .ssb program
     Run {
         /// Input file (.sst source or .ssb bytecode)
@@ -78,13 +77,13 @@ enum Commands {
         format: commands::MeasurementFormat,
     },
 
-    /// Step through a program interactively, pausing at `cpu::cpu.breakpoint` instructions
+    /// Run a program interactively, pausing at breakpoints
     Debug {
         /// Input file (.sst source or .ssb bytecode)
         #[arg(value_name = "FILE")]
         file: String,
 
-        /// Pause before the first instruction so any program can be stepped
+        /// Pause before the first instruction
         #[arg(short, long)]
         break_at_start: bool,
     },

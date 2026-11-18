@@ -1,11 +1,37 @@
-device circuit.n_qubits 2;
-device circuit.backend paulisum;
-device circuit.observable 1.0*ZZ+0.5*XX;
-
-fn @main() {
-    // No gates — the multi-term observable seeds the state directly.
-    // Pattern `[XZ]?*` matches both ZZ (coef 1.0) and XX (coef 0.5).
-    cpu::cpu.const str, "[XZ]?*"
-    circuit::circuit.trace
-    cpu::cpu.ret 0
-}
+sst v1
+.section(root):
+    .section(ppvm):
+    .header(ppvm):
+        circuit.n_qubits 2;
+        circuit.backend paulisum;
+        circuit.observable 1.0*ZZ+0.5*XX;
+        metadata {
+            strings: ["main", "paulisum_multi_term_trace.sst", "[XZ]?*"],
+            functions: [
+                {
+                    name: 0, // main
+                    signature: { params: [], ret: [] },
+                    local_count: 0,
+                    start_address: 0,
+                    end_address: 3,
+                    file: 1,
+                },
+            ],
+            labels: [],
+            constants: [],
+            main_function: 0, // main
+            source_symbols: [],
+            extra: {},
+        };
+    .header(ppvm).
+    .text(ppvm):
+        fn @main() {
+            // No gates — the multi-term observable seeds the state directly.
+            // Pattern `[XZ]?*` matches both ZZ (coef 1.0) and XX (coef 0.5).
+            execution::program::const_string "[XZ]?*"
+            circuit::circuit::trace
+            execution::program::ret 0
+        }
+    .text(ppvm).
+    .section(ppvm).
+.section(root).

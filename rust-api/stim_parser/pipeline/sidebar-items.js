@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"struct":["Lowered","Parsed","Pipeline","Source","Validated"]};
+window.SIDEBAR_ITEMS = {"struct":["Fused","Lowered","Parsed","Pipeline","Source","Validated"]};

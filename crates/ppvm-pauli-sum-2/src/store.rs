@@ -17,22 +17,52 @@ pub trait StoreAlloc {
     fn clear(&mut self);
 }
 
+/// Replace each key with a unique new key, optionally changing its coefficient.
+pub trait RekeyBijective: Support {
+    /// The callback may update the coefficient in place and returns the new key,
+    /// or `None` if the key is unchanged. Distinct keys must map to distinct keys.
+    /// Zero coefficients remain stored; callers must preserve word widths.
+    fn rekey_bijective(
+        &mut self,
+        transform: impl FnMut(&Self::Key, &mut Self::Coeff) -> Option<Self::Key>,
+    );
+}
+
+/// Negate selected coefficients without moving keys or rebuilding storage.
+pub trait SignFlipByKey: Support {
+    /// Negate a coefficient exactly when `negate` returns true for its key.
+    fn flip_sign_by_key(&mut self, negate: impl Fn(&Self::Key) -> bool);
+}
+
 /// Hash-map storage whose keys supply their own structural digests.
 /// Exact-zero coefficients remain present until [`Accumulate::reduce`] is called.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct HashMapStore<K, C> {
     terms: HashMap<K, C, IdentityBuildHasher>,
+    // Empty between operations; holds the terms whose keys a gate changes.
+    moved: Vec<(K, C)>,
+}
+
+impl<K: Clone, C: Clone> Clone for HashMapStore<K, C> {
+    fn clone(&self) -> Self {
+        Self {
+            terms: self.terms.clone(),
+            moved: Vec::new(),
+        }
+    }
 }
 
 impl<K, C> StoreAlloc for HashMapStore<K, C> {
     fn with_capacity(capacity: usize) -> Self {
         Self {
             terms: HashMap::with_capacity_and_hasher(capacity, IdentityBuildHasher),
+            moved: Vec::new(),
         }
     }
 
     fn clear(&mut self) {
         self.terms.clear();
+        self.moved.clear();
     }
 }
 
@@ -102,6 +132,36 @@ where
 impl<K: Indexable, C: Coefficient> Retain<K, C> for HashMapStore<K, C> {
     fn retain(&mut self, keep: impl Fn(&K, &C) -> bool) {
         Retain::retain(&mut self.terms, keep);
+    }
+}
+
+impl<K: Indexable, C: Coefficient> RekeyBijective for HashMapStore<K, C> {
+    fn rekey_bijective(&mut self, mut transform: impl FnMut(&K, &mut C) -> Option<K>) {
+        let mut moved = std::mem::take(&mut self.moved);
+        // Unchanged keys stay in place; only changed keys move to new buckets.
+        self.terms.retain(|key, coeff| match transform(key, coeff) {
+            None => true,
+            Some(new_key) => {
+                moved.push((new_key, coeff.clone()));
+                false
+            }
+        });
+        // Bijectivity: a changed key cannot land on a key that stayed in place.
+        for (key, coeff) in moved.drain(..) {
+            let replaced = self.terms.insert(key, coeff);
+            debug_assert!(replaced.is_none(), "rekey must preserve distinct keys");
+        }
+        self.moved = moved;
+    }
+}
+
+impl<K: Indexable, C: Coefficient> SignFlipByKey for HashMapStore<K, C> {
+    fn flip_sign_by_key(&mut self, negate: impl Fn(&K) -> bool) {
+        for (key, coeff) in &mut self.terms {
+            if negate(key) {
+                coeff.mul_sign_assign(-1);
+            }
+        }
     }
 }
 

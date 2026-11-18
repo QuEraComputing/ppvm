@@ -50,8 +50,8 @@ pub trait Clifford {
 }
 
 /// Batched Clifford gates: apply the same gate to many qubits in one call.
-/// The defaults loop over [`Clifford`] and are load-bearing — fused backends
-/// (bit-plane tableaus) override them, term-wise ones take the empty impl.
+/// Defaults apply scalar gates in input order. Backends can override them to
+/// process each term once or use fused bit-plane operations.
 pub trait CliffordBatch: Clifford {
     /// Apply Pauli `X` to every qubit in `indices`.
     fn x_many(&mut self, indices: &[usize]) {

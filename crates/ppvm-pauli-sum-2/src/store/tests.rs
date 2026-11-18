@@ -155,3 +155,51 @@ fn hash_collisions_do_not_merge_distinct_keys() {
     assert_eq!(store.get(&Key(1)), Some(2.0));
     assert_eq!(store.get(&Key(2)), Some(5.0));
 }
+
+#[test]
+fn partial_rekey_matches_word_conjugation() {
+    use crate::PauliSum;
+    use ppvm_phased_pauli_word_2::Phased;
+    use ppvm_traits_2::{Clifford, CliffordBatch, Phase};
+
+    // All 4-qubit words, so most gates leave some terms in place and move others.
+    let words: Vec<(PauliWord, f64)> = (0..256)
+        .map(|i| {
+            let s: String = (0..4)
+                .map(|q| ['I', 'X', 'Y', 'Z'][(i >> (2 * q)) & 3])
+                .collect();
+            (PauliWord::from(s.as_str()), i as f64 + 1.0)
+        })
+        .collect();
+    type SumGate = fn(&mut PauliSum);
+    type WordGate = fn(&mut Phased<PauliWord>);
+    let gates: [(SumGate, WordGate); 3] = [
+        (|s| s.h(1), |w| w.h(1)),
+        (|s| s.cnot(2, 0), |w| w.cnot(2, 0)),
+        (
+            |s| s.s_many(&[0, 3]),
+            |w| {
+                w.s(0);
+                w.s(3);
+            },
+        ),
+    ];
+    for (apply_sum, apply_word) in gates {
+        let mut sum = PauliSum::from_terms(4, words.clone());
+        apply_sum(&mut sum);
+        assert_eq!(sum.len(), words.len());
+        for (word, coeff) in words.as_slice() {
+            let mut phased = Phased::new(*word);
+            apply_word(&mut phased);
+            let (key, phase) = phased.into_parts();
+            let expected = if phase == Phase::Neg1 { -coeff } else { *coeff };
+            assert_eq!(sum.get(&key), Some(expected));
+        }
+    }
+
+    let original: PauliSum = PauliSum::from_terms(4, words.clone());
+    let mut twice = original.clone();
+    twice.h(2);
+    twice.h(2);
+    assert_eq!(twice, original);
+}

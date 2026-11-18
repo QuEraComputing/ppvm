@@ -13,6 +13,6 @@ publish = false
 ppvm-traits-2 = { path = "../ppvm-traits-2" }
 ppvm-pauli-word-2 = { path = "../ppvm-pauli-word-2" }
 ppvm-lossy-pauli-word-2 = { path = "../ppvm-lossy-pauli-word-2" }
-
-[dev-dependencies]
+ppvm-phased-pauli-word-2 = { path = "../ppvm-phased-pauli-word-2" }
 num = "0.4"
+approx = { version = "0.5.1", features = ["num-complex"] }

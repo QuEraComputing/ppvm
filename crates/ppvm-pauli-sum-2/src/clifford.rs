@@ -2,7 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use ppvm_phased_pauli_word_2::Phased;
-use ppvm_traits_2::{Clifford, CliffordBatch, PauliBits, Phase, Support, loss::LossInfo};
+use ppvm_traits_2::{
+    Clifford, CliffordBatch, Coefficient, PauliBits, Phase, Support, loss::LossInfo,
+};
 
 use crate::{RekeyBijective, SignFlipByKey, Sum};
 
@@ -18,19 +20,46 @@ impl<S: Support, P> Sum<S, P> {
     }
 }
 
-impl<S: RekeyBijective, P> Sum<S, P> {
-    fn conjugate_terms(&mut self, gate: impl Fn(&mut Phased<S::Key>)) {
+/// Whether a gate on `qubit` can change `key`: every Clifford fixes `I` and lost sites.
+fn active<K: PauliBits + LossInfo>(key: &K, qubit: usize) -> bool {
+    !key.is_lost(qubit) && (key.x_bit(qubit) || key.z_bit(qubit))
+}
+
+impl<S: RekeyBijective, P> Sum<S, P>
+where
+    S::Key: PauliBits + LossInfo,
+{
+    /// Conjugate the terms for which `touched` is true; all others are left in place.
+    fn conjugate_terms(
+        &mut self,
+        touched: impl Fn(&S::Key) -> bool,
+        gate: impl Fn(&mut Phased<S::Key>),
+    ) {
         self.storage.rekey_bijective(|key, coeff| {
-            let mut phased_word = Phased::new(key);
+            if !touched(key) {
+                return None;
+            }
+            let mut phased_word = Phased::new(key.clone());
             gate(&mut phased_word);
-            let (key, phase) = phased_word.into_parts();
+            let (new_key, phase) = phased_word.into_parts();
             // Keys carry no phase; absorb the conjugation sign into the coefficient.
             match phase {
-                Phase::Pos1 => (key, coeff),
-                Phase::Neg1 => (key, -coeff),
+                Phase::Pos1 => {}
+                Phase::Neg1 => coeff.mul_sign_assign(-1),
                 _ => unreachable!("Clifford conjugation produces only real signs"),
             }
+            (new_key != *key).then_some(new_key)
         });
+    }
+
+    fn conjugate_single(&mut self, qubit: usize, gate: impl Fn(&mut Phased<S::Key>)) {
+        self.check_qubit(qubit);
+        self.conjugate_terms(|key| active(key, qubit), gate);
+    }
+
+    fn conjugate_pair(&mut self, a: usize, b: usize, gate: impl Fn(&mut Phased<S::Key>)) {
+        self.check_pair(a, b);
+        self.conjugate_terms(|key| active(key, a) || active(key, b), gate);
     }
 
     fn conjugate_single_batch(
@@ -43,12 +72,15 @@ impl<S: RekeyBijective, P> Sum<S, P> {
         }
         match indices {
             [] => {}
-            &[qubit] => self.conjugate_terms(|word| gate(word, qubit)),
-            _ => self.conjugate_terms(|word| {
-                for &qubit in indices {
-                    gate(word, qubit);
-                }
-            }),
+            &[qubit] => self.conjugate_single(qubit, |word| gate(word, qubit)),
+            _ => self.conjugate_terms(
+                |key| indices.iter().any(|&q| active(key, q)),
+                |word| {
+                    for &qubit in indices {
+                        gate(word, qubit);
+                    }
+                },
+            ),
         }
     }
 
@@ -62,12 +94,15 @@ impl<S: RekeyBijective, P> Sum<S, P> {
         }
         match pairs {
             [] => {}
-            &[(a, b)] => self.conjugate_terms(|word| gate(word, a, b)),
-            _ => self.conjugate_terms(|word| {
-                for &(a, b) in pairs {
-                    gate(word, a, b);
-                }
-            }),
+            &[(a, b)] => self.conjugate_pair(a, b, |word| gate(word, a, b)),
+            _ => self.conjugate_terms(
+                |key| pairs.iter().any(|&(a, b)| active(key, a) || active(key, b)),
+                |word| {
+                    for &(a, b) in pairs {
+                        gate(word, a, b);
+                    }
+                },
+            ),
         }
     }
 }
@@ -111,53 +146,43 @@ where
     }
 
     fn h(&mut self, qubit: usize) {
-        self.check_qubit(qubit);
-        self.conjugate_terms(|word| word.h(qubit));
+        self.conjugate_single(qubit, |word| word.h(qubit));
     }
 
     fn s(&mut self, qubit: usize) {
-        self.check_qubit(qubit);
-        self.conjugate_terms(|word| word.s(qubit));
+        self.conjugate_single(qubit, |word| word.s(qubit));
     }
 
     fn s_dag(&mut self, qubit: usize) {
-        self.check_qubit(qubit);
-        self.conjugate_terms(|word| word.s_dag(qubit));
+        self.conjugate_single(qubit, |word| word.s_dag(qubit));
     }
 
     fn sqrt_x(&mut self, qubit: usize) {
-        self.check_qubit(qubit);
-        self.conjugate_terms(|word| word.sqrt_x(qubit));
+        self.conjugate_single(qubit, |word| word.sqrt_x(qubit));
     }
 
     fn sqrt_x_dag(&mut self, qubit: usize) {
-        self.check_qubit(qubit);
-        self.conjugate_terms(|word| word.sqrt_x_dag(qubit));
+        self.conjugate_single(qubit, |word| word.sqrt_x_dag(qubit));
     }
 
     fn sqrt_y(&mut self, qubit: usize) {
-        self.check_qubit(qubit);
-        self.conjugate_terms(|word| word.sqrt_y(qubit));
+        self.conjugate_single(qubit, |word| word.sqrt_y(qubit));
     }
 
     fn sqrt_y_dag(&mut self, qubit: usize) {
-        self.check_qubit(qubit);
-        self.conjugate_terms(|word| word.sqrt_y_dag(qubit));
+        self.conjugate_single(qubit, |word| word.sqrt_y_dag(qubit));
     }
 
     fn cnot(&mut self, control: usize, target: usize) {
-        self.check_pair(control, target);
-        self.conjugate_terms(|word| word.cnot(control, target));
+        self.conjugate_pair(control, target, |word| word.cnot(control, target));
     }
 
     fn cz(&mut self, qubit0: usize, qubit1: usize) {
-        self.check_pair(qubit0, qubit1);
-        self.conjugate_terms(|word| word.cz(qubit0, qubit1));
+        self.conjugate_pair(qubit0, qubit1, |word| word.cz(qubit0, qubit1));
     }
 
     fn cy(&mut self, control: usize, target: usize) {
-        self.check_pair(control, target);
-        self.conjugate_terms(|word| word.cy(control, target));
+        self.conjugate_pair(control, target, |word| word.cy(control, target));
     }
 }
 

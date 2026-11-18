@@ -157,86 +157,49 @@ fn hash_collisions_do_not_merge_distinct_keys() {
 }
 
 #[test]
-fn rekey_reuses_both_maps_and_clone_omits_scratch() {
+fn partial_rekey_matches_word_conjugation() {
+    use crate::PauliSum;
     use ppvm_phased_pauli_word_2::Phased;
-    use ppvm_traits_2::{Clifford, Phase};
+    use ppvm_traits_2::{Clifford, CliffordBatch, Phase};
 
-    let mut store = Store::with_capacity(16);
-    store.accumulate("X".into(), 2.0);
-    store.accumulate("Y".into(), 0.0);
-    let original_capacity = store.terms.capacity();
-    let conjugate_h = |key, coeff: f64| {
-        let mut word = Phased::new(key);
-        word.h(0);
-        let (key, phase) = word.into_parts();
-        (key, if phase == Phase::Neg1 { -coeff } else { coeff })
-    };
-    store.rekey_bijective(conjugate_h);
-    let rebuilt_capacity = store.terms.capacity();
-    assert_eq!(store.scratch.capacity(), original_capacity);
-    assert!(store.scratch.is_empty());
-    assert_eq!(store.get(&"Z".into()), Some(2.0));
-    assert_eq!(store.get(&"Y".into()), Some(0.0));
-
-    let cloned = store.clone();
-    assert_eq!(cloned.scratch.capacity(), 0);
-    for _ in 0..3 {
-        store.rekey_bijective(conjugate_h);
-        assert_eq!(store.terms.capacity(), original_capacity);
-        assert_eq!(store.scratch.capacity(), rebuilt_capacity);
-        assert_eq!(store.get(&"X".into()), Some(2.0));
-        store.rekey_bijective(conjugate_h);
-        assert_eq!(store.terms.capacity(), rebuilt_capacity);
-        assert_eq!(store.scratch.capacity(), original_capacity);
-    }
-    store.clear();
-    assert_eq!(store.terms.capacity(), rebuilt_capacity);
-    assert_eq!(store.scratch.capacity(), original_capacity);
-    assert!(store.is_empty());
-    assert_eq!(cloned.get(&"Z".into()), Some(2.0));
-}
-
-#[test]
-fn sign_flips_do_not_allocate_a_second_map() {
-    let mut store = Store::with_capacity(16);
-    store.accumulate("X".into(), 2.0);
-    store.accumulate("Z".into(), 3.0);
-    let capacity = store.terms.capacity();
-    store.flip_sign_by_key(|key| *key == PauliWord::from("X"));
-    assert_eq!(store.get(&"X".into()), Some(-2.0));
-    assert_eq!(store.get(&"Z".into()), Some(3.0));
-    assert_eq!(store.terms.capacity(), capacity);
-    assert_eq!(store.scratch.capacity(), 0);
-}
-
-#[test]
-fn clifford_batches_rebuild_once_and_skip_rebuilding_for_signs() {
-    use crate::{NoPolicy, PauliSum};
-    use ppvm_traits_2::CliffordBatch;
-
-    let batches: [fn(&mut PauliSum); 2] = [
-        |sum| sum.h_many(&[0, 1]),
-        |sum| sum.cnot_many(&[(0, 1), (1, 0)]),
+    // All 4-qubit words, so most gates leave some terms in place and move others.
+    let words: Vec<(PauliWord, f64)> = (0..256)
+        .map(|i| {
+            let s: String = (0..4)
+                .map(|q| ['I', 'X', 'Y', 'Z'][(i >> (2 * q)) & 3])
+                .collect();
+            (PauliWord::from(s.as_str()), i as f64 + 1.0)
+        })
+        .collect();
+    type SumGate = fn(&mut PauliSum);
+    type WordGate = fn(&mut Phased<PauliWord>);
+    let gates: [(SumGate, WordGate); 3] = [
+        (|s| s.h(1), |w| w.h(1)),
+        (|s| s.cnot(2, 0), |w| w.cnot(2, 0)),
+        (
+            |s| s.s_many(&[0, 3]),
+            |w| {
+                w.s(0);
+                w.s(3);
+            },
+        ),
     ];
-    for batch in batches {
-        let mut sum = PauliSum::with_capacity(2, NoPolicy, 64);
-        sum.add_term("XY".into(), 2.0);
-        sum.add_term("YZ".into(), 0.0);
-        let original_capacity = sum.storage.terms.capacity();
-
-        sum.h_many(&[]);
-        sum.cnot_many(&[]);
-        sum.x_many(&[0, 1]);
-        sum.y_many(&[1, 0]);
-        sum.z_many(&[0, 0]);
-        assert_eq!(sum.storage.terms.capacity(), original_capacity);
-        assert_eq!(sum.storage.scratch.capacity(), 0);
-
-        batch(&mut sum);
-        // Two scalar calls would swap back to the original, larger map.
-        assert_eq!(sum.storage.scratch.capacity(), original_capacity);
-        assert!(sum.storage.terms.capacity() < original_capacity);
-        assert!(sum.storage.scratch.is_empty());
-        assert_eq!(sum.len(), 2);
+    for (apply_sum, apply_word) in gates {
+        let mut sum = PauliSum::from_terms(4, words.clone());
+        apply_sum(&mut sum);
+        assert_eq!(sum.len(), words.len());
+        for (word, coeff) in words.as_slice() {
+            let mut phased = Phased::new(*word);
+            apply_word(&mut phased);
+            let (key, phase) = phased.into_parts();
+            let expected = if phase == Phase::Neg1 { -coeff } else { *coeff };
+            assert_eq!(sum.get(&key), Some(expected));
+        }
     }
+
+    let original: PauliSum = PauliSum::from_terms(4, words.clone());
+    let mut twice = original.clone();
+    twice.h(2);
+    twice.h(2);
+    assert_eq!(twice, original);
 }

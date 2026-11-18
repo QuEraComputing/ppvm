@@ -19,11 +19,12 @@ pub trait StoreAlloc {
 
 /// Replace each key with a unique new key, optionally changing its coefficient.
 pub trait RekeyBijective: Support {
-    /// The callback must map distinct input keys to distinct output keys.
+    /// The callback may update the coefficient in place and returns the new key,
+    /// or `None` if the key is unchanged. Distinct keys must map to distinct keys.
     /// Zero coefficients remain stored; callers must preserve word widths.
     fn rekey_bijective(
         &mut self,
-        transform: impl FnMut(Self::Key, Self::Coeff) -> (Self::Key, Self::Coeff),
+        transform: impl FnMut(&Self::Key, &mut Self::Coeff) -> Option<Self::Key>,
     );
 }
 
@@ -38,15 +39,15 @@ pub trait SignFlipByKey: Support {
 #[derive(Debug)]
 pub struct HashMapStore<K, C> {
     terms: HashMap<K, C, IdentityBuildHasher>,
-    // Empty between operations; reused when a gate changes keys.
-    scratch: HashMap<K, C, IdentityBuildHasher>,
+    // Empty between operations; holds the terms whose keys a gate changes.
+    moved: Vec<(K, C)>,
 }
 
 impl<K: Clone, C: Clone> Clone for HashMapStore<K, C> {
     fn clone(&self) -> Self {
         Self {
             terms: self.terms.clone(),
-            scratch: HashMap::with_hasher(IdentityBuildHasher),
+            moved: Vec::new(),
         }
     }
 }
@@ -55,13 +56,13 @@ impl<K, C> StoreAlloc for HashMapStore<K, C> {
     fn with_capacity(capacity: usize) -> Self {
         Self {
             terms: HashMap::with_capacity_and_hasher(capacity, IdentityBuildHasher),
-            scratch: HashMap::with_hasher(IdentityBuildHasher),
+            moved: Vec::new(),
         }
     }
 
     fn clear(&mut self) {
         self.terms.clear();
-        self.scratch.clear();
+        self.moved.clear();
     }
 }
 
@@ -135,17 +136,22 @@ impl<K: Indexable, C: Coefficient> Retain<K, C> for HashMapStore<K, C> {
 }
 
 impl<K: Indexable, C: Coefficient> RekeyBijective for HashMapStore<K, C> {
-    fn rekey_bijective(&mut self, mut transform: impl FnMut(K, C) -> (K, C)) {
-        self.scratch.clear();
-        self.scratch.reserve(self.terms.len());
-        // Changed keys must be reinserted into their new hash buckets.
-        for (key, coeff) in self.terms.drain() {
-            let (new_key, new_coeff) = transform(key, coeff);
-            let replaced = self.scratch.insert(new_key, new_coeff);
+    fn rekey_bijective(&mut self, mut transform: impl FnMut(&K, &mut C) -> Option<K>) {
+        let mut moved = std::mem::take(&mut self.moved);
+        // Unchanged keys stay in place; only changed keys move to new buckets.
+        self.terms.retain(|key, coeff| match transform(key, coeff) {
+            None => true,
+            Some(new_key) => {
+                moved.push((new_key, coeff.clone()));
+                false
+            }
+        });
+        // Bijectivity: a changed key cannot land on a key that stayed in place.
+        for (key, coeff) in moved.drain(..) {
+            let replaced = self.terms.insert(key, coeff);
             debug_assert!(replaced.is_none(), "rekey must preserve distinct keys");
         }
-        // Keep the emptied source map for the next gate to reuse.
-        std::mem::swap(&mut self.terms, &mut self.scratch);
+        self.moved = moved;
     }
 }
 

@@ -60,18 +60,18 @@ fn parse_each_basic_clifford() {
         ("Y 0", GateName::Y),
         ("Z 0", GateName::Z),
         ("H 0", GateName::H),
-        ("H_XZ 0", GateName::HXZ),
+        ("H_XZ 0", GateName::H),
         ("S 0", GateName::S),
         ("S_DAG 0", GateName::SDag),
         ("SQRT_X 0", GateName::SqrtX),
         ("SQRT_Y 0", GateName::SqrtY),
-        ("SQRT_Z 0", GateName::SqrtZ),
+        ("SQRT_Z 0", GateName::S),
         ("R 0", GateName::Reset),
-        ("RZ 0", GateName::ResetZ),
+        ("RZ 0", GateName::Reset),
         ("CY 0 1", GateName::CY),
         ("CZ 0 1", GateName::CZ),
-        ("CNOT 0 1", GateName::CNot),
-        ("ZCX 0 1", GateName::ZCX),
+        ("CNOT 0 1", GateName::CX),
+        ("ZCX 0 1", GateName::CX),
     ] {
         let p = parse(src).unwrap_or_else(|e| panic!("failed on {src:?}: {e}"));
         match &p.instructions[0] {

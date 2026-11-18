@@ -51,7 +51,7 @@ fn line_numbers_are_one_indexed_and_count_blank_and_comment_lines() {
 
 #[test]
 fn leading_indentation_tolerated() {
-    let p = parse("    H 0\n\tH 1").unwrap();
+    let p = parse("    H 0\n\tX 1").unwrap();
     assert_eq!(p.instructions.len(), 2);
 }
 

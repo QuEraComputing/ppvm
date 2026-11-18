@@ -1152,20 +1152,26 @@ mod tests {
         #[test]
         fn test_cz_many_matches_individual() {
             let n = 8;
-            let pairs = vec![(0, 1), (2, 3), (4, 5)];
-            let mut tab_ind = TTab::new(n);
-            tab_ind.h(0);
-            tab_ind.h(2);
-            tab_ind.h(4);
-            for &(c, t) in &pairs {
-                tab_ind.cz(c, t);
+            // Disjoint pairs, then pairs that share qubits (as fusing `CX 0 1` /
+            // `CX 1 2` produces), which must be applied in order.
+            for pairs in [
+                vec![(0, 1), (2, 3), (4, 5)],
+                vec![(0, 1), (1, 2), (2, 0), (0, 1), (3, 1)],
+            ] {
+                let mut tab_ind = TTab::new(n);
+                tab_ind.h(0);
+                tab_ind.h(2);
+                tab_ind.h(4);
+                for &(c, t) in &pairs {
+                    tab_ind.cz(c, t);
+                }
+                let mut tab_batch = TTab::new(n);
+                tab_batch.h(0);
+                tab_batch.h(2);
+                tab_batch.h(4);
+                tab_batch.cz_many(&pairs);
+                assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
             }
-            let mut tab_batch = TTab::new(n);
-            tab_batch.h(0);
-            tab_batch.h(2);
-            tab_batch.h(4);
-            tab_batch.cz_many(&pairs);
-            assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }
 
         #[test]
@@ -1332,20 +1338,26 @@ mod tests {
         #[test]
         fn test_cnot_many_matches_individual() {
             let n = 8;
-            let pairs = vec![(0, 1), (2, 3), (4, 5)];
-            let mut tab_ind = TTab::new(n);
-            tab_ind.h(0);
-            tab_ind.h(2);
-            tab_ind.h(4);
-            for &(c, t) in &pairs {
-                tab_ind.cnot(c, t);
+            // Disjoint pairs, then pairs that share qubits (as fusing `CX 0 1` /
+            // `CX 1 2` produces), which must be applied in order.
+            for pairs in [
+                vec![(0, 1), (2, 3), (4, 5)],
+                vec![(0, 1), (1, 2), (2, 0), (0, 1), (3, 1)],
+            ] {
+                let mut tab_ind = TTab::new(n);
+                tab_ind.h(0);
+                tab_ind.h(2);
+                tab_ind.h(4);
+                for &(c, t) in &pairs {
+                    tab_ind.cnot(c, t);
+                }
+                let mut tab_batch = TTab::new(n);
+                tab_batch.h(0);
+                tab_batch.h(2);
+                tab_batch.h(4);
+                tab_batch.cnot_many(&pairs);
+                assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
             }
-            let mut tab_batch = TTab::new(n);
-            tab_batch.h(0);
-            tab_batch.h(2);
-            tab_batch.h(4);
-            tab_batch.cnot_many(&pairs);
-            assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }
 
         #[test]
@@ -1374,20 +1386,26 @@ mod tests {
         #[test]
         fn test_cy_many_matches_individual() {
             let n = 8;
-            let pairs = vec![(0, 1), (2, 3), (4, 5)];
-            let mut tab_ind = TTab::new(n);
-            tab_ind.h(0);
-            tab_ind.h(2);
-            tab_ind.s(4);
-            for &(c, t) in &pairs {
-                tab_ind.cy(c, t);
+            // Disjoint pairs, then pairs that share qubits (as fusing `CX 0 1` /
+            // `CX 1 2` produces), which must be applied in order.
+            for pairs in [
+                vec![(0, 1), (2, 3), (4, 5)],
+                vec![(0, 1), (1, 2), (2, 0), (0, 1), (3, 1)],
+            ] {
+                let mut tab_ind = TTab::new(n);
+                tab_ind.h(0);
+                tab_ind.h(2);
+                tab_ind.s(4);
+                for &(c, t) in &pairs {
+                    tab_ind.cy(c, t);
+                }
+                let mut tab_batch = TTab::new(n);
+                tab_batch.h(0);
+                tab_batch.h(2);
+                tab_batch.s(4);
+                tab_batch.cy_many(&pairs);
+                assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
             }
-            let mut tab_batch = TTab::new(n);
-            tab_batch.h(0);
-            tab_batch.h(2);
-            tab_batch.s(4);
-            tab_batch.cy_many(&pairs);
-            assert_eq!(snapshot(&tab_ind), snapshot(&tab_batch));
         }
 
         #[test]

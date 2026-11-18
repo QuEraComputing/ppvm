@@ -25,6 +25,32 @@ impl<V: VirtualState> GeneralizedTableau<V> {
         })
     }
 
+    /// Draw event `k` with probability `probabilities[k] / total`, given that
+    /// one happens. Rounding falls back to the last possible event.
+    fn draw_given_event(&mut self, probabilities: &[f64], total: f64) -> usize {
+        let r = self.rng.random::<f64>() * total;
+        let mut cumulative = 0.0;
+        probabilities
+            .iter()
+            .position(|&p| {
+                cumulative += p;
+                r < cumulative
+            })
+            .unwrap_or_else(|| probabilities.iter().rposition(|&p| p > 0.0).unwrap())
+    }
+
+    /// First index `≥ i` that gets an error when each target does independently
+    /// with probability `p`: a geometric skip from one random number.
+    fn next_error(&mut self, i: usize, p: f64) -> usize {
+        if p <= 0.0 {
+            return usize::MAX;
+        }
+        let u: f64 = self.rng.random();
+        // ln(1 − u) / ln(1 − p) ≥ 0; the cast saturates, so huge skips end the loop.
+        let skip = ((-u).ln_1p() / (-p).ln_1p()).floor() as usize;
+        i.saturating_add(skip)
+    }
+
     /// Apply Pauli `k` (0 = I, 1 = X, 2 = Y, 3 = Z) to `q`.
     fn pauli(&mut self, q: usize, k: usize) {
         match k {
@@ -36,12 +62,35 @@ impl<V: VirtualState> GeneralizedTableau<V> {
     }
 }
 
-/// `X`, `Y`, `Z` with probabilities `p[0]`, `p[1]`, `p[2]`.
+/// `X`, `Y`, `Z` with probabilities `p[0]`, `p[1]`, `p[2]`. The batched
+/// methods skip straight to the next error instead of drawing per target.
 impl<V: VirtualState> PauliError<f64> for GeneralizedTableau<V> {
     fn pauli_error(&mut self, q: usize, p: [f64; 3]) {
         if let Some(k) = self.draw(&p) {
             self.pauli(q, k + 1);
         }
+    }
+
+    fn pauli_error_many(&mut self, targets: &[usize], p: [f64; 3]) {
+        let total: f64 = p.iter().sum();
+        let mut i = self.next_error(0, total);
+        while i < targets.len() {
+            let k = self.draw_given_event(&p, total);
+            self.pauli(targets[i], k + 1);
+            i = self.next_error(i + 1, total);
+        }
+    }
+
+    fn x_error_many(&mut self, targets: &[usize], p: f64) {
+        self.pauli_error_many(targets, [p, 0.0, 0.0]);
+    }
+
+    fn y_error_many(&mut self, targets: &[usize], p: f64) {
+        self.pauli_error_many(targets, [0.0, p, 0.0]);
+    }
+
+    fn z_error_many(&mut self, targets: &[usize], p: f64) {
+        self.pauli_error_many(targets, [0.0, 0.0, p]);
     }
 }
 
@@ -60,6 +109,10 @@ impl<V: VirtualState> TwoQubitPauliError<f64> for GeneralizedTableau<V> {
 impl<V: VirtualState> Depolarizing<f64> for GeneralizedTableau<V> {
     fn depolarize1(&mut self, q: usize, p: f64) {
         self.pauli_error(q, [p / 3.0; 3]);
+    }
+
+    fn depolarize1_many(&mut self, targets: &[usize], p: f64) {
+        self.pauli_error_many(targets, [p / 3.0; 3]);
     }
 }
 
@@ -153,5 +206,64 @@ mod tests {
         }
         assert!(within(first, 8.0 * p / 15.0), "{first} of {shots}");
         assert!(within(both, 4.0 * p / 15.0), "{both} of {shots}");
+    }
+
+    /// Batched channels act on each target independently with the channel's
+    /// rates: per Pauli, at either end of the batch, and on neighbouring pairs.
+    #[test]
+    fn batched_channels_match_independent_rates() {
+        let (n, shots, p) = (400, 100, 0.06);
+        let targets: Vec<usize> = (0..n).collect();
+        let samples = |count: usize| (count * shots) as f64;
+        let within = |hits: usize, trials: f64, rate: f64| {
+            let sigma = (rate * (1.0 - rate) / trials).sqrt();
+            ((hits as f64 / trials) - rate).abs() <= 5.0 * sigma
+        };
+        let channels: [(&str, [f64; 3], fn(&mut Sim, &[usize], f64)); 4] = [
+            ("X", [p, 0.0, 0.0], |s, t, p| s.x_error_many(t, p)),
+            ("Y", [0.0, p, 0.0], |s, t, p| s.y_error_many(t, p)),
+            ("Z", [0.0, 0.0, p], |s, t, p| s.z_error_many(t, p)),
+            ("DEPOLARIZE1", [p / 3.0; 3], |s, t, p| {
+                s.depolarize1_many(t, p)
+            }),
+        ];
+        for (name, rates, channel) in channels {
+            let (mut per_pauli, mut ends, mut pairs) = ([0; 3], [0; 2], 0);
+            for seed in 0..shots {
+                let got = applied(n, seed as u64, |s| channel(s, &targets, p));
+                let hit: Vec<bool> = got.iter().map(|&b| b != bits('I')).collect();
+                for b in &got {
+                    if let Some(k) = "XYZ".chars().position(|c| bits(c) == *b) {
+                        per_pauli[k] += 1;
+                    }
+                }
+                ends[0] += hit[..n / 10].iter().filter(|&&h| h).count();
+                ends[1] += hit[n - n / 10..].iter().filter(|&&h| h).count();
+                pairs += hit.windows(2).filter(|w| w[0] && w[1]).count();
+            }
+            for k in 0..3 {
+                assert!(
+                    within(per_pauli[k], samples(n), rates[k]),
+                    "{name}: {per_pauli:?}"
+                );
+            }
+            for end in ends {
+                assert!(within(end, samples(n / 10), p), "{name}: ends {ends:?}");
+            }
+            assert!(
+                within(pairs, samples(n - 1), p * p),
+                "{name}: pairs {pairs}"
+            );
+        }
+    }
+
+    /// `p = 0` never applies the Pauli, `p = 1` applies it to every target.
+    #[test]
+    fn batched_channels_at_zero_and_one() {
+        let targets: Vec<usize> = (0..50).collect();
+        let none = applied(50, 0, |s| s.x_error_many(&targets, 0.0));
+        assert!(none.iter().all(|&b| b == bits('I')));
+        let all = applied(50, 0, |s| s.x_error_many(&targets, 1.0));
+        assert!(all.iter().all(|&b| b == bits('X')));
     }
 }

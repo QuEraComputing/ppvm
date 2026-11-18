@@ -127,17 +127,15 @@ impl ActiveState for DenseState {
 
     fn branch_weights(&self, p: AxisPauli) -> [f64; 2] {
         let x = p.x as usize;
-        let norm: f64 = self.amplitudes.iter().map(|a| a.norm_sqr()).sum();
-        // ⟨φ|P|φ⟩ = Σ_α conj(φ[α ⊕ x]) · c(α) · φ[α], real for Hermitian P.
-        let expectation: f64 = self
-            .amplitudes
-            .iter()
-            .enumerate()
-            .map(|(alpha, amp)| {
-                (self.amplitudes[alpha ^ x].conj() * pauli_factor(p, alpha) * amp).re
-            })
-            .sum();
-        [0.5 * (norm + expectation), 0.5 * (norm - expectation)]
+        // ‖½(1 ± P)φ‖² summed directly, with (Pφ)[α] = c(α ⊕ x) · φ[α ⊕ x]: never
+        // negative, and an impossible branch stays O(ε²) instead of ±ε.
+        let (mut plus, mut minus) = (0.0, 0.0);
+        for (alpha, &amp) in self.amplitudes.iter().enumerate() {
+            let p_amp = pauli_factor(p, alpha ^ x) * self.amplitudes[alpha ^ x];
+            plus += (amp + p_amp).norm_sqr();
+            minus += (amp - p_amp).norm_sqr();
+        }
+        [0.25 * plus, 0.25 * minus]
     }
 
     fn collapse(&mut self, p: AxisPauli, m: bool, v: &Rotation) {
@@ -388,6 +386,43 @@ mod tests {
                     (w0 - 0.5 * (1.0 + e.re)).abs() < 1e-12
                         && (w1 - 0.5 * (1.0 - e.re)).abs() < 1e-12
                 );
+            }
+        }
+    }
+
+    /// On an eigenstate of `P`, up to rounding, the weights are probabilities:
+    /// never negative, summing to 1, with the impossible branch at rounding
+    /// level.
+    #[test]
+    fn branch_weights_on_eigenstates() {
+        let mut rng = Rng(13);
+        for k in 1..=5 {
+            for _ in 0..200 {
+                let (psi, p, q) = (rng.state(k), rng.pauli(k), rng.pauli(k));
+                if p.x == 0 && p.z == 0 {
+                    continue;
+                }
+                let sign = if rng.next() & 1 == 1 { -1.0 } else { 1.0 };
+                let pv = apply(&pauli(p, k), &psi.amplitudes);
+                let amps: Vec<C> = psi
+                    .amplitudes
+                    .iter()
+                    .zip(&pv)
+                    .map(|(a, b)| a + sign * b)
+                    .collect();
+                let norm = amps.iter().map(|a| a.norm_sqr()).sum::<f64>().sqrt();
+                let mut phi = DenseState {
+                    amplitudes: amps.into_iter().map(|a| a / norm).collect(),
+                };
+                // e^{−iθQ} then e^{iθQ}: the same state, with rounding.
+                let theta = rng.unit();
+                let (cos, sin) = (theta.cos(), theta.sin());
+                phi.rotate(q, c(cos, 0.0), c(0.0, -sin));
+                phi.rotate(q, c(cos, 0.0), c(0.0, sin));
+                let [w0, w1] = phi.branch_weights(p);
+                assert!(w0 >= 0.0 && w1 >= 0.0, "{w0} {w1}");
+                assert!((w0 + w1 - 1.0).abs() < 1e-12);
+                assert!(w0.min(w1) < 1e-12);
             }
         }
     }

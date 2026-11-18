@@ -27,10 +27,12 @@ use super::Clifford;
 ///   tableau evaluates it on the gate's generators to find which rows to
 ///   multiply.
 ///
-/// With `B = bool`, `apply1` and `apply2` must call `rule` exactly once if they
-/// apply the gate, and not at all if they skip it (e.g. on a lost site). Check
-/// for loss before calling `rule`. Wrappers such as `Phased` take the sign flip
-/// from that one call, so an extra or early call gives a wrong sign.
+/// A container of Pauli operators with `B = bool` must call `rule` exactly once
+/// in `apply1` and `apply2` if it applies the gate, and not at all if it skips
+/// it (e.g. on a lost site). Check for loss before calling `rule`. Wrappers such
+/// as `Phased` take the sign flip from that one call, so an extra or early call
+/// gives a wrong sign. Types that evaluate `rule` on fixed inputs are not
+/// bound by this and cannot be wrapped that way.
 ///
 /// Implementing this trait gives [`Clifford`] through the blanket impl, so a
 /// type must not also implement [`Clifford`] by hand.

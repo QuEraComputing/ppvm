@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["PPVMHeader"],"struct":["PPVMResolver"]};
+window.SIDEBAR_ITEMS = {};

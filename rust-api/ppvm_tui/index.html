@@ -9,8 +9,8 @@ touches a terminal or runs a loop.</dd><dt><a class="mod" href="codeview/index.h
 Backs the Program panel (highlight = the program counter) and the REPL log
 (no highlight). Deliberately mirrors the shape of stellarscope’s <code>CodeView</code>
 so the two stay interchangeable, but has no external dependencies.</dd><dt><a class="mod" href="command/index.html" title="mod ppvm_tui::command">command</a></dt><dd>The TUI command grammar. Bare tokens are gate ops; <code>:</code>-prefixed tokens are
-meta/debug commands; an empty line means “step”. The gate table is ported
-from the removed rustyline REPL.</dd><dt><a class="mod" href="editor/index.html" title="mod ppvm_tui::editor">editor</a></dt><dd>A readline-style single-line editor with command history. Owns the command
+meta/debug commands; an empty line means “step”. Gate names are the ISA
+mnemonics, i.e. the same spelling as <code>circuit::circuit.&lt;name&gt;</code> in <code>.sst</code>.</dd><dt><a class="mod" href="editor/index.html" title="mod ppvm_tui::editor">editor</a></dt><dd>A readline-style single-line editor with command history. Owns the command
 buffer, edit cursor, and history; knows nothing about the PPVM or the
 debugger. The host handles submit (Enter) and quit keys, then delegates the
 remaining editing keys here via <a href="editor/struct.LineEditor.html#method.handle_key" title="method ppvm_tui::editor::LineEditor::handle_key"><code>LineEditor::handle_key</code></a>.</dd><dt><a class="mod" href="widgets/index.html" title="mod ppvm_tui::widgets">widgets</a></dt><dd>ratatui <code>Widget</code> components for the ppvm TUI. Each borrows <code>&amp;AppState</code> and

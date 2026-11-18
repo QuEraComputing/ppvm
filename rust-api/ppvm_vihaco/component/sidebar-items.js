@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"constant":["MAX_QUBITS"],"enum":["Circuit","LossyPauliSumCircuit","PauliSumCircuit","TableauCircuit"],"struct":["CircuitExecutor","LossyPauliSumExecutor","PauliSumExecutor"]};
+window.SIDEBAR_ITEMS = {"constant":["MAX_QUBITS"],"fn":["pop_qubit_batch","pop_qubit_pair_batch","pop_two_qubit_pauli_error"],"struct":["Circuit","CircuitExecutor","PauliSumBackend","QubitBatch","QubitPairBatch","TableauCircuit","TraceMessage","TwoQubitPauliErrorMsg"],"trait":["CircuitBackend","CircuitOp","PopParams"]};

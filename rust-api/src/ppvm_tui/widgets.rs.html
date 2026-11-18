@@ -92,32 +92,31 @@
 <a href=#92 id=92 data-nosnippet>92</a>    <span class="kw">use </span>ratatui::Terminal;
 <a href=#93 id=93 data-nosnippet>93</a>    <span class="kw">use </span>ratatui::backend::TestBackend;
 <a href=#94 id=94 data-nosnippet>94</a>
-<a href=#95 id=95 data-nosnippet>95</a>    <span class="kw">const </span>BP_PROGRAM: <span class="kw-2">&amp;</span>str = <span class="string">"device circuit.n_qubits 1;\n\
-<a href=#96 id=96 data-nosnippet>96</a>                              fn @main() { cpu::cpu.breakpoint\n cpu::cpu.const u64, 0\n circuit::circuit.measure\n cpu::cpu.ret 0 }\n"</span>;
-<a href=#97 id=97 data-nosnippet>97</a>
-<a href=#98 id=98 data-nosnippet>98</a>    <span class="attr">#[test]
-<a href=#99 id=99 data-nosnippet>99</a>    </span><span class="kw">fn </span>renders_all_panels_without_panic() {
-<a href=#100 id=100 data-nosnippet>100</a>        <span class="kw">let </span><span class="kw-2">mut </span>app = AppState::new();
-<a href=#101 id=101 data-nosnippet>101</a>        app.load_source(BP_PROGRAM).unwrap();
-<a href=#102 id=102 data-nosnippet>102</a>
-<a href=#103 id=103 data-nosnippet>103</a>        <span class="kw">let </span>backend = TestBackend::new(<span class="number">100</span>, <span class="number">30</span>);
-<a href=#104 id=104 data-nosnippet>104</a>        <span class="kw">let </span><span class="kw-2">mut </span>terminal = Terminal::new(backend).unwrap();
-<a href=#105 id=105 data-nosnippet>105</a>        terminal.draw(|f| app.render(f)).unwrap();
-<a href=#106 id=106 data-nosnippet>106</a>
-<a href=#107 id=107 data-nosnippet>107</a>        <span class="kw">let </span>content: String = terminal
-<a href=#108 id=108 data-nosnippet>108</a>            .backend()
-<a href=#109 id=109 data-nosnippet>109</a>            .buffer()
-<a href=#110 id=110 data-nosnippet>110</a>            .content
-<a href=#111 id=111 data-nosnippet>111</a>            .iter()
-<a href=#112 id=112 data-nosnippet>112</a>            .map(|c| c.symbol())
-<a href=#113 id=113 data-nosnippet>113</a>            .collect();
-<a href=#114 id=114 data-nosnippet>114</a>        <span class="macro">assert!</span>(content.contains(<span class="string">"Program"</span>), <span class="string">"missing Program panel"</span>);
-<a href=#115 id=115 data-nosnippet>115</a>        <span class="macro">assert!</span>(content.contains(<span class="string">"State"</span>), <span class="string">"missing State panel"</span>);
-<a href=#116 id=116 data-nosnippet>116</a>        <span class="macro">assert!</span>(
-<a href=#117 id=117 data-nosnippet>117</a>            content.contains(<span class="string">"Measurement record"</span>),
-<a href=#118 id=118 data-nosnippet>118</a>            <span class="string">"missing record panel"
-<a href=#119 id=119 data-nosnippet>119</a>        </span>);
-<a href=#120 id=120 data-nosnippet>120</a>        <span class="macro">assert!</span>(content.contains(<span class="string">"ppvm&gt;"</span>), <span class="string">"missing command prompt"</span>);
-<a href=#121 id=121 data-nosnippet>121</a>    }
-<a href=#122 id=122 data-nosnippet>122</a>}
+<a href=#95 id=95 data-nosnippet>95</a>    <span class="kw">use </span><span class="kw">crate</span>::app::tests::BP_PROGRAM;
+<a href=#96 id=96 data-nosnippet>96</a>
+<a href=#97 id=97 data-nosnippet>97</a>    <span class="attr">#[test]
+<a href=#98 id=98 data-nosnippet>98</a>    </span><span class="kw">fn </span>renders_all_panels_without_panic() {
+<a href=#99 id=99 data-nosnippet>99</a>        <span class="kw">let </span><span class="kw-2">mut </span>app = AppState::new();
+<a href=#100 id=100 data-nosnippet>100</a>        app.load_source(BP_PROGRAM).unwrap();
+<a href=#101 id=101 data-nosnippet>101</a>
+<a href=#102 id=102 data-nosnippet>102</a>        <span class="kw">let </span>backend = TestBackend::new(<span class="number">100</span>, <span class="number">30</span>);
+<a href=#103 id=103 data-nosnippet>103</a>        <span class="kw">let </span><span class="kw-2">mut </span>terminal = Terminal::new(backend).unwrap();
+<a href=#104 id=104 data-nosnippet>104</a>        terminal.draw(|f| app.render(f)).unwrap();
+<a href=#105 id=105 data-nosnippet>105</a>
+<a href=#106 id=106 data-nosnippet>106</a>        <span class="kw">let </span>content: String = terminal
+<a href=#107 id=107 data-nosnippet>107</a>            .backend()
+<a href=#108 id=108 data-nosnippet>108</a>            .buffer()
+<a href=#109 id=109 data-nosnippet>109</a>            .content
+<a href=#110 id=110 data-nosnippet>110</a>            .iter()
+<a href=#111 id=111 data-nosnippet>111</a>            .map(|c| c.symbol())
+<a href=#112 id=112 data-nosnippet>112</a>            .collect();
+<a href=#113 id=113 data-nosnippet>113</a>        <span class="macro">assert!</span>(content.contains(<span class="string">"Program"</span>), <span class="string">"missing Program panel"</span>);
+<a href=#114 id=114 data-nosnippet>114</a>        <span class="macro">assert!</span>(content.contains(<span class="string">"State"</span>), <span class="string">"missing State panel"</span>);
+<a href=#115 id=115 data-nosnippet>115</a>        <span class="macro">assert!</span>(
+<a href=#116 id=116 data-nosnippet>116</a>            content.contains(<span class="string">"Measurement record"</span>),
+<a href=#117 id=117 data-nosnippet>117</a>            <span class="string">"missing record panel"
+<a href=#118 id=118 data-nosnippet>118</a>        </span>);
+<a href=#119 id=119 data-nosnippet>119</a>        <span class="macro">assert!</span>(content.contains(<span class="string">"ppvm&gt;"</span>), <span class="string">"missing command prompt"</span>);
+<a href=#120 id=120 data-nosnippet>120</a>    }
+<a href=#121 id=121 data-nosnippet>121</a>}
 </code></pre></div></section></main></body></html>

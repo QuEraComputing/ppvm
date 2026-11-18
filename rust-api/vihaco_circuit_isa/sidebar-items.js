@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["CircuitMessage"],"mod":["circuit"],"struct":["CircuitEffect"],"type":["CircuitSurfaceInstruction"]};
+window.SIDEBAR_ITEMS = {"mod":["circuit","messages"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["BackendKindSyntax","HeaderDeclaration"],"fn":["collect_header"],"type":["Metadata"]};

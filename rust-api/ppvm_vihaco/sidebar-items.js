@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["CircuitInstruction"],"fn":["compile_program","dump_file","dump_program","load_module_file","parse_program","run_file","run_program"],"mod":["bytecode","component","composite","device_info","measurements","observable","prelude","shots"],"type":["PPVMModule"]};
+window.SIDEBAR_ITEMS = {"fn":["dump_file","dump_program"],"mod":["bytecode","circuit","component","composite","device_info","header","loader","measurements","observable","prelude","shots"]};

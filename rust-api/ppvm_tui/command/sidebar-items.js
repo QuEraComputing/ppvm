@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["Command"],"fn":["gate_spec","parse_command"],"struct":["GateSpec"]};
+window.SIDEBAR_ITEMS = {"enum":["Command"],"fn":["parse_command","send_gate"]};

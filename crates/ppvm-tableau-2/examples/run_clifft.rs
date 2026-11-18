@@ -51,9 +51,19 @@ enum Op {
     TDag(usize),
     Rotation(Axis, f64, usize),
     U3([f64; 3], usize),
-    /// `X`, `Y`, `Z` with these probabilities.
-    Pauli([f64; 3], usize),
-    Depolarize2(f64, usize, usize),
+    /// `X`, `Y`, `Z` with these probabilities on `noise[at..at + len]`, as one
+    /// `pauli_error_many`.
+    Pauli {
+        p: [f64; 3],
+        at: usize,
+        len: usize,
+    },
+    /// `DEPOLARIZE2(p)` on `pairs[at..at + len]`, as one `depolarize2_many`.
+    Depolarize2 {
+        p: f64,
+        at: usize,
+        len: usize,
+    },
     /// `M`/`MR` on `measured[at..at + len]`, as one `measure_many`; flips and
     /// resets as for `Measure`.
     MeasureZ {
@@ -119,14 +129,21 @@ fn flip_arg(args: &[f64]) -> f64 {
     args.first().copied().unwrap_or(0.0)
 }
 
-/// Flatten the program into ops, unrolling `REPEAT` blocks. MPP factors go to
-/// `factors`, Z-basis measurement targets to `measured`.
-fn lower(
-    instructions: &[ExtendedInstruction],
-    ops: &mut Vec<Op>,
-    factors: &mut Vec<PauliFactor>,
-    measured: &mut Vec<usize>,
-) {
+/// Target lists that ops index into with `at..at + len`.
+#[derive(Default)]
+struct Pools {
+    /// MPP factors.
+    factors: Vec<PauliFactor>,
+    /// Z-basis measurement targets.
+    measured: Vec<usize>,
+    /// One-qubit noise targets.
+    noise: Vec<usize>,
+    /// Two-qubit noise pairs.
+    pairs: Vec<(usize, usize)>,
+}
+
+/// Flatten the program into ops, unrolling `REPEAT` blocks.
+fn lower(instructions: &[ExtendedInstruction], ops: &mut Vec<Op>, pools: &mut Pools) {
     for instruction in instructions {
         match instruction {
             ExtendedInstruction::Gate(g) if g.targets.iter().any(|t| t.as_qubit().is_none()) => ops
@@ -179,22 +196,24 @@ fn lower(
             } => ops.extend(targets.iter().map(|&q| Op::U3([*theta, *phi, *lambda], q))),
             ExtendedInstruction::Noise(n) => {
                 let p = flip_arg(&n.args);
-                let one = |probabilities: [f64; 3]| {
-                    n.targets.iter().map(move |&q| Op::Pauli(probabilities, q))
-                };
-                match n.name {
-                    NoiseName::XError => ops.extend(one([p, 0.0, 0.0])),
-                    NoiseName::YError => ops.extend(one([0.0, p, 0.0])),
-                    NoiseName::ZError => ops.extend(one([0.0, 0.0, p])),
-                    NoiseName::Depolarize1 => ops.extend(one([p / 3.0; 3])),
-                    NoiseName::PauliChannel1 => ops.extend(one([n.args[0], n.args[1], n.args[2]])),
-                    NoiseName::Depolarize2 => ops.extend(
-                        n.targets
-                            .chunks(2)
-                            .map(|pair| Op::Depolarize2(p, pair[0], pair[1])),
-                    ),
+                let one = match n.name {
+                    NoiseName::XError => [p, 0.0, 0.0],
+                    NoiseName::YError => [0.0, p, 0.0],
+                    NoiseName::ZError => [0.0, 0.0, p],
+                    NoiseName::Depolarize1 => [p / 3.0; 3],
+                    NoiseName::PauliChannel1 => [n.args[0], n.args[1], n.args[2]],
+                    NoiseName::Depolarize2 => {
+                        let (at, len) = (pools.pairs.len(), n.targets.len() / 2);
+                        ops.push(Op::Depolarize2 { p, at, len });
+                        let pairs = n.targets.chunks(2).map(|pair| (pair[0], pair[1]));
+                        pools.pairs.extend(pairs);
+                        continue;
+                    }
                     other => panic!("unsupported noise {other:?}"),
-                }
+                };
+                let (at, len) = (pools.noise.len(), n.targets.len());
+                ops.push(Op::Pauli { p: one, at, len });
+                pools.noise.extend_from_slice(&n.targets);
             }
             ExtendedInstruction::Measure(m) => {
                 let (basis, reset) = match m.name {
@@ -209,12 +228,12 @@ fn lower(
                 let flip = flip_arg(&m.args);
                 if let Basis::Z = basis {
                     ops.push(Op::MeasureZ {
-                        at: measured.len(),
+                        at: pools.measured.len(),
                         len: m.targets.len(),
                         flip,
                         reset,
                     });
-                    measured.extend_from_slice(&m.targets);
+                    pools.measured.extend_from_slice(&m.targets);
                     continue;
                 }
                 ops.extend(m.targets.iter().map(|&q| Op::Measure {
@@ -228,16 +247,16 @@ fn lower(
                 let flip = flip_arg(&mpp.args);
                 for product in &mpp.products {
                     ops.push(Op::Mpp {
-                        at: factors.len(),
+                        at: pools.factors.len(),
                         len: product.len(),
                         flip,
                     });
-                    factors.extend_from_slice(product);
+                    pools.factors.extend_from_slice(product);
                 }
             }
             ExtendedInstruction::Repeat { count, body, .. } => {
                 let mut block = Vec::new();
-                lower(body, &mut block, factors, measured);
+                lower(body, &mut block, pools);
                 for _ in 0..*count {
                     ops.extend_from_slice(&block);
                 }
@@ -322,13 +341,7 @@ fn pauli_basis(axis: PauliAxis) -> Basis {
 
 /// Run `op`, appending measurement outcomes to `record`; `rng` flips recorded
 /// outcomes.
-fn run(
-    s: &mut Sim,
-    op: Op,
-    (factors, measured): (&[PauliFactor], &[usize]),
-    rng: &mut SmallRng,
-    record: &mut Vec<bool>,
-) {
+fn run(s: &mut Sim, op: Op, pools: &Pools, rng: &mut SmallRng, record: &mut Vec<bool>) {
     let mut noisy = |m: bool, flip: f64| m ^ (flip > 0.0 && rng.random::<f64>() < flip);
     match op {
         Op::One(name, q) => apply_one(s, name, q),
@@ -341,8 +354,8 @@ fn run(
             Axis::Z => s.rz(q, theta),
         },
         Op::U3([theta, phi, lambda], q) => s.u3(q, theta, phi, lambda),
-        Op::Pauli(p, q) => s.pauli_error(q, p),
-        Op::Depolarize2(p, a, b) => s.depolarize2(a, b, p),
+        Op::Pauli { p, at, len } => s.pauli_error_many(&pools.noise[at..at + len], p),
+        Op::Depolarize2 { p, at, len } => s.depolarize2_many(&pools.pairs[at..at + len], p),
         Op::Measure {
             basis,
             q,
@@ -363,7 +376,7 @@ fn run(
             flip,
             reset,
         } => {
-            let targets = &measured[at..at + len];
+            let targets = &pools.measured[at..at + len];
             for (m, &q) in s.measure_many(targets).into_iter().zip(targets) {
                 let m = m.unwrap_or(false);
                 if reset && m {
@@ -388,7 +401,7 @@ fn run(
         },
         // Basis changes to Z, a CX ladder onto the first qubit, measure, undo.
         Op::Mpp { at, len, flip } => {
-            let product = &factors[at..at + len];
+            let product = &pools.factors[at..at + len];
             let first = product[0].qubit;
             for f in product {
                 change_basis(s, pauli_basis(f.axis), f.qubit, true);
@@ -422,20 +435,27 @@ fn lose_after(s: &mut Sim, op: Op, p: f64) {
     }
 }
 
-fn qubits(op: &Op, (factors, measured): (&[PauliFactor], &[usize])) -> Vec<usize> {
+fn qubits(op: &Op, pools: &Pools) -> Vec<usize> {
     match *op {
-        Op::Two(_, a, b) | Op::Depolarize2(_, a, b) => vec![a, b],
+        Op::Two(_, a, b) => vec![a, b],
         Op::One(_, q)
         | Op::T(q)
         | Op::TDag(q)
         | Op::Rotation(_, _, q)
         | Op::U3(_, q)
-        | Op::Pauli(_, q)
         | Op::Measure { q, .. }
         | Op::Reset(_, q)
         | Op::Feedback { q, .. } => vec![q],
-        Op::Mpp { at, len, .. } => factors[at..at + len].iter().map(|f| f.qubit).collect(),
-        Op::MeasureZ { at, len, .. } => measured[at..at + len].to_vec(),
+        Op::Mpp { at, len, .. } => pools.factors[at..at + len]
+            .iter()
+            .map(|f| f.qubit)
+            .collect(),
+        Op::MeasureZ { at, len, .. } => pools.measured[at..at + len].to_vec(),
+        Op::Pauli { at, len, .. } => pools.noise[at..at + len].to_vec(),
+        Op::Depolarize2 { at, len, .. } => pools.pairs[at..at + len]
+            .iter()
+            .flat_map(|&(a, b)| [a, b])
+            .collect(),
     }
 }
 
@@ -461,12 +481,11 @@ fn main() {
     let src = rewrite_dialect(&std::fs::read_to_string(&path).expect("read circuit"));
     let program =
         stim_parser::parse_extended(&src).unwrap_or_else(|e| panic!("parse error: {e:?}"));
-    let (mut ops, mut factors, mut measured) = (Vec::new(), Vec::new(), Vec::new());
-    lower(&program.instructions, &mut ops, &mut factors, &mut measured);
-    let pools = (&factors[..], &measured[..]);
+    let (mut ops, mut pools) = (Vec::new(), Pools::default());
+    lower(&program.instructions, &mut ops, &mut pools);
     let n = 1 + ops
         .iter()
-        .flat_map(|op| qubits(op, pools))
+        .flat_map(|op| qubits(op, &pools))
         .max()
         .expect("empty circuit");
 
@@ -479,7 +498,7 @@ fn main() {
         let mut s = Sim::new_with_seed(n, rng.random());
         record.clear();
         for &op in &ops {
-            run(&mut s, op, pools, &mut rng, &mut record);
+            run(&mut s, op, &pools, &mut rng, &mut record);
             if loss > 0.0 {
                 lose_after(&mut s, op, loss);
             }

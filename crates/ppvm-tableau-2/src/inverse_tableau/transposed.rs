@@ -11,7 +11,7 @@
 use ppvm_pauli_kernels::heisenberg;
 
 use super::InverseTableau;
-use super::bitword::{BitWord, ZERO, flip_bit, get_bit, transpose_64x64};
+use super::bitword::{BitWord, LANES, ZERO, flip_bit, get_bit, transpose_64x64};
 
 pub(super) struct TransposedTableau {
     n: usize,
@@ -39,19 +39,27 @@ impl TransposedTableau {
         for k in 0..2 {
             for plane in 0..2 {
                 let dst = if plane == 0 { &mut c.x[k] } else { &mut c.z[k] };
-                for_each_block(n, stride, |rows, cols| {
-                    let mut block = [ZERO; 64];
-                    for (r, word) in block.iter_mut().enumerate() {
+                for_each_block(stride, |rows, cols, lanes| {
+                    let mut block = [[ZERO; LANES]; 64];
+                    for (r, words) in block.iter_mut().enumerate() {
                         let i = rows + r;
                         if i < n {
                             let (x, z) = InverseTableau::offsets(n, stride, k, i);
-                            *word = t.words[if plane == 0 { x } else { z } + cols / 64];
+                            let at = if plane == 0 { x } else { z } + cols / 64;
+                            // A loop: `copy_from_slice` (or a zip) of < 4 words calls `memmove`.
+                            #[allow(clippy::manual_memcpy)]
+                            for l in 0..lanes {
+                                words[l] = t.words[at + l];
+                            }
                         }
                     }
                     transpose_64x64(&mut block);
-                    for (j, &word) in block.iter().enumerate() {
-                        if cols + j < n {
-                            dst[(cols + j) * stride + rows / 64] = word;
+                    for (j, words) in block.iter().enumerate() {
+                        for (l, &word) in words[..lanes].iter().enumerate() {
+                            let c = cols + 64 * l + j;
+                            if c < n {
+                                dst[c * stride + rows / 64] = word;
+                            }
                         }
                     }
                 });
@@ -71,19 +79,26 @@ impl TransposedTableau {
         for k in 0..2 {
             for plane in 0..2 {
                 let src = if plane == 0 { &self.x[k] } else { &self.z[k] };
-                for_each_block(n, stride, |rows, cols| {
-                    let mut block = [ZERO; 64];
-                    for (j, word) in block.iter_mut().enumerate() {
-                        if cols + j < n {
-                            *word = src[(cols + j) * stride + rows / 64];
+                for_each_block(stride, |rows, cols, lanes| {
+                    let mut block = [[ZERO; LANES]; 64];
+                    for (j, words) in block.iter_mut().enumerate() {
+                        for (l, word) in words[..lanes].iter_mut().enumerate() {
+                            let c = cols + 64 * l + j;
+                            if c < n {
+                                *word = src[c * stride + rows / 64];
+                            }
                         }
                     }
                     transpose_64x64(&mut block);
-                    for (r, &word) in block.iter().enumerate() {
+                    for (r, words) in block.iter().enumerate() {
                         let i = rows + r;
                         if i < n {
                             let (x, z) = InverseTableau::offsets(n, stride, k, i);
-                            t.words[if plane == 0 { x } else { z } + cols / 64] = word;
+                            let at = if plane == 0 { x } else { z } + cols / 64;
+                            #[allow(clippy::manual_memcpy)]
+                            for l in 0..lanes {
+                                t.words[at + l] = words[l];
+                            }
                         }
                     }
                 });
@@ -141,12 +156,12 @@ impl TransposedTableau {
     }
 }
 
-/// Visit the 64 × 64 blocks of an `n × n` bit matrix by their first row and
-/// first column.
-fn for_each_block(n: usize, stride: usize, mut f: impl FnMut(usize, usize)) {
-    for rows in (0..stride).map(|w| 64 * w).filter(|&r| r < n) {
-        for cols in (0..stride).map(|w| 64 * w).filter(|&c| c < n) {
-            f(rows, cols);
+/// Visit the 64 × 64 blocks of a `stride`-word square bit matrix in groups of up to
+/// [`LANES`] side by side: first row, first column, and blocks in the group.
+fn for_each_block(stride: usize, mut f: impl FnMut(usize, usize, usize)) {
+    for rows in (0..stride).map(|w| 64 * w) {
+        for w in (0..stride).step_by(LANES) {
+            f(rows, 64 * w, LANES.min(stride - w));
         }
     }
 }
@@ -160,7 +175,8 @@ mod tests {
     /// and the copy's bits and signs are the rows' bits and signs.
     #[test]
     fn round_trip_and_bits_match() {
-        for (i, n) in SIZES.into_iter().enumerate() {
+        // 300 qubits: one full group of `LANES` column blocks and a partial one.
+        for (i, n) in SIZES.into_iter().chain([300]).enumerate() {
             let mut t = InverseTableau::new(n);
             random_circuit(n, 150, 0x7a + i as u64)
                 .into_iter()

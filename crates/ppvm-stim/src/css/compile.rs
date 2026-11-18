@@ -38,7 +38,7 @@ pub(crate) enum Op {
         bit: bool,
         log1m_flip: f64,
     },
-    H(usize),
+    H(Vec<usize>),
     Pauli {
         q: usize,
         x: bool,
@@ -50,8 +50,8 @@ pub(crate) enum Op {
         x: bool,
         z: bool,
     },
-    Cx(usize, usize),
-    Cz(usize, usize),
+    Cx(Vec<[usize; 2]>),
+    Cz(Vec<[usize; 2]>),
     Pauli1(Box<Channel<usize>>),
     Pauli2(Box<Channel<[usize; 2]>>),
     Loss(Box<Channel<usize>>),
@@ -248,15 +248,15 @@ impl Compiler<'_> {
             X => qubits.for_each(|q| self.pauli(q, true, false)),
             Y => qubits.for_each(|q| self.pauli(q, true, true)),
             Z => qubits.for_each(|q| self.pauli(q, false, true)),
-            H | HXZ => qubits.for_each(|q| self.hadamard(q)),
+            H | HXZ => self.hadamards(qubits.collect()),
             // SQRT_Y = H Z and SQRT_Y_DAG = H X: a Hadamard after a Pauli.
             SqrtY => qubits.for_each(|q| {
                 self.pauli(q, false, true);
-                self.hadamard(q);
+                self.hadamards(vec![q]);
             }),
             SqrtYDag => qubits.for_each(|q| {
                 self.pauli(q, true, false);
-                self.hadamard(q);
+                self.hadamards(vec![q]);
             }),
             Identity => {}
             CX | ZCX | CNot => return self.controlled(op, true, false),
@@ -268,11 +268,16 @@ impl Compiler<'_> {
     }
 
     /// A controlled Pauli: classical feedback from a record, or a `CX` / `CZ` between qubits.
+    /// Consecutive qubit pairs become one op.
     fn controlled(&mut self, op: &GateOp, x: bool, z: bool) -> Result<(), CssError> {
+        let mut pairs = Vec::new();
         for pair in op.targets.as_chunks::<2>().0 {
             let q = qubit(pair[1]);
             match pair[0] {
-                Target::Rec(lookback) => self.ops.push(Op::Feedback { lookback, q, x, z }),
+                Target::Rec(lookback) => {
+                    self.two_qubit(std::mem::take(&mut pairs), z);
+                    self.ops.push(Op::Feedback { lookback, q, x, z });
+                }
                 Target::Qubit(_) if x && z => {
                     return Err(self.unsupported(op.name.canonical_name(), op.span));
                 }
@@ -284,11 +289,19 @@ impl Compiler<'_> {
                             line: op.span.line(self.line_map),
                         });
                     }
-                    self.ops.push(if z { Op::Cz(c, q) } else { Op::Cx(c, q) });
+                    pairs.push([c, q]);
                 }
             }
         }
+        self.two_qubit(pairs, z);
         Ok(())
+    }
+
+    fn two_qubit(&mut self, pairs: Vec<[usize; 2]>, cz: bool) {
+        if !pairs.is_empty() {
+            self.ops
+                .push(if cz { Op::Cz(pairs) } else { Op::Cx(pairs) });
+        }
     }
 
     fn noise(&mut self, op: &NoiseOp) -> Result<(), CssError> {
@@ -468,9 +481,11 @@ impl Compiler<'_> {
         self.ops.push(Op::Pauli { q, x, z });
     }
 
-    fn hadamard(&mut self, q: usize) {
-        self.ops.push(Op::H(q));
-        self.hadamard[q] ^= true;
+    fn hadamards(&mut self, qubits: Vec<usize>) {
+        for &q in &qubits {
+            self.hadamard[q] ^= true;
+        }
+        self.ops.push(Op::H(qubits));
     }
 
     fn new_segment(&mut self, q: usize) {

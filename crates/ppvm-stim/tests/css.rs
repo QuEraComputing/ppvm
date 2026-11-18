@@ -62,6 +62,7 @@ fn deterministic_cliffords() {
         &[1, 1, 0, 1],
     );
     assert_always("SQRT_Y 0\nSQRT_Y 0\nM 0", &[1]);
+    assert_always("SQRT_Y 0 0\nX 1\nH 1 1\nM 0 1", &[1, 1]);
     assert_always("SQRT_Y 0\nMX 0\nSQRT_Y_DAG 1\nMX 1", &[0, 1]);
     assert_always("X 0\nCX 0 1\nRX 2\nX 3\nCZ 3 2\nM 0 1\nMX 2", &[1, 1, 1]);
     assert_always("RX 0\nMX 0\nMPAD 0 1\nM(1) 1", &[0, 0, 1, 1]);
@@ -112,6 +113,11 @@ fn feedback_uses_the_recorded_value() {
     let shots = css_shots("H 0\nM(0.1) 0\nCX rec[-1] 1\nM 1", 2000, 3);
     assert!(shots.iter().all(|s| s[0] == s[1]));
     assert_always("X 0\nI_ERROR[loss](1) 0\nM 0\nCX rec[-1] 1\nM 1", &[2, 0]);
+    // Gates before and after a feedback target of the same line keep their order.
+    assert_always(
+        "X 0\nM 0\nCX 0 1 rec[-1] 2 1 3 2 4\nM 1 2 3 4",
+        &[1, 1, 1, 1, 1],
+    );
     assert_always(
         "X 0\nM 0\nRX 1\nCZ rec[-1] 1\nMX 1\nCY rec[-2] 2\nM 2",
         &[1, 1, 1],
@@ -182,8 +188,8 @@ fn rejects_non_css_programs() {
         }
     }
     assert_eq!(
-        compile("CZ 0 1\nCZ 1 2\nCZ 0 2").unwrap_err(),
-        CssError::NotCss { line: 3 }
+        compile("CZ 0 1\nTICK\nCZ 1 2\nTICK\nCZ 0 2").unwrap_err(),
+        CssError::NotCss { line: 5 }
     );
     assert_eq!(
         compile("CX 0 1\nH 1\nCX 0 1").unwrap_err(),

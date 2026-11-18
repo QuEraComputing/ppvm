@@ -128,7 +128,11 @@ impl Batch {
                     let value = if bit { Bits::ONES } else { Bits::ZERO };
                     self.record(value ^ bernoulli(log1m_flip, rng), Bits::ZERO);
                 }
-                Op::H(q) => std::mem::swap(&mut self.x[q], &mut self.z[q]),
+                Op::H(ref qubits) => {
+                    for &q in qubits {
+                        std::mem::swap(&mut self.x[q], &mut self.z[q]);
+                    }
+                }
                 Op::Pauli { q, x, z } => self.pauli(q, Bits::ONES, x, z),
                 Op::Feedback { lookback, q, x, z } => {
                     let m = self.recorded - lookback;
@@ -137,17 +141,21 @@ impl Batch {
                     }));
                     self.pauli(q, value, x, z);
                 }
-                Op::Cx(c, t) => {
-                    let keep = !(self.inactive[c] | self.inactive[t]);
-                    let (xc, zt) = (self.x[c], self.z[t]);
-                    self.x[t] ^= xc & keep;
-                    self.z[c] ^= zt & keep;
+                Op::Cx(ref pairs) => {
+                    for &[c, t] in pairs {
+                        let keep = !(self.inactive[c] | self.inactive[t]);
+                        let (xc, zt) = (self.x[c], self.z[t]);
+                        self.x[t] ^= xc & keep;
+                        self.z[c] ^= zt & keep;
+                    }
                 }
-                Op::Cz(a, b) => {
-                    let keep = !(self.inactive[a] | self.inactive[b]);
-                    let (xa, xb) = (self.x[a], self.x[b]);
-                    self.z[a] ^= xb & keep;
-                    self.z[b] ^= xa & keep;
+                Op::Cz(ref pairs) => {
+                    for &[a, b] in pairs {
+                        let keep = !(self.inactive[a] | self.inactive[b]);
+                        let (xa, xb) = (self.x[a], self.x[b]);
+                        self.z[a] ^= xb & keep;
+                        self.z[b] ^= xa & keep;
+                    }
                 }
                 Op::Pauli1(ref c) => self.pauli1(c, rng),
                 Op::Pauli2(ref c) => self.pauli2(c, rng),

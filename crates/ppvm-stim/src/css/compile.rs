@@ -275,7 +275,7 @@ impl Compiler<'_> {
             let q = qubit(pair[1]);
             match pair[0] {
                 Target::Rec(lookback) => {
-                    self.two_qubit(std::mem::take(&mut pairs), z);
+                    self.push_pairs(std::mem::take(&mut pairs), z);
                     self.ops.push(Op::Feedback { lookback, q, x, z });
                 }
                 Target::Qubit(_) if x && z => {
@@ -293,14 +293,13 @@ impl Compiler<'_> {
                 }
             }
         }
-        self.two_qubit(pairs, z);
+        self.push_pairs(pairs, z);
         Ok(())
     }
 
-    fn two_qubit(&mut self, pairs: Vec<[usize; 2]>, cz: bool) {
+    fn push_pairs(&mut self, pairs: Vec<[usize; 2]>, z: bool) {
         if !pairs.is_empty() {
-            self.ops
-                .push(if cz { Op::Cz(pairs) } else { Op::Cx(pairs) });
+            self.ops.push(if z { Op::Cz(pairs) } else { Op::Cx(pairs) });
         }
     }
 

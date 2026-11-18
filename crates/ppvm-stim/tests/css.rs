@@ -114,10 +114,7 @@ fn feedback_uses_the_recorded_value() {
     assert!(shots.iter().all(|s| s[0] == s[1]));
     assert_always("X 0\nI_ERROR[loss](1) 0\nM 0\nCX rec[-1] 1\nM 1", &[2, 0]);
     // Gates before and after a feedback target of the same line keep their order.
-    assert_always(
-        "X 0\nM 0\nCX 0 1 rec[-1] 2 1 3 2 4\nM 1 2 3 4",
-        &[1, 1, 1, 1, 1],
-    );
+    assert_always("X 0\nM 0\nCX 2 1 rec[-1] 2 2 3\nM 1 2 3", &[1, 0, 1, 1]);
     assert_always(
         "X 0\nM 0\nRX 1\nCZ rec[-1] 1\nMX 1\nCY rec[-2] 2\nM 2",
         &[1, 1, 1],

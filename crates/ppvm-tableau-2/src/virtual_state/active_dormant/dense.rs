@@ -5,7 +5,7 @@
 
 use num_complex::Complex64;
 
-use super::axis::{AxisPauli, Rotation, bits};
+use super::axis::{AxisPauli, RotationCollapse, bits};
 use super::state::ActiveState;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -45,7 +45,7 @@ impl DenseState {
     }
 
     /// `φ ← G† φ` for each gate of `v` in order.
-    fn apply_rotation_dagger(&mut self, v: &Rotation) {
+    fn apply_rotation_dagger(&mut self, v: &RotationCollapse) {
         let p = 1usize << v.pivot;
         for t in bits(v.fan_out) {
             self.cx(p, 1 << t);
@@ -138,7 +138,7 @@ impl ActiveState for DenseState {
         [0.25 * plus, 0.25 * minus]
     }
 
-    fn collapse(&mut self, p: AxisPauli, m: bool, v: &Rotation) {
+    fn collapse(&mut self, p: AxisPauli, m: bool, v: &RotationCollapse) {
         // Project onto eigenvalue (−1)^m: φ ← ½(φ ± P φ).
         let sign = if m { -0.5 } else { 0.5 };
         self.rotate(p, Complex64::new(0.5, 0.0), Complex64::new(sign, 0.0));
@@ -235,7 +235,7 @@ mod tests {
     }
 
     /// `V` = the product of `v`'s gate matrices in gate order.
-    fn rotation_matrix(v: &Rotation, k: usize) -> Mat {
+    fn rotation_matrix(v: &RotationCollapse, k: usize) -> Mat {
         let d = 1 << k;
         let (o, l, i) = (c(0.0, 0.0), c(1.0, 0.0), c(0.0, 1.0));
         let r = std::f64::consts::FRAC_1_SQRT_2;
@@ -434,7 +434,7 @@ mod tests {
         for k in 1..=5 {
             for _ in 0..30 {
                 let (p, m) = (rng.pauli(k), rng.next() & 1 == 1);
-                let v = Rotation::collapse(p, m);
+                let v = RotationCollapse::collapse(p, m);
                 let vm = rotation_matrix(&v, k);
                 let (pm, id) = (pauli(p, k), identity(1 << k));
                 let s = if m { -0.5 } else { 0.5 };
@@ -472,7 +472,7 @@ mod tests {
                 if phi.branch_weights(p)[usize::from(m)] < 1e-6 {
                     continue;
                 }
-                let v = Rotation::collapse(p, m);
+                let v = RotationCollapse::collapse(p, m);
                 let mut got = phi.clone();
                 got.collapse(p, m, &v);
                 // Project, apply V†, keep the pivot's |0⟩ half, renormalize.

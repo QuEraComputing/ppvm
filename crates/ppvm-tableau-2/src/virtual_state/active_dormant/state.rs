@@ -5,7 +5,7 @@
 
 use num_complex::Complex64;
 
-use super::axis::{AxisPauli, Rotation};
+use super::axis::{AxisPauli, RotationCollapse};
 
 /// Storage for `φ` over the active axes `0..k`. Only three things happen to
 /// it: a Pauli rotation, an activation, and a collapse; every other change of
@@ -27,8 +27,8 @@ pub trait ActiveState: Clone {
     fn branch_weights(&self, p: AxisPauli) -> [f64; 2];
 
     /// Project onto outcome `m` of `p` (eigenvalue `(−1)^m`), apply `V†` for
-    /// `v = Rotation::collapse(p, m)`, drop axis `v.pivot` (now `|0⟩`), and
+    /// `v = RotationCollapse::collapse(p, m)`, drop axis `v.pivot` (now `|0⟩`), and
     /// renormalize. Axes above the pivot shift down by one. The branch must
     /// have nonzero weight.
-    fn collapse(&mut self, p: AxisPauli, m: bool, v: &Rotation);
+    fn collapse(&mut self, p: AxisPauli, m: bool, v: &RotationCollapse);
 }

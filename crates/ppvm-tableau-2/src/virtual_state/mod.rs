@@ -13,7 +13,7 @@ use num_complex::Complex64;
 
 use crate::VirtualView;
 
-pub use active_dormant::{ActiveDormant, ActiveState, AxisPauli, DenseState, Rotation};
+pub use active_dormant::{ActiveDormant, ActiveState, AxisPauli, DenseState, RotationCollapse};
 
 /// The `2ⁿ`-dimensional state `|χ⟩` of the `n` virtual qubits, in a
 /// representation of the implementor's choice.

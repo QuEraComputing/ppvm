@@ -6,7 +6,7 @@
 //! (dormant) virtual qubit in `|0⟩`.
 //!
 //! - `axis`: Paulis on the axes ([`AxisPauli`]) and the collapse rotation
-//!   ([`Rotation`]) shared with the tableau.
+//!   ([`RotationCollapse`]) shared with the tableau.
 //! - `state`: the [`ActiveState`] trait.
 //! - `dense`: [`DenseState`], an exact vector of `2^k` amplitudes.
 
@@ -21,7 +21,7 @@ use ppvm_traits_2::ApplyGateRule;
 use super::VirtualState;
 use crate::{QubitMask, RowRef, VirtualView};
 
-pub use axis::{AxisPauli, Rotation};
+pub use axis::{AxisPauli, RotationCollapse};
 pub use dense::DenseState;
 pub use state::ActiveState;
 
@@ -87,7 +87,7 @@ impl<S: ActiveState> ActiveDormant<S> {
     }
 }
 
-/// The view with axis `j` as virtual qubit `active[j]`, so a [`Rotation`]'s
+/// The view with axis `j` as virtual qubit `active[j]`, so a [`RotationCollapse`]'s
 /// gates change the tableau's basis.
 struct OnAxes<'v, 'a> {
     t: &'v mut VirtualView<'a>,
@@ -167,7 +167,7 @@ impl<S: ActiveState + Default> VirtualState for ActiveDormant<S> {
             Case::DormantPivot => t.collapse_dormant(q, &self.mask, m),
             Case::Active { p, negative } => {
                 let m = m != negative;
-                let v = Rotation::collapse(p, m);
+                let v = RotationCollapse::collapse(p, m);
                 v.apply_gates(&mut OnAxes {
                     t,
                     active: &self.active,

@@ -60,10 +60,10 @@ impl ApplyGateRule for Signed {
 /// `fan_in` to `pivot`, CZ between `pivot` and every axis in `cz`, then `S`,
 /// `H`, `X` on `pivot` where set.
 ///
-/// Built by [`Rotation::collapse`] so that `V† P V = ±Z_pivot` and the
+/// Built by [`RotationCollapse::collapse`] so that `V† P V = ±Z_pivot` and the
 /// measured branch leaves `pivot` in `|0⟩`; one place decides the gates.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Rotation {
+pub struct RotationCollapse {
     pub pivot: usize,
     pub fan_out: u64,
     pub fan_in: u64,
@@ -73,7 +73,7 @@ pub struct Rotation {
     pub x: bool,
 }
 
-impl Rotation {
+impl RotationCollapse {
     /// The rotation for measuring `p` with outcome `m` (eigenvalue `(−1)^m`):
     /// after `V`, the projection onto that outcome leaves `pivot` in `|0⟩`.
     ///

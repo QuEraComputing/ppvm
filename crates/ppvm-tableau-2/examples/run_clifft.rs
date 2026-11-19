@@ -10,8 +10,8 @@
 //! ```
 //!
 //! `--loss p` applies a loss channel with probability `p` to each target after
-//! every gate. A lost qubit's measurement is recorded as `0`; a full reset
-//! brings it back.
+//! every gate. A lost qubit's measurement is recorded as `0`; a reset, also the
+//! one in `MR`, brings it back.
 //!
 //! Clifft's plain `R_X(α)`, `R_Y(α)`, `R_Z(α)` and `U3(θ, φ, λ)` / `U(…)`
 //! lines (angles in half-turns) are rewritten into `stim-parser`'s `I[…]` tags before parsing.
@@ -363,12 +363,12 @@ fn run(s: &mut Sim, op: Op, pools: &Pools, rng: &mut SmallRng, record: &mut Vec<
             reset,
         } => {
             change_basis(s, basis, q, true);
-            let m = s.measure(q).unwrap_or(false);
-            if reset && m {
-                s.x(q);
+            let m = s.measure(q);
+            if reset {
+                reset_measured(s, q, m);
             }
             change_basis(s, basis, q, false);
-            record.push(noisy(m, flip));
+            record.push(noisy(m.unwrap_or(false), flip));
         }
         Op::MeasureZ {
             at,
@@ -378,11 +378,10 @@ fn run(s: &mut Sim, op: Op, pools: &Pools, rng: &mut SmallRng, record: &mut Vec<
         } => {
             let targets = &pools.measured[at..at + len];
             for (m, &q) in s.measure_many(targets).into_iter().zip(targets) {
-                let m = m.unwrap_or(false);
-                if reset && m {
-                    s.x(q);
+                if reset {
+                    reset_measured(s, q, m);
                 }
-                record.push(noisy(m, flip));
+                record.push(noisy(m.unwrap_or(false), flip));
             }
         }
         Op::Feedback { pauli, back, q } => {
@@ -418,6 +417,16 @@ fn run(s: &mut Sim, op: Op, pools: &Pools, rng: &mut SmallRng, record: &mut Vec<
             }
             record.push(noisy(m, flip));
         }
+    }
+}
+
+/// Reset `q` to `|0⟩` after measuring `m`: flip a `1`, and revive a lost qubit
+/// (`None`) with a full reset.
+fn reset_measured(s: &mut Sim, q: usize, m: Option<bool>) {
+    match m {
+        Some(true) => s.x(q),
+        Some(false) => {}
+        None => s.reset(q),
     }
 }
 

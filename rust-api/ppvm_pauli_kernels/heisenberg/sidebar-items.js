@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["cnot","cy","cz","h","s","s_dag","sqrt_x","sqrt_x_dag","sqrt_y","sqrt_y_dag","x","y","z"]};

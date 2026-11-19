@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["Pauli"],"trait":["PhaseTrack","SymplecticColumns"]};
+window.SIDEBAR_ITEMS = {"enum":["Pauli"]};

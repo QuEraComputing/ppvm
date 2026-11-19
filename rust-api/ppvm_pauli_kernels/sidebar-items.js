@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["row_product","row_product_phase","word_product"],"mod":["heisenberg"],"trait":["Bits"]};

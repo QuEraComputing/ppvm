@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["ActiveDormant","AxisPauli","DenseState","GeneralizedTableau","InverseTableau","OwnedRow","QubitMask","RotationCollapse","RowRef","VirtualView"],"trait":["ActiveState","VirtualState"]};

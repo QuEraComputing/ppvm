@@ -17,6 +17,7 @@ ppvm-tableau = { version = "0.3.1", path = "../ppvm-tableau" }
 bitvec = "1.0.1"
 itertools = "0.14"
 num = "0.4.3"
+rand = { version = "0.10.1", default-features = false }
 smallvec = "1.15"
 thiserror = "2"
 stim-parser = { version = "0.3.1", path = "../stim-parser" }

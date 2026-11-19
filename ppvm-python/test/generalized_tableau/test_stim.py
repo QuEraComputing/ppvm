@@ -321,7 +321,7 @@ def test_sample_stim_as_numpy_matches_list_output():
 def test_sample_classmethod_as_numpy_equivalent():
     prog = StimProgram.parse("H 0\nM 0")
     a = GeneralizedTableau.sample(prog, 1, num_shots=10, seed=0, as_numpy=True)
-    b = sample_stim(prog, n_qubits=1, num_shots=10, seed=0, as_numpy=True)
+    b = sample_stim(prog, n_qubits=1, num_shots=10, seed=0, as_numpy=True, method="tableau")
     np.testing.assert_array_equal(a, b)
 
 

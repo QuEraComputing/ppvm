@@ -11,3 +11,4 @@ publish = false
 
 [dependencies]
 num = "0.4"
+ppvm-pauli-kernels = { path = "../ppvm-pauli-kernels" }

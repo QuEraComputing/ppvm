@@ -2215,6 +2215,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppvm-pauli-kernels"
+version = "0.3.0"
+
+[[package]]
 name = "ppvm-pauli-sum"
 version = "0.4.0"
 dependencies = [
@@ -2259,6 +2263,7 @@ dependencies = [
  "foldhash",
  "fxhash",
  "num",
+ "ppvm-pauli-kernels",
  "ppvm-traits-2",
 ]
 
@@ -2390,6 +2395,7 @@ name = "ppvm-traits-2"
 version = "0.4.0"
 dependencies = [
  "num",
+ "ppvm-pauli-kernels",
 ]
 
 [[package]]

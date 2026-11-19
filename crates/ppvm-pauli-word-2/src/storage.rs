@@ -3,6 +3,7 @@
 
 use bitvec::view::{BitView, BitViewSized};
 use num::PrimInt;
+use ppvm_pauli_kernels::Bits;
 use std::hash::Hash;
 
 /// Default storage is `u64`, or `usize` on wasm32 where `bitvec` lacks `u64` support.
@@ -14,10 +15,10 @@ pub type DefaultStorage = u64;
 pub type DefaultStorage = usize;
 
 /// Fixed-size storage for one Pauli bit plane: `u64`, `[u8; N]`, or `[u64; N]`.
-/// `Pod` permits safe byte views for hashing; `PrimInt` enables whole-integer kernels.
+/// `Pod` permits safe byte views for hashing; `PrimInt` and `Bits` enable whole-integer kernels.
 pub trait PauliStorage:
     BitViewSized
-    + BitView<Store: PrimInt>
+    + BitView<Store: PrimInt + Bits>
     + Copy
     + Hash
     + Eq
@@ -30,7 +31,7 @@ pub trait PauliStorage:
 
 impl<A> PauliStorage for A where
     A: BitViewSized
-        + BitView<Store: PrimInt>
+        + BitView<Store: PrimInt + Bits>
         + Copy
         + Hash
         + Eq

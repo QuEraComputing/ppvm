@@ -23,7 +23,7 @@
 <a href=#23 id=23 data-nosnippet>23</a>/// control slot of a controlled Pauli may be a `rec[...]`, so every target
 <a href=#24 id=24 data-nosnippet>24</a>/// reached here through a non-control path is a qubit.
 <a href=#25 id=25 data-nosnippet>25</a></span><span class="attr">#[inline]
-<a href=#26 id=26 data-nosnippet>26</a></span><span class="kw">fn </span>qubit(t: Target) -&gt; usize {
+<a href=#26 id=26 data-nosnippet>26</a></span><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>qubit(t: Target) -&gt; usize {
 <a href=#27 id=27 data-nosnippet>27</a>    t.as_qubit()
 <a href=#28 id=28 data-nosnippet>28</a>        .expect(<span class="string">"non-control gate targets are validated as qubits by validate"</span>)
 <a href=#29 id=29 data-nosnippet>29</a>}

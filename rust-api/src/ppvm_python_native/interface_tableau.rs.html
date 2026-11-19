@@ -381,8 +381,8 @@
 <a href=#381 id=381 data-nosnippet>381</a>                // use the validated path to skip redundant re-validation.
 <a href=#382 id=382 data-nosnippet>382</a>                </span><span class="kw">let </span>raw = py.detach(|| {
 <a href=#383 id=383 data-nosnippet>383</a>                    ppvm_stim::sample_validated(
-<a href=#384 id=384 data-nosnippet>384</a>                        <span class="kw-2">&amp;</span>prog.<span class="number">0</span>.instructions,
-<a href=#385 id=385 data-nosnippet>385</a>                        prog.<span class="number">0</span>.measurement_count(),
+<a href=#384 id=384 data-nosnippet>384</a>                        <span class="kw-2">&amp;</span>prog.program.instructions,
+<a href=#385 id=385 data-nosnippet>385</a>                        prog.program.measurement_count(),
 <a href=#386 id=386 data-nosnippet>386</a>                        num_shots,
 <a href=#387 id=387 data-nosnippet>387</a>                        |i| <span class="kw">match </span>seed {
 <a href=#388 id=388 data-nosnippet>388</a>                            <span class="prelude-val">Some</span>(s) =&gt; GeneralizedTableau::&lt;<span class="macro-nonterminal">$type</span>, <span class="macro-nonterminal">$indexType</span>&gt;::new_with_seed(

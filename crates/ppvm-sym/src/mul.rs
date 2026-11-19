@@ -111,14 +111,14 @@ impl std::ops::MulAssign<Term> for Term {
                 Inner::Sum(ref s2) => {
                     let mut new_sum = Sum::new();
                     new_sum.c0 = s1.c0 * s2.c0;
-                    if s2.c0 > self.min_eps {
+                    if s2.c0.abs() > self.min_eps {
                         for (p1, c1) in s1.terms.iter() {
                             let p = p1.clone();
                             new_sum.add_term(p, c1 * s2.c0, self.max_sin, self.min_eps);
                         }
                     }
 
-                    if s1.c0 > self.min_eps {
+                    if s1.c0.abs() > self.min_eps {
                         for (p2, c2) in s2.terms.iter() {
                             let p = p2.clone();
                             new_sum.add_term(p, c2 * s1.c0, self.max_sin, self.min_eps);
@@ -170,6 +170,7 @@ impl std::ops::MulAssign<Term> for Term {
                 Inner::Sum(s) => {
                     let mut new_sum = s;
                     new_sum.mul_term(p.clone(), c, self.max_sin, self.min_eps);
+                    self.inner = Inner::Sum(new_sum);
                 }
                 Inner::Const(c2) => {
                     self.inner = Inner::One(p.clone(), c * c2);
@@ -219,5 +220,23 @@ impl std::ops::Mul<Term> for Term {
         let mut ret = self;
         ret *= rhs;
         ret
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mul_sum() {
+        let x = [1.1f64, 2.2];
+        let (s0, s1, c1) = (x[0].sin(), x[1].sin(), x[1].cos());
+        let a = Term::from_f64(-1.0) + Term::var(0).sin();
+        let b = Term::var(1).sin() + Term::var(1).cos();
+
+        let r = Term::var(0).sin() * b.clone();
+        assert!((r.eval(&x).unwrap() - s0 * (s1 + c1)).abs() < 1e-12);
+        let r = a * b;
+        assert!((r.eval(&x).unwrap() - (s0 - 1.0) * (s1 + c1)).abs() < 1e-12);
     }
 }

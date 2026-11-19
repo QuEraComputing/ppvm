@@ -25,6 +25,7 @@ impl std::ops::AddAssign<f64> for Term {
                 let mut sum = Sum::new();
                 sum.c0 = rhs;
                 sum.add_term(p.clone(), c, self.max_sin, self.min_eps);
+                self.inner = Inner::Sum(sum);
             }
             Inner::Sum(ref mut s) => {
                 *s += rhs;
@@ -220,5 +221,9 @@ mod tests {
             t.eval(&[1.1, 2.2]).unwrap(),
             3.0 + 1.1f64.sin() + 2.2f64.cos()
         );
+
+        let mut t = Term::var(0).sin();
+        t += 2.0;
+        assert_eq!(t.eval(&[1.1]).unwrap(), 2.0 + 1.1f64.sin());
     }
 }

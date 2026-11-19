@@ -2,7 +2,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /// The Clifford gate set, applied in the Heisenberg picture.
-/// Consumers implement the gate methods directly; aliases delegate to those methods.
+///
+/// Every gate acts by its Heisenberg rule `P ↦ G† P G`; where the gate composes
+/// sets the call order. Pauli words and sums apply it to their evolved operators,
+/// outside the gates seen so far, so a circuit is fed last gate first. An inverse
+/// tableau applies it to the fixed generators, inside, so a circuit is fed in order.
+///
+/// Types get this trait from [`ApplyGateRule`](super::ApplyGateRule) through its
+/// blanket impl; aliases delegate to the gate methods.
 pub trait Clifford {
     /// Apply Pauli `X` to one qubit.
     fn x(&mut self, qubit: usize);

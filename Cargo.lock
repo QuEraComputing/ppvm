@@ -2354,6 +2354,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppvm-tableau-2"
+version = "0.0.0"
+dependencies = [
+ "num-complex",
+ "ppvm-pauli-kernels",
+ "ppvm-pauli-word-2",
+ "ppvm-phased-pauli-word-2",
+ "ppvm-traits-2",
+ "rand 0.10.3",
+ "stim-parser",
+]
+
+[[package]]
 name = "ppvm-tableau-sum"
 version = "0.4.0"
 dependencies = [

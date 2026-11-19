@@ -111,14 +111,14 @@
 <a href=#111 id=111 data-nosnippet>111</a>                Inner::Sum(<span class="kw-2">ref </span>s2) =&gt; {
 <a href=#112 id=112 data-nosnippet>112</a>                    <span class="kw">let </span><span class="kw-2">mut </span>new_sum = Sum::new();
 <a href=#113 id=113 data-nosnippet>113</a>                    new_sum.c0 = s1.c0 * s2.c0;
-<a href=#114 id=114 data-nosnippet>114</a>                    <span class="kw">if </span>s2.c0 &gt; <span class="self">self</span>.min_eps {
+<a href=#114 id=114 data-nosnippet>114</a>                    <span class="kw">if </span>s2.c0.abs() &gt; <span class="self">self</span>.min_eps {
 <a href=#115 id=115 data-nosnippet>115</a>                        <span class="kw">for </span>(p1, c1) <span class="kw">in </span>s1.terms.iter() {
 <a href=#116 id=116 data-nosnippet>116</a>                            <span class="kw">let </span>p = p1.clone();
 <a href=#117 id=117 data-nosnippet>117</a>                            new_sum.add_term(p, c1 * s2.c0, <span class="self">self</span>.max_sin, <span class="self">self</span>.min_eps);
 <a href=#118 id=118 data-nosnippet>118</a>                        }
 <a href=#119 id=119 data-nosnippet>119</a>                    }
 <a href=#120 id=120 data-nosnippet>120</a>
-<a href=#121 id=121 data-nosnippet>121</a>                    <span class="kw">if </span>s1.c0 &gt; <span class="self">self</span>.min_eps {
+<a href=#121 id=121 data-nosnippet>121</a>                    <span class="kw">if </span>s1.c0.abs() &gt; <span class="self">self</span>.min_eps {
 <a href=#122 id=122 data-nosnippet>122</a>                        <span class="kw">for </span>(p2, c2) <span class="kw">in </span>s2.terms.iter() {
 <a href=#123 id=123 data-nosnippet>123</a>                            <span class="kw">let </span>p = p2.clone();
 <a href=#124 id=124 data-nosnippet>124</a>                            new_sum.add_term(p, c2 * s1.c0, <span class="self">self</span>.max_sin, <span class="self">self</span>.min_eps);
@@ -170,55 +170,74 @@
 <a href=#170 id=170 data-nosnippet>170</a>                Inner::Sum(s) =&gt; {
 <a href=#171 id=171 data-nosnippet>171</a>                    <span class="kw">let </span><span class="kw-2">mut </span>new_sum = s;
 <a href=#172 id=172 data-nosnippet>172</a>                    new_sum.mul_term(p.clone(), c, <span class="self">self</span>.max_sin, <span class="self">self</span>.min_eps);
-<a href=#173 id=173 data-nosnippet>173</a>                }
-<a href=#174 id=174 data-nosnippet>174</a>                Inner::Const(c2) =&gt; {
-<a href=#175 id=175 data-nosnippet>175</a>                    <span class="self">self</span>.inner = Inner::One(p.clone(), c * c2);
-<a href=#176 id=176 data-nosnippet>176</a>                }
-<a href=#177 id=177 data-nosnippet>177</a>                Inner::One(p2, c2) =&gt; {
-<a href=#178 id=178 data-nosnippet>178</a>                    <span class="self">self</span>.inner = Inner::One(p.clone() * p2, c * c2);
-<a href=#179 id=179 data-nosnippet>179</a>                }
-<a href=#180 id=180 data-nosnippet>180</a>                Inner::Var(<span class="kw">_</span>) =&gt; {
-<a href=#181 id=181 data-nosnippet>181</a>                    <span class="macro">panic!</span>(
-<a href=#182 id=182 data-nosnippet>182</a>                        <span class="string">"variable is not used in sin/cos expressions, bare variable is not allowed in expression"
-<a href=#183 id=183 data-nosnippet>183</a>                    </span>);
-<a href=#184 id=184 data-nosnippet>184</a>                }
-<a href=#185 id=185 data-nosnippet>185</a>            },
-<a href=#186 id=186 data-nosnippet>186</a>            Inner::Var(<span class="kw">_</span>) =&gt; {
-<a href=#187 id=187 data-nosnippet>187</a>                <span class="macro">panic!</span>(
-<a href=#188 id=188 data-nosnippet>188</a>                    <span class="string">"variable is not used in sin/cos expressions, bare variable is not allowed in expression"
-<a href=#189 id=189 data-nosnippet>189</a>                </span>);
-<a href=#190 id=190 data-nosnippet>190</a>            }
-<a href=#191 id=191 data-nosnippet>191</a>        }
-<a href=#192 id=192 data-nosnippet>192</a>    }
-<a href=#193 id=193 data-nosnippet>193</a>}
-<a href=#194 id=194 data-nosnippet>194</a>
-<a href=#195 id=195 data-nosnippet>195</a><span class="kw">impl </span>std::ops::Mul&lt;f64&gt; <span class="kw">for </span>Term {
-<a href=#196 id=196 data-nosnippet>196</a>    <span class="kw">type </span>Output = Term;
-<a href=#197 id=197 data-nosnippet>197</a>
-<a href=#198 id=198 data-nosnippet>198</a>    <span class="kw">fn </span>mul(<span class="self">self</span>, rhs: f64) -&gt; <span class="self">Self</span>::Output {
-<a href=#199 id=199 data-nosnippet>199</a>        <span class="kw">let </span><span class="kw-2">mut </span>ret = <span class="self">self</span>;
-<a href=#200 id=200 data-nosnippet>200</a>        ret <span class="kw-2">*</span>= rhs;
-<a href=#201 id=201 data-nosnippet>201</a>        ret
-<a href=#202 id=202 data-nosnippet>202</a>    }
-<a href=#203 id=203 data-nosnippet>203</a>}
-<a href=#204 id=204 data-nosnippet>204</a>
-<a href=#205 id=205 data-nosnippet>205</a><span class="kw">impl </span>std::ops::Mul&lt;Term&gt; <span class="kw">for </span>f64 {
-<a href=#206 id=206 data-nosnippet>206</a>    <span class="kw">type </span>Output = Term;
-<a href=#207 id=207 data-nosnippet>207</a>
-<a href=#208 id=208 data-nosnippet>208</a>    <span class="kw">fn </span>mul(<span class="self">self</span>, rhs: Term) -&gt; <span class="self">Self</span>::Output {
-<a href=#209 id=209 data-nosnippet>209</a>        <span class="kw">let </span><span class="kw-2">mut </span>ret = rhs;
-<a href=#210 id=210 data-nosnippet>210</a>        ret <span class="kw-2">*</span>= <span class="self">self</span>;
-<a href=#211 id=211 data-nosnippet>211</a>        ret
-<a href=#212 id=212 data-nosnippet>212</a>    }
-<a href=#213 id=213 data-nosnippet>213</a>}
-<a href=#214 id=214 data-nosnippet>214</a>
-<a href=#215 id=215 data-nosnippet>215</a><span class="kw">impl </span>std::ops::Mul&lt;Term&gt; <span class="kw">for </span>Term {
-<a href=#216 id=216 data-nosnippet>216</a>    <span class="kw">type </span>Output = Term;
-<a href=#217 id=217 data-nosnippet>217</a>
-<a href=#218 id=218 data-nosnippet>218</a>    <span class="kw">fn </span>mul(<span class="self">self</span>, rhs: Term) -&gt; <span class="self">Self</span>::Output {
-<a href=#219 id=219 data-nosnippet>219</a>        <span class="kw">let </span><span class="kw-2">mut </span>ret = <span class="self">self</span>;
-<a href=#220 id=220 data-nosnippet>220</a>        ret <span class="kw-2">*</span>= rhs;
-<a href=#221 id=221 data-nosnippet>221</a>        ret
-<a href=#222 id=222 data-nosnippet>222</a>    }
-<a href=#223 id=223 data-nosnippet>223</a>}
+<a href=#173 id=173 data-nosnippet>173</a>                    <span class="self">self</span>.inner = Inner::Sum(new_sum);
+<a href=#174 id=174 data-nosnippet>174</a>                }
+<a href=#175 id=175 data-nosnippet>175</a>                Inner::Const(c2) =&gt; {
+<a href=#176 id=176 data-nosnippet>176</a>                    <span class="self">self</span>.inner = Inner::One(p.clone(), c * c2);
+<a href=#177 id=177 data-nosnippet>177</a>                }
+<a href=#178 id=178 data-nosnippet>178</a>                Inner::One(p2, c2) =&gt; {
+<a href=#179 id=179 data-nosnippet>179</a>                    <span class="self">self</span>.inner = Inner::One(p.clone() * p2, c * c2);
+<a href=#180 id=180 data-nosnippet>180</a>                }
+<a href=#181 id=181 data-nosnippet>181</a>                Inner::Var(<span class="kw">_</span>) =&gt; {
+<a href=#182 id=182 data-nosnippet>182</a>                    <span class="macro">panic!</span>(
+<a href=#183 id=183 data-nosnippet>183</a>                        <span class="string">"variable is not used in sin/cos expressions, bare variable is not allowed in expression"
+<a href=#184 id=184 data-nosnippet>184</a>                    </span>);
+<a href=#185 id=185 data-nosnippet>185</a>                }
+<a href=#186 id=186 data-nosnippet>186</a>            },
+<a href=#187 id=187 data-nosnippet>187</a>            Inner::Var(<span class="kw">_</span>) =&gt; {
+<a href=#188 id=188 data-nosnippet>188</a>                <span class="macro">panic!</span>(
+<a href=#189 id=189 data-nosnippet>189</a>                    <span class="string">"variable is not used in sin/cos expressions, bare variable is not allowed in expression"
+<a href=#190 id=190 data-nosnippet>190</a>                </span>);
+<a href=#191 id=191 data-nosnippet>191</a>            }
+<a href=#192 id=192 data-nosnippet>192</a>        }
+<a href=#193 id=193 data-nosnippet>193</a>    }
+<a href=#194 id=194 data-nosnippet>194</a>}
+<a href=#195 id=195 data-nosnippet>195</a>
+<a href=#196 id=196 data-nosnippet>196</a><span class="kw">impl </span>std::ops::Mul&lt;f64&gt; <span class="kw">for </span>Term {
+<a href=#197 id=197 data-nosnippet>197</a>    <span class="kw">type </span>Output = Term;
+<a href=#198 id=198 data-nosnippet>198</a>
+<a href=#199 id=199 data-nosnippet>199</a>    <span class="kw">fn </span>mul(<span class="self">self</span>, rhs: f64) -&gt; <span class="self">Self</span>::Output {
+<a href=#200 id=200 data-nosnippet>200</a>        <span class="kw">let </span><span class="kw-2">mut </span>ret = <span class="self">self</span>;
+<a href=#201 id=201 data-nosnippet>201</a>        ret <span class="kw-2">*</span>= rhs;
+<a href=#202 id=202 data-nosnippet>202</a>        ret
+<a href=#203 id=203 data-nosnippet>203</a>    }
+<a href=#204 id=204 data-nosnippet>204</a>}
+<a href=#205 id=205 data-nosnippet>205</a>
+<a href=#206 id=206 data-nosnippet>206</a><span class="kw">impl </span>std::ops::Mul&lt;Term&gt; <span class="kw">for </span>f64 {
+<a href=#207 id=207 data-nosnippet>207</a>    <span class="kw">type </span>Output = Term;
+<a href=#208 id=208 data-nosnippet>208</a>
+<a href=#209 id=209 data-nosnippet>209</a>    <span class="kw">fn </span>mul(<span class="self">self</span>, rhs: Term) -&gt; <span class="self">Self</span>::Output {
+<a href=#210 id=210 data-nosnippet>210</a>        <span class="kw">let </span><span class="kw-2">mut </span>ret = rhs;
+<a href=#211 id=211 data-nosnippet>211</a>        ret <span class="kw-2">*</span>= <span class="self">self</span>;
+<a href=#212 id=212 data-nosnippet>212</a>        ret
+<a href=#213 id=213 data-nosnippet>213</a>    }
+<a href=#214 id=214 data-nosnippet>214</a>}
+<a href=#215 id=215 data-nosnippet>215</a>
+<a href=#216 id=216 data-nosnippet>216</a><span class="kw">impl </span>std::ops::Mul&lt;Term&gt; <span class="kw">for </span>Term {
+<a href=#217 id=217 data-nosnippet>217</a>    <span class="kw">type </span>Output = Term;
+<a href=#218 id=218 data-nosnippet>218</a>
+<a href=#219 id=219 data-nosnippet>219</a>    <span class="kw">fn </span>mul(<span class="self">self</span>, rhs: Term) -&gt; <span class="self">Self</span>::Output {
+<a href=#220 id=220 data-nosnippet>220</a>        <span class="kw">let </span><span class="kw-2">mut </span>ret = <span class="self">self</span>;
+<a href=#221 id=221 data-nosnippet>221</a>        ret <span class="kw-2">*</span>= rhs;
+<a href=#222 id=222 data-nosnippet>222</a>        ret
+<a href=#223 id=223 data-nosnippet>223</a>    }
+<a href=#224 id=224 data-nosnippet>224</a>}
+<a href=#225 id=225 data-nosnippet>225</a>
+<a href=#226 id=226 data-nosnippet>226</a><span class="attr">#[cfg(test)]
+<a href=#227 id=227 data-nosnippet>227</a></span><span class="kw">mod </span>tests {
+<a href=#228 id=228 data-nosnippet>228</a>    <span class="kw">use super</span>::<span class="kw-2">*</span>;
+<a href=#229 id=229 data-nosnippet>229</a>
+<a href=#230 id=230 data-nosnippet>230</a>    <span class="attr">#[test]
+<a href=#231 id=231 data-nosnippet>231</a>    </span><span class="kw">fn </span>test_mul_sum() {
+<a href=#232 id=232 data-nosnippet>232</a>        <span class="kw">let </span>x = [<span class="number">1.1f64</span>, <span class="number">2.2</span>];
+<a href=#233 id=233 data-nosnippet>233</a>        <span class="kw">let </span>(s0, s1, c1) = (x[<span class="number">0</span>].sin(), x[<span class="number">1</span>].sin(), x[<span class="number">1</span>].cos());
+<a href=#234 id=234 data-nosnippet>234</a>        <span class="kw">let </span>a = Term::from_f64(-<span class="number">1.0</span>) + Term::var(<span class="number">0</span>).sin();
+<a href=#235 id=235 data-nosnippet>235</a>        <span class="kw">let </span>b = Term::var(<span class="number">1</span>).sin() + Term::var(<span class="number">1</span>).cos();
+<a href=#236 id=236 data-nosnippet>236</a>
+<a href=#237 id=237 data-nosnippet>237</a>        <span class="kw">let </span>r = Term::var(<span class="number">0</span>).sin() * b.clone();
+<a href=#238 id=238 data-nosnippet>238</a>        <span class="macro">assert!</span>((r.eval(<span class="kw-2">&amp;</span>x).unwrap() - s0 * (s1 + c1)).abs() &lt; <span class="number">1e-12</span>);
+<a href=#239 id=239 data-nosnippet>239</a>        <span class="kw">let </span>r = a * b;
+<a href=#240 id=240 data-nosnippet>240</a>        <span class="macro">assert!</span>((r.eval(<span class="kw-2">&amp;</span>x).unwrap() - (s0 - <span class="number">1.0</span>) * (s1 + c1)).abs() &lt; <span class="number">1e-12</span>);
+<a href=#241 id=241 data-nosnippet>241</a>    }
+<a href=#242 id=242 data-nosnippet>242</a>}
 </code></pre></div></section></main></body></html>

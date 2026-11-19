@@ -75,7 +75,7 @@ pub mod data;
 pub mod display;
 /// Pauli-string expectation values and pattern traces.
 pub mod expectation;
-/// Gate implementations (Clifford, T, rotations).
+/// Gate implementations (Clifford, T, CCZ, rotations).
 pub mod gates;
 /// Z-basis measurement, including loss-aware variants.
 pub mod measure;

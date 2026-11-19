@@ -8,6 +8,7 @@ from typing import cast
 from . import _core
 from .generalized_tableau import _BY_VALUE, MeasurementResult
 from .mixins import (
+    CCZMixin,
     CliffordExtensionMixin,
     CliffordMixin,
     LossMixin,
@@ -20,6 +21,7 @@ from .types import GeneralizedTableauSumInterface, TableauSumSamplerInterface
 
 @dataclass(frozen=True)
 class GeneralizedTableauSum(
+    CCZMixin,
     CliffordMixin,
     CliffordExtensionMixin,
     RotationsMixin,

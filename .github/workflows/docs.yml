@@ -6,8 +6,8 @@ name: Docs
 # - Push to `main`            → build with PPVM_BASE=/        and publish
 #                               to the gh-pages branch root.
 # - Pull request (opened /    → build with PPVM_BASE=/pr-preview/pr-<N>
-#   synchronize / reopened)     and let rossjrw/pr-preview-action publish
-#                               the build to gh-pages under
+#   synchronize / reopened)     and upload the build artifact. Same-repo
+#                               PRs also publish to gh-pages under
 #                               `pr-preview/pr-<N>/`. Triggered only when
 #                               the diff actually touches inputs the
 #                               site depends on.
@@ -179,7 +179,10 @@ jobs:
   deploy-preview:
     name: Deploy PR preview
     needs: build
-    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+    # Fork PR tokens are read-only, so they cannot publish to gh-pages.
+    if: >-
+      github.event_name == 'pull_request' && github.event.action != 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     # Writes the pre-built artifact to gh-pages/pr-preview/pr-<N>/
     # and comments back on the PR.

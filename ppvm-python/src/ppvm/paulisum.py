@@ -9,6 +9,7 @@ from typing import Self, Union
 
 from . import _core
 from .mixins import (
+    TruncatingCCZMixin,
     TruncatingCliffordExtensionMixin,
     TruncatingCliffordMixin,
     TruncatingNoiseMixin,
@@ -78,6 +79,7 @@ LossyPauliSumInterface = Union[
 
 @dataclass(frozen=True)
 class PauliSum(
+    TruncatingCCZMixin,
     TruncatingCliffordExtensionMixin,
     TruncatingCliffordMixin,
     TruncatingNoiseMixin,

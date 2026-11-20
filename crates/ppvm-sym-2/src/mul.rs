@@ -57,7 +57,7 @@ impl Sum {
         // Reset `c₀` *before* the rebuild: `i · i` lands back on the identity
         // monomial and folds into `c₀`, which a reset afterwards would wipe.
         let c0 = std::mem::take(&mut self.c0) * coeff;
-        if c0.abs() >= min_eps {
+        if c0.abs() > min_eps {
             self.add_term(p.clone(), c0, max, min_eps);
         }
         for (mut k, v) in old_terms.drain() {
@@ -149,7 +149,7 @@ impl Term {
     }
 }
 
-/// Scales every coefficient; shrinking (`|rhs| < 1`) prunes monomials below
+/// Scales every coefficient; shrinking (`|rhs| < 1`) prunes monomials at or below
 /// `min_eps`, so a sign flip stays a single pass.
 impl std::ops::MulAssign<f64> for Term {
     #[inline]
@@ -163,7 +163,7 @@ impl std::ops::MulAssign<f64> for Term {
             }
             Inner::One(_, ref mut c) => {
                 *c *= rhs;
-                if c.abs() < self.min_eps {
+                if c.abs() <= self.min_eps {
                     self.inner = Inner::Const(0.0);
                 }
             }
@@ -440,17 +440,29 @@ mod tests {
         assert_eq!((c + loose).n_monomials(), 0);
     }
 
+    /// `min_eps` drops `|c| <= min_eps`, so `min_eps = 0` drops exactly the zeros.
     #[test]
-    fn min_eps_threshold_is_strict() {
+    fn min_eps_drops_coefficients_at_the_threshold() {
         let eps = 1e-3;
         let mut s = Sum::new();
-        s.add_term(Prod::sin(0), eps, usize::MAX, eps); // |c| == eps: kept
-        s.add_term(Prod::sin(1), eps * 0.999, usize::MAX, eps);
+        s.add_term(Prod::sin(0), eps * 4.0, usize::MAX, eps);
+        s.add_term(Prod::sin(1), eps, usize::MAX, eps);
         assert_eq!(s.len(), 1);
-        s.mul_term(&Prod::cos(0), 1.0, usize::MAX, eps);
-        assert_eq!(s.len(), 1, "`1.0 · eps` stays at the threshold");
         s.mul_term(&Prod::cos(0), 0.5, usize::MAX, eps);
-        assert!(s.is_empty(), "the product fell below `min_eps`");
+        assert_eq!(s.len(), 1, "the product stays above `min_eps`");
+        s.mul_term(&Prod::cos(0), 0.5, usize::MAX, eps);
+        assert!(s.is_empty(), "the product reached `min_eps`");
+
+        let x = Var(0).sin() + Var(1).sin();
+        let mut t = x.clone();
+        t.set_min_eps(0.0);
+        assert_eq!(
+            (t.clone() - &x).n_monomials(),
+            0,
+            "cancellation removes the entry"
+        );
+        assert_eq!((t.clone() * 0.0).n_monomials(), 0);
+        assert!(num::Zero::is_zero(&(t * 0.0)));
     }
 
     #[test]

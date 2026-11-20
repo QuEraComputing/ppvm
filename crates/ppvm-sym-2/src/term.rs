@@ -249,8 +249,8 @@ impl Sum {
             .map(|(p, c)| (p, *c))
     }
 
-    /// Add `coeff · p`, dropping it if `p.sin_pow() > max` or `|coeff| < min_eps`,
-    /// and removing the monomial if the merged coefficient falls below `min_eps`.
+    /// Add `coeff · p`, dropping it if `p.sin_pow() > max` or `|coeff| <= min_eps`,
+    /// and removing the monomial if the merged coefficient reaches `min_eps`.
     ///
     /// The identity monomial folds into `c₀`, which is never truncated. Dropping at
     /// insert is exact for `max` but not for `min_eps`: two sub-threshold
@@ -262,14 +262,14 @@ impl Sum {
             self.c0 += coeff;
             return;
         }
-        if p.sin_pow() > max || coeff.abs() < min_eps {
+        if p.sin_pow() > max || coeff.abs() <= min_eps {
             return;
         }
         let maps = self.maps.get_or_insert_with(Default::default);
         match maps.terms.entry(p) {
             Entry::Occupied(mut e) => {
                 *e.get_mut() += coeff;
-                if e.get().abs() < min_eps {
+                if e.get().abs() <= min_eps {
                     e.remove();
                 }
             }
@@ -279,11 +279,11 @@ impl Sum {
         }
     }
 
-    /// Remove every monomial with sine degree above `max` or `|c| < min_eps`.
+    /// Remove every monomial with sine degree above `max` or `|c| <= min_eps`.
     pub(crate) fn prune(&mut self, max: usize, min_eps: f64) {
         if let Some(maps) = &mut self.maps {
             maps.terms
-                .retain(|p, c| p.sin_pow <= max && c.abs() >= min_eps);
+                .retain(|p, c| p.sin_pow <= max && c.abs() > min_eps);
         }
     }
 }
@@ -364,7 +364,7 @@ impl Inner {
     pub(crate) fn truncated(p: Prod, c: f64, max: usize, min_eps: f64) -> Self {
         if p.is_identity() {
             Inner::Const(c)
-        } else if p.sin_pow() > max || c.abs() < min_eps {
+        } else if p.sin_pow() > max || c.abs() <= min_eps {
             Inner::Const(0.0)
         } else {
             Inner::One(p, c)
@@ -375,7 +375,7 @@ impl Inner {
 /// A symbolic polynomial in `sin(x_i)` and `cos(x_i)`.
 ///
 /// Carries its truncation settings, `max_sin` (maximum sine degree) and
-/// `min_eps` (smallest kept coefficient), which every operation applies to its
+/// `min_eps` (largest dropped coefficient magnitude), which every operation applies to its
 /// result with the left operand's settings.
 ///
 /// # Examples
@@ -392,7 +392,7 @@ impl Inner {
 pub struct Term {
     pub(crate) inner: Inner,
     pub(crate) max_sin: usize, // max sin power
-    pub(crate) min_eps: f64,   // min coefficient to keep
+    pub(crate) min_eps: f64,   // coefficients with |c| <= min_eps are dropped
 }
 
 impl Term {
@@ -403,7 +403,7 @@ impl Term {
         self.retruncate();
     }
 
-    /// Set the coefficient cutoff, dropping the monomials below it.
+    /// Set the coefficient cutoff, dropping the monomials with `|c| <= eps`.
     #[inline]
     pub fn set_min_eps(&mut self, eps: f64) {
         self.min_eps = eps;

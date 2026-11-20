@@ -215,7 +215,7 @@ mod tests {
     #[test]
     fn adding_a_term_ignores_the_right_operands_thresholds() {
         let mut big = Term::from(0.0) + Var(0).sin();
-        big.set_min_eps(1.0);
+        big.set_min_eps(0.5);
         let mut small = Term::from(1.0) + Var(1).sin() * 1e-6;
         small.set_min_eps(1e-12);
         let mut l = small.clone();
@@ -225,7 +225,7 @@ mod tests {
         assert_eq!(
             big.n_monomials(),
             1,
-            "left `min_eps` = 1 drops the 1e-6 monomial"
+            "left `min_eps` = 0.5 drops the 1e-6 monomial"
         );
     }
 }

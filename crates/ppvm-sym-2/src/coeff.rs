@@ -179,14 +179,14 @@ macro_rules! from_number {
 }
 from_number!(f32, f64, i32, i64);
 
-/// `is_zero()` holds for a constant (`Const`, or a `Sum` with no monomials) below `min_eps`.
+/// `is_zero()` holds for a constant (`Const`, or a `Sum` with no monomials) with `|c| <= min_eps`.
 impl num::Zero for Term {
     fn zero() -> Self {
         Term::from_f64(0.0)
     }
 
     fn is_zero(&self) -> bool {
-        self.as_const().is_some_and(|c| c.abs() < self.min_eps)
+        self.as_const().is_some_and(|c| c.abs() <= self.min_eps)
     }
 }
 
@@ -203,7 +203,7 @@ pub(crate) mod tests {
     use crate::term::Var;
     use num::{Complex, Zero};
 
-    /// Constants in any form are zero below `min_eps` and have `|c|` as their
+    /// Constants in any form are zero at or below `min_eps` and have `|c|` as their
     /// magnitude; symbolic forms never are zero and never get dropped by a threshold.
     #[test]
     fn constants_in_any_form_are_zero_and_have_a_magnitude() {

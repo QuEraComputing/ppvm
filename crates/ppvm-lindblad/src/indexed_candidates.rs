@@ -9,9 +9,9 @@ use hashbrown::HashTable;
 
 #[derive(Default)]
 pub(crate) struct IndexedCandidates {
-    pub(crate) state: Vec<u8>,
+    state: Vec<u8>,
     table: HashTable<u32>,
-    pub(crate) free: Vec<u32>,
+    free: Vec<u32>,
 }
 
 impl IndexedCandidates {
@@ -116,18 +116,6 @@ impl IndexedCandidates {
             keep
         });
         buffer.numeric.truncate(count);
-    }
-
-    pub(crate) fn selected_rates<'a, const C: usize>(
-        &'a self,
-        buffer: &'a CandidateBuffer<'_, C>,
-        threshold: f64,
-    ) -> impl Iterator<Item = (Word<C>, f64)> + 'a {
-        self.table.iter().filter_map(move |&index| {
-            let index = index as usize;
-            (buffer.numeric[index].abs() > threshold)
-                .then_some((buffer.words[buffer.prefix + index], buffer.numeric[index]))
-        })
     }
 
     pub(crate) fn select<const C: usize>(

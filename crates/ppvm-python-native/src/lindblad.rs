@@ -38,17 +38,6 @@ pub(crate) fn map_err(e: ppvm_lindblad::Error) -> PyErr {
     PyValueError::new_err(e.to_string())
 }
 
-fn candidate_strategy(name: &str) -> PyResult<ppvm_lindblad::CandidateStrategy> {
-    use ppvm_lindblad::CandidateStrategy::{Shortlist, Streaming};
-    match name {
-        "streaming" => Ok(Streaming),
-        "shortlist" => Ok(Shortlist),
-        _ => Err(PyValueError::new_err(
-            "proposer must be streaming or shortlist",
-        )),
-    }
-}
-
 /// Reject a basis that contains the same Pauli word at two distinct rows.
 /// Duplicate rows would silently overwrite each other in the generator's
 /// row-index map and produce an incorrect sparse matrix.
@@ -295,8 +284,7 @@ impl LindbladSpec {
     /// cap selects the top-`max_basis` strings over the whole union
     /// (displacement truncation). `drop_tol` prunes by magnitude after the
     /// step; `tau_add` filters leakage admission by inflow rate. Protected
-    /// words are never dropped. `proposer` selects streaming (the default) or
-    /// shortlist candidate generation.
+    /// words are never dropped.
     #[pyo3(signature = (
         basis, coeffs, dt, max_basis,
         drop_tol = 0.0,
@@ -304,8 +292,6 @@ impl LindbladSpec {
         num_threads = None,
         admit_basis = None,
         tau_add = None,
-        *,
-        proposer = "streaming",
     ))]
     #[allow(clippy::too_many_arguments)]
     fn pc_step<'py>(
@@ -320,9 +306,7 @@ impl LindbladSpec {
         num_threads: Option<usize>,
         admit_basis: Option<usize>,
         tau_add: Option<f64>,
-        proposer: &str,
     ) -> PyResult<PyPauliMap<'py>> {
-        let proposer = candidate_strategy(proposer)?;
         with_spec!(&self.inner, inner, C => {
             let n_q = inner.n_qubits();
             let basis_view = basis.as_array();
@@ -342,7 +326,6 @@ impl LindbladSpec {
                     dt,
                     &protected_words,
                     &ppvm_lindblad::PcStepConfig {
-                        proposer,
                         max_basis,
                         admit_basis,
                         drop_tol,
@@ -352,6 +335,8 @@ impl LindbladSpec {
                 )
                 .map_err(map_err)?;
 
+            // `pc_step` leaves spare capacity for the next step's enlargement;
+            // release it before NumPy takes ownership of the coefficients.
             let basis_arr = encode_basis(py, &basis_words, n_q)?;
             coeffs_vec.shrink_to_fit();
             Ok((basis_arr, coeffs_vec.into_pyarray(py)))
@@ -367,8 +352,6 @@ impl LindbladSpec {
         num_threads = None,
         admit_basis = None,
         tau_add = None,
-        *,
-        proposer = "streaming",
     ))]
     #[allow(clippy::too_many_arguments)]
     fn pc_step_timed<'py>(
@@ -383,9 +366,7 @@ impl LindbladSpec {
         num_threads: Option<usize>,
         admit_basis: Option<usize>,
         tau_add: Option<f64>,
-        proposer: &str,
     ) -> PyResult<(PyPauliMap<'py>, Bound<'py, pyo3::types::PyDict>)> {
-        let proposer = candidate_strategy(proposer)?;
         with_spec!(&self.inner, inner, C => {
             let n_q = inner.n_qubits();
             let basis_view = basis.as_array();
@@ -405,7 +386,6 @@ impl LindbladSpec {
                     dt,
                     &protected_words,
                     &ppvm_lindblad::PcStepConfig {
-                        proposer,
                         max_basis,
                         admit_basis,
                         drop_tol,
@@ -518,7 +498,6 @@ impl LindbladSpec {
                         drop_tol,
                         tau_add,
                         num_threads,
-                        ..Default::default()
                     },
                 )
                 .map_err(map_err)?;

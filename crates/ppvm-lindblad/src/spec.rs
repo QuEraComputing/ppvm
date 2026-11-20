@@ -53,7 +53,7 @@ fn candidate_terms(p_support: &[u32], index: &[Vec<u32>], scratch: &mut Vec<u32>
 /// costs more than the recompute (hash lookup ≳ recompute) and its several
 /// KB per cached word dominate memory at large basis sizes.
 pub struct LindbladSpec<const C: usize = W_CHUNKS> {
-    pub(crate) workspaces: std::sync::Mutex<Vec<crate::PcStepWorkspace<C>>>,
+    pub(crate) workspaces: std::sync::Mutex<Vec<crate::basis::PcStepWorkspace<C>>>,
     pub(crate) pauli_plan: Option<crate::pauli_plan::PauliActionPlan<C>>,
     n_qubits: usize,
     h_terms: Vec<HTerm<C>>,
@@ -179,10 +179,6 @@ impl<const C: usize> LindbladSpec<C> {
         self.j_kinds
             .iter()
             .all(|jump| matches!(jump, JumpKind::HermitianPauli { .. }))
-    }
-
-    pub(crate) fn hamiltonian_terms(&self) -> impl Iterator<Item = (Word<C>, f64)> + '_ {
-        self.h_terms.iter().map(|term| (term.word, term.coeff))
     }
 
     /// Add a Kossakowski-form dissipator

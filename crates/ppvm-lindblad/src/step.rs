@@ -3,14 +3,13 @@
 
 //! Predictor-corrector adaptive step `O ← exp(dt·L*) O`.
 
+use crate::basis::PcStepWorkspace;
+use crate::candidates::CandidateBuffer;
 use crate::sector::Sector;
 use crate::spec::LindbladSpec;
 use crate::truncate::{add_leakage_capped, cap_basis, cap_basis_with_scratch, prune_basis};
 use crate::word::Word;
-use crate::{
-    CandidateBuffer, CandidateProposer, CandidateStrategy, Error, PcStepConfig, PcStepWorkspace,
-    mf_expm,
-};
+use crate::{Error, PcStepConfig, mf_expm};
 use num::Complex;
 use std::time::Instant;
 
@@ -39,14 +38,14 @@ impl PcStepTimings {
 
 /// Clock for one `pc_step` phase. Disarmed (`None`) on the untimed path, so
 /// [`LindbladSpec::pc_step`] pays no `Instant` syscalls.
-pub(crate) struct Phase(Option<Instant>);
+struct Phase(Option<Instant>);
 
 impl Phase {
-    pub(crate) fn start(timed: bool) -> Self {
+    fn start(timed: bool) -> Self {
         Self(timed.then(Instant::now))
     }
 
-    pub(crate) fn stop(self, slot: &mut u64) {
+    fn stop(self, slot: &mut u64) {
         if let Some(t0) = self.0 {
             *slot = t0.elapsed().as_micros() as u64;
         }
@@ -96,6 +95,7 @@ impl<const C: usize> LindbladSpec<C> {
         self.pc_step_pooled(basis, coeffs, dt, protected, cfg, true)
     }
 
+    /// Run one step with a workspace checked out of the model's pool.
     fn pc_step_pooled(
         &self,
         basis: &mut Vec<Word<C>>,
@@ -105,110 +105,6 @@ impl<const C: usize> LindbladSpec<C> {
         cfg: &PcStepConfig,
         timed: bool,
     ) -> Result<PcStepTimings, Error> {
-        // Only checkout and return hold the lock; concurrent trajectories use separate buffers.
-        let mut workspace = self
-            .workspaces
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .pop()
-            .unwrap_or_default();
-        let result = self.pc_step_execute(basis, coeffs, dt, protected, cfg, timed, &mut workspace);
-        self.workspaces
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .push(workspace);
-        result
-    }
-
-    /// Adaptive step using buffers owned explicitly by the caller.
-    ///
-    /// Ordinary step calls reuse an internal workspace automatically. This entry point
-    /// lets a caller retain the buffers independently of the model.
-    /// Capacity follows the active state; a rank limit does not allocate its full size.
-    /// Numerical ordering is identical to [`Self::pc_step_timed`].
-    pub fn pc_step_with_workspace(
-        &self,
-        basis: &mut Vec<Word<C>>,
-        coeffs: &mut Vec<f64>,
-        dt: f64,
-        protected: &[Word<C>],
-        cfg: &PcStepConfig,
-        workspace: &mut PcStepWorkspace<C>,
-    ) -> Result<PcStepTimings, Error> {
-        self.pc_step_execute(basis, coeffs, dt, protected, cfg, true, workspace)
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn pc_step_execute(
-        &self,
-        basis: &mut Vec<Word<C>>,
-        coeffs: &mut Vec<f64>,
-        dt: f64,
-        protected: &[Word<C>],
-        cfg: &PcStepConfig,
-        timed: bool,
-        workspace: &mut PcStepWorkspace<C>,
-    ) -> Result<PcStepTimings, Error> {
-        let mut proposer = std::mem::take(&mut workspace.proposer);
-        let result = match cfg.proposer {
-            CandidateStrategy::Streaming => self.pc_step_execute_with_proposer(
-                basis,
-                coeffs,
-                dt,
-                protected,
-                cfg,
-                timed,
-                workspace,
-                &mut proposer.streaming,
-            ),
-            CandidateStrategy::Shortlist => self.pc_step_execute_with_proposer(
-                basis,
-                coeffs,
-                dt,
-                protected,
-                cfg,
-                timed,
-                workspace,
-                &mut proposer,
-            ),
-        };
-        workspace.proposer = proposer;
-        result
-    }
-
-    /// Adaptive step with a caller-owned candidate strategy and reusable workspace.
-    ///
-    /// The strategy receives a borrowed view of the active sum and its spare word
-    /// storage. The stepper initializes admitted coefficients, evolves the state,
-    /// and applies final truncation. Ordinary step calls use the strategy in [`PcStepConfig::proposer`].
-    #[allow(clippy::too_many_arguments)]
-    pub fn pc_step_with_proposer<P: CandidateProposer<C>>(
-        &self,
-        basis: &mut Vec<Word<C>>,
-        coeffs: &mut Vec<f64>,
-        dt: f64,
-        protected: &[Word<C>],
-        cfg: &PcStepConfig,
-        workspace: &mut PcStepWorkspace<C>,
-        proposer: &mut P,
-    ) -> Result<PcStepTimings, Error> {
-        self.pc_step_execute_with_proposer(
-            basis, coeffs, dt, protected, cfg, true, workspace, proposer,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn pc_step_execute_with_proposer<P: CandidateProposer<C>>(
-        &self,
-        basis: &mut Vec<Word<C>>,
-        coeffs: &mut Vec<f64>,
-        dt: f64,
-        protected: &[Word<C>],
-        cfg: &PcStepConfig,
-        timed: bool,
-        workspace: &mut PcStepWorkspace<C>,
-        proposer: &mut P,
-    ) -> Result<PcStepTimings, Error> {
         if basis.len() != coeffs.len() {
             return Err(Error::LengthMismatch {
                 what: "basis and coeffs",
@@ -216,36 +112,22 @@ impl<const C: usize> LindbladSpec<C> {
                 b: coeffs.len(),
             });
         }
-        let dimension = 1usize
-            .checked_shl((2 * self.n_qubits()) as u32)
-            .unwrap_or(usize::MAX);
-        let admit = cfg.admit_basis.unwrap_or(cfg.max_basis).max(cfg.max_basis);
-        {
-            // Reserve from the active state rather than an arbitrarily large rank limit.
-            let active = basis.len().min(cfg.max_basis);
-            let bound = active.saturating_mul(3).min(admit).min(dimension);
-            if let Some(required) = bound.checked_mul(2)
-                && workspace.taylor.capacity() < required
-            {
-                workspace
-                    .taylor
-                    .reserve_exact(required - workspace.taylor.len());
-            }
-            if let Some(reserve) = active.checked_mul(4) {
-                let reserve = reserve.max(bound).min(dimension);
-                if basis.capacity() < reserve {
-                    basis.reserve_exact(reserve.saturating_sub(basis.len()));
-                }
-                if coeffs.capacity() < reserve {
-                    coeffs.reserve_exact(reserve.saturating_sub(coeffs.len()));
-                }
-            }
-        }
-        self.run_in_pool(cfg, |this| {
-            this.pc_step_inner(
-                basis, coeffs, dt, protected, cfg, timed, workspace, proposer,
-            )
-        })
+        // Only checkout and return hold the lock; concurrent trajectories use separate buffers.
+        let mut workspace = self
+            .workspaces
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .pop()
+            .unwrap_or_default();
+        reserve_step_capacity(self.n_qubits(), basis, coeffs, cfg, &mut workspace);
+        let result = self.run_in_pool(cfg, |this| {
+            this.pc_step_inner(basis, coeffs, dt, protected, cfg, timed, &mut workspace)
+        });
+        self.workspaces
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .push(workspace);
+        result
     }
 
     pub(crate) fn run_in_pool<R: Send>(
@@ -265,7 +147,7 @@ impl<const C: usize> LindbladSpec<C> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn pc_step_inner<P: CandidateProposer<C>>(
+    fn pc_step_inner(
         &self,
         basis: &mut Vec<Word<C>>,
         coeffs: &mut Vec<f64>,
@@ -274,7 +156,6 @@ impl<const C: usize> LindbladSpec<C> {
         cfg: &PcStepConfig,
         timed: bool,
         workspace: &mut PcStepWorkspace<C>,
-        proposer: &mut P,
     ) -> Result<PcStepTimings, Error> {
         let PcStepConfig {
             max_basis,
@@ -292,24 +173,25 @@ impl<const C: usize> LindbladSpec<C> {
         let admit = admit_basis.unwrap_or(max_basis).max(max_basis);
         let tau_add = tau_add.unwrap_or(0.0);
         let mut t = PcStepTimings::default();
-
         let original_terms = basis.len();
 
-        // No basis permutation occurs before final truncation, so a saved
-        // coefficient prefix retains the original word positions for correction.
-        // 1. First-hop expansion appends zero coefficients for admitted words.
+        // 1. First-hop expansion. Admitted words are appended to `basis` with
+        // zero coefficients. No basis permutation occurs before the final
+        // truncation, so the pre-step coefficients stay at their positions.
         let p = Phase::start(timed);
         let mut buffer = CandidateBuffer::new(basis, coeffs, &mut workspace.taylor);
-        proposer.propose(self, &mut buffer, protected, admit)?;
+        workspace
+            .proposer
+            .propose(self, &mut buffer, protected, admit)?;
         p.stop(&mut t.leakage1_us);
 
         let p = Phase::start(timed);
-        let count = proposer.select(&mut buffer, tau_add);
-        assert!(count <= admit.saturating_sub(buffer.basis().len()));
-        buffer.finish(count);
+        workspace.proposer.admit(buffer, tau_add);
         coeffs.resize(basis.len(), 0.0);
         p.stop(&mut t.expand1_us);
 
+        // The exponential overwrites `coeffs`. Save the pre-step coefficients
+        // only when a second hop, and hence a corrector, is still possible.
         if basis.len() < admit {
             workspace.coefficient_auxiliary.clear();
             workspace
@@ -317,25 +199,34 @@ impl<const C: usize> LindbladSpec<C> {
                 .extend_from_slice(&coeffs[..original_terms]);
         }
 
-        // The main coefficient vector is the exponential's output; the prefix backup is only for a possible corrector.
+        // 2. Predictor, in place.
         let p = Phase::start(timed);
         mf_expm::expm_apply_inplace(self, basis, dt, coeffs, drop_tol, workspace);
         p.stop(&mut t.expm1_us);
 
+        // 3. Second-hop expansion from the predicted state. Once the basis is
+        // full, the first hop usually fills the whole admission room; with
+        // `room = 0` the second hop can admit nothing, so its leakage pass
+        // is skipped.
         let n_predict = basis.len();
         if admit > n_predict {
             let p = Phase::start(timed);
             let mut buffer = CandidateBuffer::new(basis, coeffs, &mut workspace.taylor);
-            proposer.propose(self, &mut buffer, protected, admit)?;
+            workspace
+                .proposer
+                .propose(self, &mut buffer, protected, admit)?;
             p.stop(&mut t.leakage2_us);
+
             let p = Phase::start(timed);
-            let count = proposer.select(&mut buffer, tau_add);
-            assert!(count <= admit.saturating_sub(buffer.basis().len()));
-            buffer.finish(count);
+            workspace.proposer.admit(buffer, tau_add);
             coeffs.resize(basis.len(), 0.0);
             p.stop(&mut t.expand2_us);
         }
 
+        // 4. Corrector: redo from the saved pre-step state on the enlarged
+        // basis. If the second hop admitted nothing, the corrector would
+        // repeat the predictor's computation exactly, so the predicted state
+        // is kept.
         if basis.len() != n_predict {
             let p = Phase::start(timed);
             coeffs.clear();
@@ -448,6 +339,41 @@ impl<const C: usize> LindbladSpec<C> {
         prune_basis(basis, coeffs, drop_tol, protected);
         cap_basis(basis, coeffs, max_basis, protected);
         Ok(())
+    }
+}
+
+/// Reserve the step's arrays from the active state, not from `max_basis`,
+/// which may be an arbitrarily large rank limit. The two enlargements can
+/// grow the basis to about three times its active size, bounded by the
+/// admission cap and the number of Pauli strings on the register.
+fn reserve_step_capacity<const C: usize>(
+    n_qubits: usize,
+    basis: &mut Vec<Word<C>>,
+    coeffs: &mut Vec<f64>,
+    cfg: &PcStepConfig,
+    workspace: &mut PcStepWorkspace<C>,
+) {
+    let dimension = 1usize
+        .checked_shl((2 * n_qubits) as u32)
+        .unwrap_or(usize::MAX);
+    let admit = cfg.admit_basis.unwrap_or(cfg.max_basis).max(cfg.max_basis);
+    let active = basis.len().min(cfg.max_basis);
+    let bound = active.saturating_mul(3).min(admit).min(dimension);
+    if let Some(required) = bound.checked_mul(2)
+        && workspace.taylor.capacity() < required
+    {
+        workspace
+            .taylor
+            .reserve_exact(required - workspace.taylor.len());
+    }
+    if let Some(reserve) = active.checked_mul(4) {
+        let reserve = reserve.max(bound).min(dimension);
+        if basis.capacity() < reserve {
+            basis.reserve_exact(reserve.saturating_sub(basis.len()));
+        }
+        if coeffs.capacity() < reserve {
+            coeffs.reserve_exact(reserve.saturating_sub(coeffs.len()));
+        }
     }
 }
 
@@ -566,5 +492,90 @@ mod default_tests {
         let pool = spec.workspaces.lock().unwrap();
         assert!(pool[0].taylor.capacity() <= 16);
         assert!(pool[0].coefficient_auxiliary.capacity() <= 8);
+    }
+
+    #[test]
+    fn pauli_noise_step_matches_reference_and_keeps_caller_storage() {
+        let h = vec![
+            ("XXI".into(), 0.3),
+            ("IYY".into(), -0.7),
+            ("ZII".into(), 0.2),
+        ];
+        let jumps = vec![JumpInput {
+            lincomb: vec![("IZI".into(), Complex::new(1.0, 0.0))],
+            rate: 0.2,
+        }];
+        let spec = LindbladSpec::<2>::new(3, &h, &jumps).unwrap();
+        let seed = word_from_codes::<2>(&[3, 0, 0]).unwrap();
+        let (mut a, mut b) = (vec![seed], vec![seed]);
+        let (mut ca, mut cb) = (vec![1.0], vec![1.0]);
+        b.reserve_exact(64 - b.len());
+        cb.reserve_exact(64 - cb.len());
+        let basis_storage = b.as_ptr();
+        let coefficient_storage = cb.as_ptr();
+        for step in 0..12 {
+            let cfg = PcStepConfig {
+                max_basis: if step == 0 { usize::MAX } else { 8 + step % 3 },
+                admit_basis: if step == 0 { None } else { Some(24 + step % 4) },
+                num_threads: Some(2),
+                ..Default::default()
+            };
+            spec.pc_step_reference(&mut a, &mut ca, 0.1, &[seed], &cfg)
+                .unwrap();
+            spec.pc_step(&mut b, &mut cb, 0.1, &[seed], &cfg).unwrap();
+            assert_eq!(b.as_ptr(), basis_storage);
+            assert_eq!(cb.as_ptr(), coefficient_storage);
+            assert_eq!(a, b);
+            assert_eq!(ca, cb);
+        }
+    }
+
+    /// The paired cache and the column-assembled reference sum in different
+    /// orders, so coefficients agree to rounding rather than bit for bit.
+    #[test]
+    fn pauli_noise_step_matches_reference_beyond_one_hundred_twenty_eight_qubits() {
+        let n = 129;
+        let term = |symbol: char, sites: &[usize]| {
+            let mut symbols = vec!['I'; n];
+            for &site in sites {
+                symbols[site] = symbol;
+            }
+            symbols.into_iter().collect::<String>()
+        };
+        let h = vec![
+            (term('X', &[0, 128]), 0.25),
+            (term('Y', &[64, 128]), -0.25),
+            (term('Z', &[0]), 0.25),
+        ];
+        let jumps = vec![JumpInput {
+            lincomb: vec![(term('Z', &[64]), Complex::new(1.0, 0.0))],
+            rate: 0.2,
+        }];
+        let spec = LindbladSpec::<4>::new(n, &h, &jumps).unwrap();
+        let mut codes = vec![0; n];
+        codes[128] = 2;
+        let seed = word_from_codes::<4>(&codes).unwrap();
+        let (mut a, mut b) = (vec![seed], vec![seed]);
+        let (mut ca, mut cb) = (vec![1.0], vec![1.0]);
+        let cfg = PcStepConfig {
+            max_basis: 16,
+            admit_basis: Some(48),
+            num_threads: Some(2),
+            ..Default::default()
+        };
+        for _ in 0..8 {
+            spec.pc_step_reference(&mut a, &mut ca, 0.1, &[seed], &cfg)
+                .unwrap();
+            spec.pc_step(&mut b, &mut cb, 0.1, &[seed], &cfg).unwrap();
+            let mut expected: Vec<_> = a.iter().copied().zip(ca.iter().copied()).collect();
+            let mut actual: Vec<_> = b.iter().copied().zip(cb.iter().copied()).collect();
+            expected.sort_unstable_by_key(|entry| entry.0);
+            actual.sort_unstable_by_key(|entry| entry.0);
+            assert_eq!(expected.len(), actual.len());
+            for ((word_a, value_a), (word_b, value_b)) in expected.iter().zip(&actual) {
+                assert_eq!(word_a, word_b);
+                assert!((value_a - value_b).abs() < 2e-13);
+            }
+        }
     }
 }

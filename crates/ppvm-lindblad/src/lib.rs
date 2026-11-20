@@ -37,10 +37,6 @@
 //! for a register. The hot-path commutator/
 //! product loops bypass the higher-level word API and operate directly on
 //! the raw chunks for speed.
-//!
-//! Real predictor-corrector steps use [`StreamingProposer`] by default.
-//! [`CandidateStrategy::Shortlist`] selects [`ShortlistScoreProposer`], which
-//! shortlists individual contributions and scores their complete signed leakage.
 
 mod algebra;
 mod basis;
@@ -57,7 +53,6 @@ mod pauli_plan;
 mod reference;
 mod scalar;
 pub mod sector;
-mod shortlist;
 mod spec;
 mod step;
 mod truncate;
@@ -67,12 +62,10 @@ mod word;
 /// Matrix-free / quspin-expm-backed `exp(dt·L*)·b` engine. See module docs.
 pub(crate) mod mf_expm;
 
-pub use basis::{PcStepWorkspace, build_basis_index};
-pub use candidates::{CandidateBuffer, CandidateProposer, StreamingProposer};
-pub use config::{CandidateStrategy, PcStepConfig};
+pub use basis::build_basis_index;
+pub use config::PcStepConfig;
 pub use error::Error;
 pub use sector::{Sector, canonicalize_basis_to_rep};
-pub use shortlist::ShortlistScoreProposer;
 pub use spec::{JumpInput, LindbladSpec};
 pub use step::PcStepTimings;
 pub use word::{

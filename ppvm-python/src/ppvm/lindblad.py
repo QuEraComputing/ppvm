@@ -305,16 +305,13 @@ class Lindbladian:
         num_threads: int | None = None,
         admit_basis: int | None = None,
         tau_add: float | None = None,
-        *,
-        proposer: str = "streaming",
     ) -> tuple[np.ndarray, np.ndarray]:
         """One predictor-corrector adaptive step.
 
         All work — leakage expansion, matrix-exponential step, second-hop
         re-expansion, corrector — runs in Rust; SciPy is not required.
-        The matrix-exponential action uses sparse generator rows and the
-        external ``quspin-expm`` crate. Repeated calls on this model reuse
-        temporary buffers automatically. Couplings may have arbitrary strengths.
+        The matrix-exponential action is computed matrix-free via the
+        external ``quspin-expm`` crate.
 
         Truncation. ``max_basis`` is a hard rank cap on the live basis:
         enrichment adds at most ``max_basis - len(basis)`` of the largest
@@ -342,9 +339,6 @@ class Lindbladian:
         turnover. With the default ``None``, admission is bounded by
         ``max_basis`` and turnover requires ``drop_tol > 0``.
 
-        ``proposer`` chooses ``"streaming"`` (default) or ``"shortlist"``
-        candidate generation.
-
         Returns ``(new_basis_arr, new_coeffs)``; the basis may have grown
         (or shrunk, if ``max_basis`` / ``drop_tol`` pruned entries).
         """
@@ -361,7 +355,6 @@ class Lindbladian:
             None if num_threads is None else int(num_threads),
             None if admit_basis is None else int(admit_basis),
             None if tau_add is None else float(tau_add),
-            proposer=proposer,
         )
 
     def pc_step_orbit_rep(
@@ -445,8 +438,6 @@ class Lindbladian:
         num_threads: int | None = None,
         admit_basis: int | None = None,
         tau_add: float | None = None,
-        *,
-        proposer: str = "streaming",
     ) -> tuple[list[str], np.ndarray]:
         """String-keyed variant of `pc_step_arr`."""
         n = self.n_qubits
@@ -464,7 +455,6 @@ class Lindbladian:
             num_threads,
             admit_basis,
             tau_add,
-            proposer=proposer,
         )
         return _codes_to_basis(new_basis_arr), new_coeffs
 

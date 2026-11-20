@@ -3,16 +3,6 @@
 
 //! Configuration objects for the predictor-corrector stepper.
 
-/// Built-in candidate generation for real-coefficient predictor-corrector steps.
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub enum CandidateStrategy {
-    /// Chunk-capped signed leakage accumulation.
-    #[default]
-    Streaming,
-    /// Shortlist individual contributions, then score their complete signed leakage.
-    Shortlist,
-}
-
 /// Truncation and execution policy for a single predictor-corrector step
 /// ([`crate::LindbladSpec::pc_step`], [`crate::LindbladSpec::pc_step_timed`]).
 ///
@@ -24,9 +14,6 @@ pub enum CandidateStrategy {
 /// scheme; `tau_add` is a wall optimization at most.
 #[derive(Debug, Clone, Copy)]
 pub struct PcStepConfig {
-    /// Candidate generation for real-coefficient steps. Explicit proposer calls
-    /// use their supplied strategy instead of this field.
-    pub proposer: CandidateStrategy,
     /// Hard rank cap on the retained basis: after the corrector, only the
     /// top-`max_basis` strings by `|coeff|` are kept (protected words always
     /// survive). The primary convergence dial — verify by re-running at 2×.
@@ -62,7 +49,6 @@ impl Default for PcStepConfig {
     /// `admit_basis ≈ 2-3×` it).
     fn default() -> Self {
         Self {
-            proposer: CandidateStrategy::Streaming,
             max_basis: usize::MAX,
             admit_basis: None,
             drop_tol: 0.0,

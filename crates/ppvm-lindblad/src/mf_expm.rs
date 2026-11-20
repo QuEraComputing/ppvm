@@ -617,7 +617,7 @@ pub(crate) fn expm_apply_inplace<const C: usize>(
     dt: f64,
     coefficients: &mut [f64],
     drop_tol: f64,
-    workspace: &mut crate::PcStepWorkspace<C>,
+    workspace: &mut crate::basis::PcStepWorkspace<C>,
 ) {
     if basis.is_empty() {
         return;

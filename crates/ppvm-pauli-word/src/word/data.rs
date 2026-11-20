@@ -185,13 +185,7 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize, const REH
 
     fn rehash(&mut self) {
         if REHASH {
-            self.hash_cache = S::word_hash(
-                &[
-                    bytemuck::bytes_of(&self.xbits.data),
-                    bytemuck::bytes_of(&self.zbits.data),
-                ],
-                std::mem::size_of::<A>(),
-            );
+            self.hash_cache = Self::plane_hash(&self.xbits, &self.zbits);
         }
     }
 
@@ -250,6 +244,24 @@ impl<A: PauliStorage, S: BuildHasher + Clone + Default + HashFinalize, const REH
         }
         self.rehash();
         self
+    }
+}
+
+impl<A: PauliStorage, S: BuildHasher + Default + HashFinalize, const REHASH: bool>
+    PauliWord<A, S, REHASH>
+{
+    /// The hash a word with bit planes `xbits` and `zbits` caches. It does not
+    /// depend on the qubit count, so a type that stores only the two planes
+    /// can hash exactly like this word.
+    #[inline(always)]
+    pub fn plane_hash(xbits: &BitArray<A>, zbits: &BitArray<A>) -> u64 {
+        S::word_hash(
+            &[
+                bytemuck::bytes_of(&xbits.data),
+                bytemuck::bytes_of(&zbits.data),
+            ],
+            std::mem::size_of::<A>(),
+        )
     }
 }
 

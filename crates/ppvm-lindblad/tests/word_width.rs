@@ -149,9 +149,9 @@ fn evolve_orbit<const C: usize>(n: usize, k: i32, steps: usize) -> Vec<(Vec<u8>,
             )
         })
         .collect();
-    let mut words: Vec<_> = basis.iter().map(|w| w.to_pauli_word(n)).collect();
+    let mut words: Vec<_> = basis.iter().map(|w| w.to_general(n)).collect();
     canonicalize_pauli_sum_complex(&mut words, &mut coeffs, &group, &k_modes);
-    let mut basis: Vec<Word<C>> = words.iter().map(Word::from_pauli_word).collect();
+    let mut basis: Vec<Word<C>> = words.iter().map(Word::from).collect();
 
     let sector = Sector::new(&group, &k_modes);
     let cfg = PcStepConfig {

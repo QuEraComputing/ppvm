@@ -14,10 +14,10 @@ fn canonicalize_pauli_sum_complex(
 ) {
     let mut words: Vec<_> = basis
         .iter()
-        .map(|w| w.to_pauli_word(group.n_qubits()))
+        .map(|w| w.to_general(group.n_qubits()))
         .collect();
     ppvm_pauli_sum::symmetry::canonicalize_pauli_sum_complex(&mut words, coeffs, group, k);
-    *basis = words.iter().map(Word::from_pauli_word).collect();
+    *basis = words.iter().map(Word::from).collect();
 }
 
 fn canonicalize_pauli_sum(
@@ -27,10 +27,10 @@ fn canonicalize_pauli_sum(
 ) {
     let mut words: Vec<_> = basis
         .iter()
-        .map(|w| w.to_pauli_word(group.n_qubits()))
+        .map(|w| w.to_general(group.n_qubits()))
         .collect();
     ppvm_pauli_sum::symmetry::canonicalize_pauli_sum(&mut words, coeffs, group);
-    *basis = words.iter().map(Word::from_pauli_word).collect();
+    *basis = words.iter().map(Word::from).collect();
 }
 
 /// Test-only full-space complex predictor-corrector step, UNTRUNCATED:
@@ -624,11 +624,11 @@ fn compact_word_is_two_planes_and_hashes_and_orders_like_pauli_word() {
         })
         .collect();
     for a in &words {
-        let pa = a.to_pauli_word(100);
+        let pa = a.to_general(100);
         assert_eq!(fx(&|s| a.hash(s)), fx(&|s| pa.hash(s)));
-        assert_eq!(Word::from_pauli_word(&pa), *a);
+        assert_eq!(Word::from(&pa), *a);
         for b in words.iter().take(40) {
-            assert_eq!(a.cmp(b), pa.cmp(&b.to_pauli_word(100)));
+            assert_eq!(a.cmp(b), pa.cmp(&b.to_general(100)));
         }
     }
 }

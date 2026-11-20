@@ -6,7 +6,8 @@
 use crate::Error;
 use bitvec::array::BitArray;
 use fxhash::FxBuildHasher;
-use ppvm_traits::traits::HashFinalize;
+use ppvm_pauli_word::word::PauliWord;
+use ppvm_traits::PauliWordTrait;
 use std::hash::{Hash, Hasher};
 
 /// Pauli-word storage chunk: `u64` on 64-bit targets, `u32` elsewhere
@@ -56,19 +57,23 @@ pub const fn chunks_for(n_qubits: usize) -> Option<usize> {
 /// one X and one Z bit plane, 32 bytes at the default 128-qubit width.
 ///
 /// The crate is const-generic in the chunk count so a register of any size
-/// up to [`MAX_SUPPORTED_QUBITS`] gets a fixed-size word. The register size
-/// belongs to the model and is not stored per word; bits at or above it are
-/// always zero. The hash is computed from the planes on demand with the same
-/// digest `ppvm_pauli_word::PauliWord` caches, so hash tables keyed by words
-/// order them exactly as they would order that type. Ordering compares the X
-/// plane, then the Z plane.
-#[derive(Clone, Copy, Default)]
+/// up to [`MAX_SUPPORTED_QUBITS`] gets a fixed-size word. Unlike
+/// [`GeneralWord`], a `Word` stores neither the qubit count, which belongs to
+/// the model, nor a cached hash; bits at or above the register size are
+/// always zero. Hashing and ordering agree with [`GeneralWord`] on the same
+/// planes, so hash tables and sorts treat both types alike.
+#[derive(Clone, Copy, Default, PartialOrd, Ord)]
 pub struct Word<const C: usize = W_CHUNKS> {
     /// X-bit plane, one bit per qubit.
     pub xbits: BitArray<[Chunk; C]>,
     /// Z-bit plane, one bit per qubit.
     pub zbits: BitArray<[Chunk; C]>,
 }
+
+/// The `ppvm_pauli_word` word with the same planes, which also stores the
+/// register size and a cached hash. `ppvm_pauli_sum` symmetry routines take
+/// this type.
+pub type GeneralWord<const C: usize = W_CHUNKS> = PauliWord<[Chunk; C], FxBuildHasher, true>;
 
 impl<const C: usize> Word<C> {
     /// The identity word for a register of `n_qubits` (at most the width's capacity).
@@ -77,36 +82,19 @@ impl<const C: usize> Word<C> {
         Self::default()
     }
 
-    #[inline(always)]
-    fn digest(&self) -> u64 {
-        FxBuildHasher::word_hash(
-            &[
-                bytemuck::bytes_of(&self.xbits.data),
-                bytemuck::bytes_of(&self.zbits.data),
-            ],
-            std::mem::size_of::<[Chunk; C]>(),
-        )
-    }
-}
-
-/// The general `ppvm_pauli_word` word of the same width, which also stores the
-/// register size and a cached hash. `ppvm_pauli_sum` symmetry routines take this type.
-pub type GeneralWord<const C: usize = W_CHUNKS> =
-    ppvm_pauli_word::word::PauliWord<[Chunk; C], FxBuildHasher, true>;
-
-impl<const C: usize> Word<C> {
-    /// This word as the general `PauliWord` used by `ppvm_pauli_sum` symmetry groups.
-    pub fn to_pauli_word(self, n_qubits: usize) -> GeneralWord<C> {
-        use ppvm_traits::PauliWordTrait;
-        let mut word = ppvm_pauli_word::word::PauliWord::new(n_qubits);
+    /// This word as a [`GeneralWord`] on `n_qubits` qubits. The qubit count
+    /// is an argument because a `Word` does not store it.
+    pub fn to_general(self, n_qubits: usize) -> GeneralWord<C> {
+        let mut word = GeneralWord::<C>::new(n_qubits);
         word.xbits = self.xbits;
         word.zbits = self.zbits;
         word.rehash();
         word
     }
+}
 
-    /// The planes of a general `PauliWord`.
-    pub fn from_pauli_word(word: &GeneralWord<C>) -> Self {
+impl<const C: usize> From<&GeneralWord<C>> for Word<C> {
+    fn from(word: &GeneralWord<C>) -> Self {
         Self {
             xbits: word.xbits,
             zbits: word.zbits,
@@ -114,6 +102,7 @@ impl<const C: usize> Word<C> {
     }
 }
 
+/// Compares the raw chunks, as [`GeneralWord`] does, rather than bit by bit.
 impl<const C: usize> PartialEq for Word<C> {
     #[inline(always)]
     fn eq(&self, other: &Self) -> bool {
@@ -123,40 +112,11 @@ impl<const C: usize> PartialEq for Word<C> {
 
 impl<const C: usize> Eq for Word<C> {}
 
-/// Bit-lexicographic order of one plane from qubit 0 upward, as `BitArray`'s
-/// `Ord` defines it, evaluated a chunk at a time.
-#[inline(always)]
-fn plane_cmp<const C: usize>(a: &[Chunk; C], b: &[Chunk; C]) -> std::cmp::Ordering {
-    for (&x, &y) in a.iter().zip(b) {
-        let differ = x ^ y;
-        if differ != 0 {
-            return if (x >> differ.trailing_zeros()) & 1 == 0 {
-                std::cmp::Ordering::Less
-            } else {
-                std::cmp::Ordering::Greater
-            };
-        }
-    }
-    std::cmp::Ordering::Equal
-}
-
-impl<const C: usize> Ord for Word<C> {
-    #[inline(always)]
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        plane_cmp(&self.xbits.data, &other.xbits.data)
-            .then_with(|| plane_cmp(&self.zbits.data, &other.zbits.data))
-    }
-}
-
-impl<const C: usize> PartialOrd for Word<C> {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
+/// Writes the hash [`GeneralWord`] caches for the same planes.
 impl<const C: usize> Hash for Word<C> {
+    #[inline(always)]
     fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u64(self.digest());
+        state.write_u64(GeneralWord::<C>::plane_hash(&self.xbits, &self.zbits));
     }
 }
 
@@ -264,9 +224,8 @@ pub(crate) fn word_support<const C: usize>(w: &Word<C>, out: &mut Vec<u32>) {
 
 /// Compact 64-bit hash of a [`Word`], used as the key in cache-friendly
 /// membership tables: an `FxHashMap<u64, ()>` over the basis has a working
-/// set ~6× smaller than `FxHashMap<Word, ()>`. The hash mixes the word's
-/// cached hash once through `FxHasher` and never touches the 32-byte
-/// payload.
+/// set ~4× smaller than `FxHashMap<Word, ()>`. The word's plane hash is
+/// mixed once more through `FxHasher`.
 #[inline(always)]
 pub(crate) fn word_hash<const C: usize>(w: &Word<C>) -> u64 {
     use std::hash::{Hash, Hasher};

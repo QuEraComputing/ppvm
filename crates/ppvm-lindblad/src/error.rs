@@ -46,12 +46,6 @@ pub enum Error {
         n: usize,
         m: usize,
     },
-    /// The admission ratio must be finite and at least one.
-    InvalidAdmissionRatio {
-        ratio: f64,
-    },
-    /// The rounded admission cap exceeds the representable allocation size.
-    AdmissionCapOverflow,
     Internal(String),
 }
 
@@ -91,13 +85,6 @@ impl fmt::Display for Error {
                 f,
                 "kossakowski K must be Hermitian; K[{n}][{m}] ≠ conj(K[{m}][{n}])"
             ),
-            Error::InvalidAdmissionRatio { ratio } => {
-                write!(
-                    f,
-                    "admission ratio must be finite and at least 1; got {ratio}"
-                )
-            }
-            Error::AdmissionCapOverflow => write!(f, "admission cap overflow"),
             Error::Internal(msg) => write!(f, "internal error: {msg}"),
         }
     }

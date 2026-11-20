@@ -2167,7 +2167,7 @@ dependencies = [
 
 [[package]]
 name = "ppvm"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "ppvm-pauli-sum",
  "ppvm-sym",
@@ -2176,7 +2176,7 @@ dependencies = [
 
 [[package]]
 name = "ppvm-cli"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "clap",
  "eyre",
@@ -2187,7 +2187,7 @@ dependencies = [
 
 [[package]]
 name = "ppvm-lindblad"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "approx",
  "criterion 0.7.0",
@@ -2216,11 +2216,11 @@ dependencies = [
 
 [[package]]
 name = "ppvm-pauli-kernels"
-version = "0.3.0"
+version = "0.4.1"
 
 [[package]]
 name = "ppvm-pauli-sum"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "approx",
  "bon",
@@ -2240,7 +2240,7 @@ dependencies = [
 
 [[package]]
 name = "ppvm-pauli-word"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "bincode",
@@ -2256,7 +2256,7 @@ dependencies = [
 
 [[package]]
 name = "ppvm-pauli-word-2"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bitvec",
  "bytemuck",
@@ -2278,7 +2278,7 @@ dependencies = [
 
 [[package]]
 name = "ppvm-python-native"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bnum",
  "mimalloc",
@@ -2306,7 +2306,7 @@ dependencies = [
 
 [[package]]
 name = "ppvm-stim"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bitvec",
  "bnum",
@@ -2324,7 +2324,7 @@ dependencies = [
 
 [[package]]
 name = "ppvm-sym"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "fxhash",
@@ -2335,7 +2335,7 @@ dependencies = [
 
 [[package]]
 name = "ppvm-tableau"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bitvec",
  "bnum",
@@ -2368,7 +2368,7 @@ dependencies = [
 
 [[package]]
 name = "ppvm-tableau-sum"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bitvec",
  "bytemuck",
@@ -2388,7 +2388,7 @@ dependencies = [
 
 [[package]]
 name = "ppvm-traits"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "ahash",
  "bitvec",
@@ -2405,7 +2405,7 @@ dependencies = [
 
 [[package]]
 name = "ppvm-traits-2"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "num",
  "ppvm-pauli-kernels",
@@ -2413,7 +2413,7 @@ dependencies = [
 
 [[package]]
 name = "ppvm-tui"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "eyre",
  "ppvm-vihaco",
@@ -2423,7 +2423,7 @@ dependencies = [
 
 [[package]]
 name = "ppvm-vihaco"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "bitvec",
  "bnum",
@@ -3167,7 +3167,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "stim-parser"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "ariadne",
  "chumsky 0.12.0",
@@ -3533,7 +3533,7 @@ dependencies = [
 
 [[package]]
 name = "vihaco-circuit-isa"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "chumsky 0.10.1",
  "eyre",

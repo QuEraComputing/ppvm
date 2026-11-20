@@ -4,7 +4,7 @@
 //! Predictor-corrector adaptive step `O ← exp(dt·L*) O`.
 
 use crate::basis::PcStepWorkspace;
-use crate::candidates::CandidateBuffer;
+use crate::candidates::{CandidateBuffer, CandidateProposer, StreamingProposer};
 use crate::sector::Sector;
 use crate::spec::LindbladSpec;
 use crate::truncate::{add_leakage_capped, cap_basis, cap_basis_with_scratch, prune_basis};
@@ -77,7 +77,7 @@ impl<const C: usize> LindbladSpec<C> {
         protected: &[Word<C>],
         cfg: &PcStepConfig,
     ) -> Result<(), Error> {
-        self.pc_step_pooled(basis, coeffs, dt, protected, cfg, false)
+        self.pc_step_pooled::<StreamingProposer<C>>(basis, coeffs, dt, protected, cfg, false, None)
             .map(|_| ())
     }
 
@@ -92,11 +92,28 @@ impl<const C: usize> LindbladSpec<C> {
         protected: &[Word<C>],
         cfg: &PcStepConfig,
     ) -> Result<PcStepTimings, Error> {
-        self.pc_step_pooled(basis, coeffs, dt, protected, cfg, true)
+        self.pc_step_pooled::<StreamingProposer<C>>(basis, coeffs, dt, protected, cfg, true, None)
     }
 
-    /// Run one step with a workspace checked out of the model's pool.
-    fn pc_step_pooled(
+    /// Same as [`Self::pc_step_timed`], but `proposer` chooses which strings
+    /// each enlargement admits instead of the default [`StreamingProposer`].
+    /// The step's other buffers are still reused automatically.
+    pub fn pc_step_with_proposer<P: CandidateProposer<C>>(
+        &self,
+        basis: &mut Vec<Word<C>>,
+        coeffs: &mut Vec<f64>,
+        dt: f64,
+        protected: &[Word<C>],
+        cfg: &PcStepConfig,
+        proposer: &mut P,
+    ) -> Result<PcStepTimings, Error> {
+        self.pc_step_pooled(basis, coeffs, dt, protected, cfg, true, Some(proposer))
+    }
+
+    /// Run one step with a workspace checked out of the model's pool, using
+    /// `proposer` or, if `None`, the workspace's [`StreamingProposer`].
+    #[allow(clippy::too_many_arguments)]
+    fn pc_step_pooled<P: CandidateProposer<C>>(
         &self,
         basis: &mut Vec<Word<C>>,
         coeffs: &mut Vec<f64>,
@@ -104,6 +121,7 @@ impl<const C: usize> LindbladSpec<C> {
         protected: &[Word<C>],
         cfg: &PcStepConfig,
         timed: bool,
+        proposer: Option<&mut P>,
     ) -> Result<PcStepTimings, Error> {
         if basis.len() != coeffs.len() {
             return Err(Error::LengthMismatch {
@@ -120,9 +138,37 @@ impl<const C: usize> LindbladSpec<C> {
             .pop()
             .unwrap_or_default();
         reserve_step_capacity(self.n_qubits(), basis, coeffs, cfg, &mut workspace);
-        let result = self.run_in_pool(cfg, |this| {
-            this.pc_step_inner(basis, coeffs, dt, protected, cfg, timed, &mut workspace)
-        });
+        let result = match proposer {
+            Some(proposer) => self.run_in_pool(cfg, |this| {
+                this.pc_step_inner(
+                    basis,
+                    coeffs,
+                    dt,
+                    protected,
+                    cfg,
+                    timed,
+                    &mut workspace,
+                    proposer,
+                )
+            }),
+            None => {
+                let mut streaming = std::mem::take(&mut workspace.proposer);
+                let result = self.run_in_pool(cfg, |this| {
+                    this.pc_step_inner(
+                        basis,
+                        coeffs,
+                        dt,
+                        protected,
+                        cfg,
+                        timed,
+                        &mut workspace,
+                        &mut streaming,
+                    )
+                });
+                workspace.proposer = streaming;
+                result
+            }
+        };
         self.workspaces
             .lock()
             .unwrap_or_else(|error| error.into_inner())
@@ -147,7 +193,7 @@ impl<const C: usize> LindbladSpec<C> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn pc_step_inner(
+    fn pc_step_inner<P: CandidateProposer<C>>(
         &self,
         basis: &mut Vec<Word<C>>,
         coeffs: &mut Vec<f64>,
@@ -156,6 +202,7 @@ impl<const C: usize> LindbladSpec<C> {
         cfg: &PcStepConfig,
         timed: bool,
         workspace: &mut PcStepWorkspace<C>,
+        proposer: &mut P,
     ) -> Result<PcStepTimings, Error> {
         let PcStepConfig {
             max_basis,
@@ -180,13 +227,11 @@ impl<const C: usize> LindbladSpec<C> {
         // truncation, so the pre-step coefficients stay at their positions.
         let p = Phase::start(timed);
         let mut buffer = CandidateBuffer::new(basis, coeffs, &mut workspace.taylor);
-        workspace
-            .proposer
-            .propose(self, &mut buffer, protected, admit)?;
+        proposer.propose(self, &mut buffer, protected, admit)?;
         p.stop(&mut t.leakage1_us);
 
         let p = Phase::start(timed);
-        workspace.proposer.admit(buffer, tau_add);
+        admit_selected(proposer, buffer, tau_add, admit);
         coeffs.resize(basis.len(), 0.0);
         p.stop(&mut t.expand1_us);
 
@@ -212,13 +257,11 @@ impl<const C: usize> LindbladSpec<C> {
         if admit > n_predict {
             let p = Phase::start(timed);
             let mut buffer = CandidateBuffer::new(basis, coeffs, &mut workspace.taylor);
-            workspace
-                .proposer
-                .propose(self, &mut buffer, protected, admit)?;
+            proposer.propose(self, &mut buffer, protected, admit)?;
             p.stop(&mut t.leakage2_us);
 
             let p = Phase::start(timed);
-            workspace.proposer.admit(buffer, tau_add);
+            admit_selected(proposer, buffer, tau_add, admit);
             coeffs.resize(basis.len(), 0.0);
             p.stop(&mut t.expand2_us);
         }
@@ -340,6 +383,22 @@ impl<const C: usize> LindbladSpec<C> {
         cap_basis(basis, coeffs, max_basis, protected);
         Ok(())
     }
+}
+
+/// Let `proposer` select from `buffer`'s candidates and move them into the
+/// basis, checking the admission bound `admit`.
+fn admit_selected<const C: usize, P: CandidateProposer<C>>(
+    proposer: &mut P,
+    mut buffer: CandidateBuffer<'_, C>,
+    threshold: f64,
+    admit: usize,
+) {
+    let count = proposer.select(&mut buffer, threshold);
+    assert!(
+        count <= admit.saturating_sub(buffer.basis().len()),
+        "proposer selected more candidates than the admission bound allows"
+    );
+    buffer.finish(count);
 }
 
 /// Reserve the step's arrays from the active state, not from `max_basis`,

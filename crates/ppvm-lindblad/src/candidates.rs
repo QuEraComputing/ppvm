@@ -1,13 +1,13 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! First- and second-hop candidate proposal for the real predictor-corrector
-//! step, accumulated in the spare tail of the main basis array.
+//! Candidate proposal for the real predictor-corrector step.
 //!
-//! [`StreamingProposer`] computes the same candidates, rates and admission
-//! order as [`LindbladSpec::leakage_with_prune`] followed by admission, but
-//! stores candidate words in the basis array's tail and their rates in a
-//! reused numeric buffer instead of a separate word-keyed hash map.
+//! A [`CandidateProposer`] chooses which strings outside the basis a step
+//! admits. Candidates are written to the spare tail of the main basis array,
+//! viewed through a [`CandidateBuffer`]. [`StreamingProposer`], the default,
+//! computes the same candidates, rates and admission order as
+//! [`LindbladSpec::leakage_with_prune`] followed by admission.
 
 use crate::indexed_candidates::IndexedCandidates;
 use crate::truncate::order_by_desc_mag;
@@ -23,13 +23,34 @@ const CHUNK_SIZE: usize = 4096;
 /// Bounds the temporary output words independently of `CHUNK_SIZE`.
 const GENERATION_BATCH: usize = 2048;
 
-/// The active basis plus its spare tail, where candidates are accumulated.
+/// Strategy that chooses which strings outside the basis a step admits.
 ///
-/// `words[..prefix]` is the active basis and stays unchanged during proposal;
-/// `words[prefix..]` holds candidates. `numeric` holds one rate per candidate
-/// slot. Dropping the buffer without [`StreamingProposer::admit`] discards the
-/// tail.
-pub(crate) struct CandidateBuffer<'a, const C: usize> {
+/// [`LindbladSpec::pc_step`] uses [`StreamingProposer`];
+/// [`LindbladSpec::pc_step_with_proposer`] takes any implementation. A step
+/// calls `propose` and then `select` once per enlargement (at most twice).
+pub trait CandidateProposer<const C: usize = { crate::W_CHUNKS }>: Send {
+    /// Write candidate words to `buffer`'s tail with [`CandidateBuffer::push`].
+    /// Candidates must be distinct and outside the basis and `protected`.
+    /// `maximum` bounds the enlarged basis, including the current basis.
+    fn propose(
+        &mut self,
+        model: &LindbladSpec<C>,
+        buffer: &mut CandidateBuffer<'_, C>,
+        protected: &[Word<C>],
+        maximum: usize,
+    ) -> Result<(), Error>;
+
+    /// Move the admitted candidates to the start of the tail and return how
+    /// many there are: at most `maximum - basis().len()`, each with a rate
+    /// magnitude above `threshold`. They enter the basis with coefficient zero.
+    fn select(&mut self, buffer: &mut CandidateBuffer<'_, C>, threshold: f64) -> usize;
+}
+
+/// The current basis plus its spare tail, where candidates are collected.
+///
+/// The basis and its coefficients stay unchanged during proposal. Candidates
+/// the step does not admit are discarded when the buffer is dropped.
+pub struct CandidateBuffer<'a, const C: usize = { crate::W_CHUNKS }> {
     pub(crate) words: &'a mut Vec<Word<C>>,
     pub(crate) numeric: &'a mut Vec<f64>,
     pub(crate) prefix: usize,
@@ -37,8 +58,8 @@ pub(crate) struct CandidateBuffer<'a, const C: usize> {
 }
 
 impl<'a, const C: usize> CandidateBuffer<'a, C> {
-    /// View `words` as the active basis with coefficients `coefficients`.
-    /// `numeric` is cleared and reused for candidate rates.
+    /// View `words` as the basis with coefficients `coefficients`. `numeric`
+    /// is cleared and lent to the proposer as scratch.
     pub(crate) fn new(
         words: &'a mut Vec<Word<C>>,
         coefficients: &'a [f64],
@@ -55,12 +76,46 @@ impl<'a, const C: usize> CandidateBuffer<'a, C> {
         }
     }
 
-    pub(crate) fn basis(&self) -> &[Word<C>] {
+    /// The current basis.
+    pub fn basis(&self) -> &[Word<C>] {
         &self.words[..self.prefix]
     }
 
-    pub(crate) fn coefficients(&self) -> &[f64] {
+    /// Coefficients of [`Self::basis`].
+    pub fn coefficients(&self) -> &[f64] {
         self.coefficients
+    }
+
+    /// Candidate words written so far.
+    pub fn candidates(&self) -> &[Word<C>] {
+        &self.words[self.prefix..]
+    }
+
+    /// Candidate words, for reordering in [`CandidateProposer::select`].
+    pub fn candidates_mut(&mut self) -> &mut [Word<C>] {
+        &mut self.words[self.prefix..]
+    }
+
+    /// Append a candidate word. The tail shares the main basis array, so it
+    /// grows by a quarter of its capacity instead of doubling it.
+    pub fn push(&mut self, word: Word<C>) {
+        if self.words.len() == self.words.capacity() {
+            self.words
+                .reserve_exact((self.words.capacity() / 4).max(32));
+        }
+        self.words.push(word);
+    }
+
+    /// Scratch the proposer may use for rates and ranking. The step reuses
+    /// it afterwards, so its contents do not survive `select`.
+    pub fn numeric_scratch(&mut self) -> &mut Vec<f64> {
+        self.numeric
+    }
+
+    /// Admit the first `count` candidates into the basis.
+    pub(crate) fn finish(mut self, count: usize) {
+        assert!(count <= self.candidates().len());
+        self.prefix += count;
     }
 }
 
@@ -118,22 +173,20 @@ impl<const C: usize> ActionScratch<C> {
     }
 }
 
-/// Chunk-capped signed leakage accumulation.
+/// The default proposer: chunk-capped signed leakage accumulation.
 ///
 /// Sources are processed in descending coefficient magnitude, and after every
 /// `CHUNK_SIZE` sources only the `room` largest candidates are kept. Signed
 /// sums and hash-table visitation order match
 /// [`LindbladSpec::leakage_with_prune`], so admission and ties are identical.
 #[derive(Default)]
-pub(crate) struct StreamingProposer<const C: usize> {
+pub struct StreamingProposer<const C: usize = { crate::W_CHUNKS }> {
     indexed: IndexedCandidates,
     outputs: Vec<Vec<(Word<C>, f64)>>,
 }
 
-impl<const C: usize> StreamingProposer<C> {
-    /// Accumulate the leakage of `buffer`'s active basis into its tail.
-    /// `maximum` bounds the enlarged basis, including the active prefix.
-    pub(crate) fn propose(
+impl<const C: usize> CandidateProposer<C> for StreamingProposer<C> {
+    fn propose(
         &mut self,
         model: &LindbladSpec<C>,
         buffer: &mut CandidateBuffer<'_, C>,
@@ -184,12 +237,10 @@ impl<const C: usize> StreamingProposer<C> {
         Ok(())
     }
 
-    /// Append the candidates whose rate magnitude exceeds `threshold` to the
-    /// active basis. The caller extends the coefficients with zeros.
-    pub(crate) fn admit(&mut self, mut buffer: CandidateBuffer<'_, C>, threshold: f64) {
-        let count = self.indexed.select(&mut buffer, threshold);
+    fn select(&mut self, buffer: &mut CandidateBuffer<'_, C>, threshold: f64) -> usize {
+        let count = self.indexed.select(buffer, threshold);
         self.indexed.reset();
-        buffer.prefix += count;
+        count
     }
 }
 
@@ -230,8 +281,7 @@ mod tests {
             .map(|(word, _)| word)
             .collect();
         let count = indexed.select(&mut buffer, 1.5);
-        buffer.prefix += count;
-        drop(buffer);
+        buffer.finish(count);
         assert_eq!(
             words,
             std::iter::once(seed).chain(expected).collect::<Vec<_>>()
@@ -248,7 +298,8 @@ mod tests {
         let mut buffer = CandidateBuffer::new(&mut words, &[1.0], &mut numeric);
         let mut proposer = StreamingProposer::default();
         proposer.indexed.add(&mut buffer, candidate, 0.5);
-        proposer.admit(buffer, f64::NAN);
+        let count = proposer.select(&mut buffer, f64::NAN);
+        buffer.finish(count);
         assert_eq!(words, vec![seed]);
     }
 
@@ -298,7 +349,8 @@ mod tests {
                     let mut buffer = CandidateBuffer::new(&mut words, &coefficients, &mut numeric);
                     let mut proposer = StreamingProposer::default();
                     proposer.propose(&spec, &mut buffer, &[], maximum).unwrap();
-                    proposer.admit(buffer, 0.0);
+                    let count = proposer.select(&mut buffer, 0.0);
+                    buffer.finish(count);
                 });
                 assert_eq!(
                     words[basis.len()..],

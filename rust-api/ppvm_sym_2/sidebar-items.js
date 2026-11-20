@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DEFAULT_MAX_SIN","DEFAULT_MIN_EPS"],"struct":["MissingVariable","Term","Var"]};

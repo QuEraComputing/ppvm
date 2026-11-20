@@ -42,7 +42,7 @@ impl<const C: usize> LindbladSpec<C> {
 
         let leak = self.leakage_with_prune(basis, coeffs, protected, admit, tau_add)?;
         add_leakage_capped(basis, coeffs, leak, admit);
-        let coeffs_predict = mf_expm::expm_apply_mf_reference(self, basis, dt, coeffs, drop_tol);
+        let coeffs_predict = mf_expm::expm_apply_mf(self, basis, dt, coeffs, drop_tol);
 
         let n_predict = basis.len();
         if admit > n_predict {
@@ -54,7 +54,7 @@ impl<const C: usize> LindbladSpec<C> {
             *coeffs = coeffs_predict;
         } else {
             drop(coeffs_predict);
-            *coeffs = mf_expm::expm_apply_mf_reference(self, basis, dt, coeffs, drop_tol);
+            *coeffs = mf_expm::expm_apply_mf(self, basis, dt, coeffs, drop_tol);
         }
 
         prune_basis(basis, coeffs, drop_tol, protected);

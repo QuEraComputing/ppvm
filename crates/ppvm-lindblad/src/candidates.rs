@@ -9,12 +9,12 @@
 //! stores candidate words in the basis array's tail and their rates in a
 //! reused numeric buffer instead of a separate word-keyed hash map.
 
-use crate::direct_expm::ActionScratch;
 use crate::indexed_candidates::IndexedCandidates;
 use crate::truncate::order_by_desc_mag;
 use crate::word::{Word, word_hash};
 use crate::{Error, LindbladSpec};
 use fxhash::FxHashMap;
+use num::Complex;
 use rayon::prelude::*;
 
 /// Sources per room cap, as in [`LindbladSpec::leakage_with_prune`].
@@ -71,6 +71,51 @@ impl<const C: usize> Drop for CandidateBuffer<'_, C> {
     }
 }
 
+/// Per-thread scratch for one string's generator action.
+pub(crate) struct ActionScratch<const C: usize> {
+    support: Vec<u32>,
+    candidates: Vec<u32>,
+    local: FxHashMap<Word<C>, Complex<f64>>,
+    active: Vec<u64>,
+    /// Output words with their [`word_hash`] and generator values, in the
+    /// order of [`LindbladSpec::compute_action_terms`].
+    pub(crate) terms: Vec<(u64, Word<C>, f64)>,
+}
+
+impl<const C: usize> ActionScratch<C> {
+    pub(crate) fn new() -> Self {
+        Self {
+            support: Vec::new(),
+            candidates: Vec::new(),
+            local: FxHashMap::default(),
+            active: Vec::new(),
+            terms: Vec::new(),
+        }
+    }
+
+    /// Fill [`Self::terms`] with `L*(word)`.
+    pub(crate) fn fill(&mut self, spec: &LindbladSpec<C>, word: &Word<C>) {
+        if let Some(plan) = &spec.pauli_plan {
+            plan.fill_keyed(word, &mut self.active, &mut self.terms);
+            self.terms
+                .sort_unstable_by(|(ha, a, _), (hb, b, _)| ha.cmp(hb).then_with(|| a.cmp(b)));
+            return;
+        }
+        let terms = spec.compute_action_terms(
+            word,
+            &mut self.support,
+            &mut self.candidates,
+            &mut self.local,
+        );
+        self.terms.clear();
+        self.terms.extend(
+            terms
+                .into_iter()
+                .map(|(word, value)| (word_hash(&word), word, value)),
+        );
+    }
+}
+
 /// Chunk-capped signed leakage accumulation.
 ///
 /// Sources are processed in descending coefficient magnitude, and after every
@@ -112,7 +157,7 @@ impl<const C: usize> StreamingProposer<C> {
                     .for_each_init(ActionScratch::new, |scratch, (output, indices)| {
                         output.clear();
                         for &index in indices {
-                            scratch.fill(model, &basis[index], true);
+                            scratch.fill(model, &basis[index]);
                             for &(hash, word, value) in &scratch.terms {
                                 if !in_basis.contains_key(&hash)
                                     && !protected_set.contains_key(&hash)

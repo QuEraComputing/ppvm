@@ -53,7 +53,11 @@ fn candidate_terms(p_support: &[u32], index: &[Vec<u32>], scratch: &mut Vec<u32>
 /// costs more than the recompute (hash lookup ≳ recompute) and its several
 /// KB per cached word dominate memory at large basis sizes.
 pub struct LindbladSpec<const C: usize = W_CHUNKS> {
+    /// Buffers reused by [`Self::pc_step`], one per trajectory running
+    /// concurrently on this model.
     pub(crate) workspaces: std::sync::Mutex<Vec<crate::basis::PcStepWorkspace<C>>>,
+    /// Precompiled Pauli action, present when every jump is a Hermitian Pauli
+    /// (see [`crate::pauli_plan::PauliActionPlan::new`]).
     pub(crate) pauli_plan: Option<crate::pauli_plan::PauliActionPlan<C>>,
     n_qubits: usize,
     h_terms: Vec<HTerm<C>>,
@@ -147,22 +151,19 @@ impl<const C: usize> LindbladSpec<C> {
             });
         }
 
-        let pauli_plan = if j_kinds
+        // Action tables for the fast path; only models whose jumps are all
+        // Hermitian Paulis have one.
+        let pauli_jumps: Option<Vec<_>> = j_kinds
             .iter()
-            .all(|j| matches!(j, JumpKind::HermitianPauli { .. }))
-        {
+            .map(|j| match j {
+                JumpKind::HermitianPauli { word, rate } => Some((*word, *rate)),
+                _ => None,
+            })
+            .collect();
+        let pauli_plan = pauli_jumps.and_then(|jumps| {
             let h: Vec<_> = h_parsed.iter().map(|h| (h.word, h.coeff)).collect();
-            let jumps: Vec<_> = j_kinds
-                .iter()
-                .map(|j| match j {
-                    JumpKind::HermitianPauli { word, rate } => (*word, *rate),
-                    _ => unreachable!(),
-                })
-                .collect();
             crate::pauli_plan::PauliActionPlan::new(n_qubits, &h, &jumps)
-        } else {
-            None
-        };
+        });
         Ok(Self {
             workspaces: std::sync::Mutex::new(Vec::new()),
             pauli_plan,
@@ -172,13 +173,6 @@ impl<const C: usize> LindbladSpec<C> {
             h_support: h_support_idx,
             j_support: j_support_idx,
         })
-    }
-
-    /// Whether the off-diagonal action is purely Hamiltonian and skew symmetric.
-    pub(crate) fn supports_row_gather(&self) -> bool {
-        self.j_kinds
-            .iter()
-            .all(|jump| matches!(jump, JumpKind::HermitianPauli { .. }))
     }
 
     /// Add a Kossakowski-form dissipator

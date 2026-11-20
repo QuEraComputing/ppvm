@@ -40,6 +40,7 @@ impl<'a, const C: usize> CompactBasisIndex<'a, C> {
             .copied()
     }
 
+    #[cfg(test)]
     pub(crate) fn get(&self, word: &Word<C>) -> Option<u32> {
         // Control-byte fingerprints filter probes before loading full borrowed words.
         self.table
@@ -47,5 +48,29 @@ impl<'a, const C: usize> CompactBasisIndex<'a, C> {
                 self.basis[index as usize] == *word
             })
             .copied()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::word_from_codes;
+
+    #[test]
+    fn compact_lookup_checks_words_and_wide_registers() {
+        let basis: Vec<_> = (0..192)
+            .map(|site| {
+                let mut codes = vec![0; 128];
+                codes[site / 3] = (site % 3 + 1) as u8;
+                word_from_codes::<2>(&codes).unwrap()
+            })
+            .collect();
+        let index = CompactBasisIndex::new(&basis);
+        for (i, word) in basis.iter().enumerate() {
+            assert_eq!(index.get(word), Some(i as u32));
+        }
+        assert_eq!(index.get(&word_from_codes::<2>(&[2; 128]).unwrap()), None);
+        let wide = vec![word_from_codes::<8>(&vec![1; 512]).unwrap()];
+        assert_eq!(CompactBasisIndex::new(&wide).get(&wide[0]), Some(0));
     }
 }

@@ -24,7 +24,7 @@ const CHUNK_SIZE: usize = 4096;
 #[derive(Default)]
 pub(crate) struct PcStepWorkspace<const C: usize> {
     pub(crate) proposer: StreamingProposer<C>,
-    pub(crate) generator: Option<crate::mf_expm::RealCache>,
+    pub(crate) generator: Option<crate::unit_expm::UnitCache>,
     pub(crate) taylor: Vec<f64>,
     pub(crate) coefficient_auxiliary: Vec<f64>,
 }

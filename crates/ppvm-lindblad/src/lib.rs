@@ -43,7 +43,6 @@ mod basis;
 mod candidates;
 mod compact_index;
 pub mod config;
-mod direct_expm;
 pub mod error;
 pub(crate) mod expm;
 mod indexed_candidates;

@@ -98,8 +98,8 @@ fn owner(a: usize, b: usize) -> usize {
 
 /// Running reduction for the exponential's shift and norm bound without per-row storage.
 ///
-/// [`crate::mf_expm::real_bounds`] takes `mu` as the mean diagonal and the bound as the
-/// largest `raw - |d| + |d - mu|` over rows. Since `|d - mu| = max(d - mu, mu - d)`, that
+/// The exponential takes `mu` as the mean diagonal and the bound as the largest
+/// `raw - |d| + |d - mu|` over rows, as in [`crate::mf_expm`]'s column-norm bound. Since `|d - mu| = max(d - mu, mu - d)`, that
 /// maximum equals `max(max(raw - |d| + d) - mu, max(raw - |d| - d) + mu)`, which needs only
 /// two running maxima and the diagonal sum.
 #[derive(Clone, Copy)]
@@ -494,7 +494,12 @@ mod tests {
                 (d.abs() + ((i * 53 % 89) as f64) * 0.07, d)
             })
             .collect();
-        let expected = crate::mf_expm::real_bounds(&rows);
+        let mu = rows.iter().map(|(_, d)| *d).sum::<f64>() / rows.len() as f64;
+        let norm = rows
+            .iter()
+            .map(|&(raw, d)| raw - d.abs() + (d - mu).abs())
+            .fold(0.0_f64, f64::max);
+        let expected = (mu, norm);
         let merged = rows
             .chunks(64)
             .map(|chunk| {

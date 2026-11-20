@@ -4,6 +4,7 @@
 //! Basis-level `L*` operators: in-basis generator and off-basis leakage.
 
 use crate::Error;
+use crate::candidates::StreamingProposer;
 use crate::sector::Sector;
 use crate::spec::LindbladSpec;
 use crate::truncate::{cap_map_to_room, order_by_desc_mag};
@@ -15,6 +16,18 @@ use rayon::prelude::*;
 /// Chunk size for the leakage accumulation loops: candidates are folded
 /// into the live map (and the room-cap applied) once per chunk.
 const CHUNK_SIZE: usize = 4096;
+
+/// Buffers one predictor-corrector trajectory reuses from step to step:
+/// candidate lookup and generation storage, the generator cache, the
+/// exponential's work vector and the saved pre-step coefficients. Candidate
+/// words themselves occupy the main basis array's spare tail.
+#[derive(Default)]
+pub(crate) struct PcStepWorkspace<const C: usize> {
+    pub(crate) proposer: StreamingProposer<C>,
+    pub(crate) generator: Option<crate::unit_expm::UnitCache>,
+    pub(crate) taylor: Vec<f64>,
+    pub(crate) coefficient_auxiliary: Vec<f64>,
+}
 
 /// Build a `word → row` map for a basis assumed to contain unique Pauli
 /// words; debug-asserts the uniqueness invariant.

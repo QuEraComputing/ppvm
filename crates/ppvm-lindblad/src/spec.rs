@@ -53,6 +53,12 @@ fn candidate_terms(p_support: &[u32], index: &[Vec<u32>], scratch: &mut Vec<u32>
 /// costs more than the recompute (hash lookup ≳ recompute) and its several
 /// KB per cached word dominate memory at large basis sizes.
 pub struct LindbladSpec<const C: usize = W_CHUNKS> {
+    /// Buffers reused by [`Self::pc_step`], one per trajectory running
+    /// concurrently on this model.
+    pub(crate) workspaces: std::sync::Mutex<Vec<crate::basis::PcStepWorkspace<C>>>,
+    /// Precompiled Pauli action, present when every jump is a Hermitian Pauli
+    /// (see [`crate::pauli_plan::PauliActionPlan::new`]).
+    pub(crate) pauli_plan: Option<crate::pauli_plan::PauliActionPlan<C>>,
     n_qubits: usize,
     h_terms: Vec<HTerm<C>>,
     j_kinds: Vec<JumpKind<C>>,
@@ -145,7 +151,22 @@ impl<const C: usize> LindbladSpec<C> {
             });
         }
 
+        // Action tables for the fast path; only models whose jumps are all
+        // Hermitian Paulis have one.
+        let pauli_jumps: Option<Vec<_>> = j_kinds
+            .iter()
+            .map(|j| match j {
+                JumpKind::HermitianPauli { word, rate } => Some((*word, *rate)),
+                _ => None,
+            })
+            .collect();
+        let pauli_plan = pauli_jumps.and_then(|jumps| {
+            let h: Vec<_> = h_parsed.iter().map(|h| (h.word, h.coeff)).collect();
+            crate::pauli_plan::PauliActionPlan::new(n_qubits, &h, &jumps)
+        });
         Ok(Self {
+            workspaces: std::sync::Mutex::new(Vec::new()),
+            pauli_plan,
             n_qubits,
             h_terms: h_parsed,
             j_kinds,
@@ -166,6 +187,7 @@ impl<const C: usize> LindbladSpec<C> {
         ops: &[Vec<(String, Complex<f64>)>],
         k: &[Vec<Complex<f64>>],
     ) -> Result<(), Error> {
+        self.pauli_plan = None;
         for (pair, support) in kossakowski::compile(ops, k, self.n_qubits)? {
             let idx = self.j_kinds.len() as u32;
             self.j_kinds.push(JumpKind::Kossakowski(pair));

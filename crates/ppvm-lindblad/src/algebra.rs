@@ -13,7 +13,6 @@
 use crate::word::{Chunk, W_CHUNKS, Word};
 use fxhash::FxHashMap;
 use num::Complex;
-use ppvm_traits::PauliWordTrait;
 
 /// Magnitude below which an expanded Pauli coefficient is treated as
 /// cancellation noise and dropped.
@@ -105,7 +104,7 @@ pub(crate) fn comm_product<const C: usize>(h: &Word<C>, p: &Word<C>) -> (Word<C>
 /// is `ω · out` with `ω = i^phase`.
 #[inline(always)]
 pub(crate) fn pauli_mul<const C: usize>(p: &Word<C>, q: &Word<C>) -> (Word<C>, u8) {
-    let mut out = Word::<C>::new(p.n_qubits());
+    let mut out = Word::<C>::default();
     let mut sign_count: u32 = 0;
     let mut imag_count: u32 = 0;
     for i in 0..C {
@@ -120,6 +119,5 @@ pub(crate) fn pauli_mul<const C: usize>(p: &Word<C>, q: &Word<C>) -> (Word<C>, u
         out.xbits.data[i] = a ^ c;
         out.zbits.data[i] = b ^ d;
     }
-    out.rehash();
     (out, ((2 * sign_count + imag_count) & 3) as u8)
 }

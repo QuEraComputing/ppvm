@@ -4,9 +4,11 @@
 //! Packed Pauli-word type and the string / `u8`-label codecs.
 
 use crate::Error;
+use bitvec::array::BitArray;
 use fxhash::FxBuildHasher;
 use ppvm_pauli_word::word::PauliWord;
 use ppvm_traits::PauliWordTrait;
+use std::hash::{Hash, Hasher};
 
 /// Pauli-word storage chunk: `u64` on 64-bit targets, `u32` elsewhere
 /// (`bitvec` implements `BitStore` for `u64` only on 64-bit targets, so
@@ -51,14 +53,82 @@ pub const fn chunks_for(n_qubits: usize) -> Option<usize> {
     None
 }
 
-/// The Pauli-word storage type used throughout this crate, `C` chunks wide.
+/// The Pauli-word storage type used throughout this crate, `C` chunks wide:
+/// one X and one Z bit plane, 32 bytes at the default 128-qubit width.
 ///
 /// The crate is const-generic in the chunk count so a register of any size
-/// up to [`MAX_SUPPORTED_QUBITS`] gets a fixed-size word; the default
-/// `C = W_CHUNKS` covers 128 qubits, byte-for-byte the historical layout.
-/// The `FxBuildHasher` matches the hash used by the `FxHashMap` keys we
-/// wrap with; `REHASH=true` means `set()` keeps the cached hash in sync.
-pub type Word<const C: usize = W_CHUNKS> = PauliWord<[Chunk; C], FxBuildHasher, true>;
+/// up to [`MAX_SUPPORTED_QUBITS`] gets a fixed-size word. Unlike
+/// [`GeneralWord`], a `Word` stores neither the qubit count, which belongs to
+/// the model, nor a cached hash; bits at or above the register size are
+/// always zero. Hashing and ordering agree with [`GeneralWord`] on the same
+/// planes, so hash tables and sorts treat both types alike.
+#[derive(Clone, Copy, Default, PartialOrd, Ord)]
+pub struct Word<const C: usize = W_CHUNKS> {
+    /// X-bit plane, one bit per qubit.
+    pub xbits: BitArray<[Chunk; C]>,
+    /// Z-bit plane, one bit per qubit.
+    pub zbits: BitArray<[Chunk; C]>,
+}
+
+/// The `ppvm_pauli_word` word with the same planes, which also stores the
+/// register size and a cached hash. `ppvm_pauli_sum` symmetry routines take
+/// this type.
+pub type GeneralWord<const C: usize = W_CHUNKS> = PauliWord<[Chunk; C], FxBuildHasher, true>;
+
+impl<const C: usize> Word<C> {
+    /// The identity word for a register of `n_qubits` (at most the width's capacity).
+    pub fn new(n_qubits: usize) -> Self {
+        debug_assert!(n_qubits <= max_qubits::<C>());
+        Self::default()
+    }
+
+    /// This word as a [`GeneralWord`] on `n_qubits` qubits. The qubit count
+    /// is an argument because a `Word` does not store it.
+    pub fn to_general(self, n_qubits: usize) -> GeneralWord<C> {
+        let mut word = GeneralWord::<C>::new(n_qubits);
+        word.xbits = self.xbits;
+        word.zbits = self.zbits;
+        word.rehash();
+        word
+    }
+}
+
+impl<const C: usize> From<&GeneralWord<C>> for Word<C> {
+    fn from(word: &GeneralWord<C>) -> Self {
+        Self {
+            xbits: word.xbits,
+            zbits: word.zbits,
+        }
+    }
+}
+
+/// Compares the raw chunks, as [`GeneralWord`] does, rather than bit by bit.
+impl<const C: usize> PartialEq for Word<C> {
+    #[inline(always)]
+    fn eq(&self, other: &Self) -> bool {
+        self.xbits.data == other.xbits.data && self.zbits.data == other.zbits.data
+    }
+}
+
+impl<const C: usize> Eq for Word<C> {}
+
+/// Writes the hash [`GeneralWord`] caches for the same planes.
+impl<const C: usize> Hash for Word<C> {
+    #[inline(always)]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(GeneralWord::<C>::plane_hash(&self.xbits, &self.zbits));
+    }
+}
+
+impl<const C: usize> std::fmt::Debug for Word<C> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Word(x={:x?}, z={:x?})",
+            self.xbits.data, self.zbits.data
+        )
+    }
+}
 
 /// `Err(TooManyQubits)` unless a `C`-chunk word holds `n_qubits`.
 pub(crate) fn check_width<const C: usize>(n_qubits: usize) -> Result<(), Error> {
@@ -89,13 +159,12 @@ pub fn word_from_codes<const C: usize>(codes: &[u8]) -> Result<Word<C>, Error> {
             w.zbits.set(q, true);
         }
     }
-    w.rehash();
     Ok(w)
 }
 
 /// Inverse of [`word_from_codes`]: write `n_qubits` Pauli labels into `out`.
 pub fn codes_from_word<const C: usize>(w: &Word<C>, out: &mut [u8]) {
-    debug_assert_eq!(out.len(), w.n_qubits());
+    debug_assert!(out.len() <= max_qubits::<C>());
     for (q, slot) in out.iter_mut().enumerate() {
         let xb = w.xbits[q] as u8;
         let zb = w.zbits[q] as u8;
@@ -138,25 +207,25 @@ pub fn parse_pauli_string<const C: usize>(
             other => return Err(Error::InvalidPauliChar { c: other }),
         }
     }
-    w.rehash();
     Ok((w, support))
 }
 
 /// Compute the support (non-identity qubits) of `w`.
 pub(crate) fn word_support<const C: usize>(w: &Word<C>, out: &mut Vec<u32>) {
     out.clear();
-    for q in 0..w.n_qubits() {
-        if w.xbits[q] || w.zbits[q] {
-            out.push(q as u32);
+    for chunk in 0..C {
+        let mut bits = w.xbits.data[chunk] | w.zbits.data[chunk];
+        while bits != 0 {
+            out.push((chunk * CHUNK_BITS) as u32 + bits.trailing_zeros());
+            bits &= bits - 1;
         }
     }
 }
 
 /// Compact 64-bit hash of a [`Word`], used as the key in cache-friendly
 /// membership tables: an `FxHashMap<u64, ()>` over the basis has a working
-/// set ~6× smaller than `FxHashMap<Word, ()>`. The hash mixes the word's
-/// cached hash once through `FxHasher` and never touches the 32-byte
-/// payload.
+/// set ~4× smaller than `FxHashMap<Word, ()>`. The word's plane hash is
+/// mixed once more through `FxHasher`.
 #[inline(always)]
 pub(crate) fn word_hash<const C: usize>(w: &Word<C>) -> u64 {
     use std::hash::{Hash, Hasher};

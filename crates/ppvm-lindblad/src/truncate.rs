@@ -69,22 +69,35 @@ pub(crate) fn cap_basis<const C: usize, T: Coeff>(
     max_basis: usize,
     protected: &[Word<C>],
 ) {
+    cap_basis_with_scratch(basis, coeffs, max_basis, protected, &mut Vec::new());
+}
+
+/// [`cap_basis`] computing the magnitudes in `mags`, so an idle work buffer can hold them.
+pub(crate) fn cap_basis_with_scratch<const C: usize, T: Coeff>(
+    basis: &mut Vec<Word<C>>,
+    coeffs: &mut Vec<T>,
+    max_basis: usize,
+    protected: &[Word<C>],
+    mags: &mut Vec<f64>,
+) {
     if basis.len() <= max_basis {
         return;
     }
     let protected_set: FxHashSet<&Word<C>> = protected.iter().collect();
     let n_prot = basis.iter().filter(|w| protected_set.contains(w)).count();
     let slots = max_basis.saturating_sub(n_prot);
-    let mut mags: Vec<f64> = basis
-        .iter()
-        .zip(coeffs.iter())
-        .filter(|(w, _)| !protected_set.contains(w))
-        .map(|(_, c)| c.mag())
-        .collect();
+    mags.clear();
+    mags.extend(
+        basis
+            .iter()
+            .zip(coeffs.iter())
+            .filter(|(w, _)| !protected_set.contains(w))
+            .map(|(_, c)| c.mag()),
+    );
     if slots >= mags.len() {
         return;
     }
-    let mut keep = top_k_keeper(&mut mags, slots);
+    let mut keep = top_k_keeper(mags, slots);
     retain_in_place(basis, coeffs, |w, c| {
         protected_set.contains(w) || keep(c.mag())
     });

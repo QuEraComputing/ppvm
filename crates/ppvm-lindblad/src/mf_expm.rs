@@ -25,9 +25,15 @@
 //! picked with the tolerance-matched tables in [`crate::expm`]: a relaxed
 //! `tol=1e-6` table when the PC prunes coarsely (`drop_tol ≥ 1e-4`), else the
 //! double-precision table (keeping the exact-reference test paths bit-exact).
+//!
+//! Real adaptive steps on models whose jumps are all Hermitian Paulis use the
+//! paired connection cache in [`crate::unit_expm`] instead of the CSR cache
+//! (see [`expm_apply_inplace`]).
 
+use crate::basis::PcStepWorkspace;
 use crate::scalar::Coeff;
 use crate::sector::Sector;
+use crate::unit_expm::{UnitCache, UnitOp};
 use crate::{LindbladSpec, Word, build_basis_index, expm};
 use fxhash::{FxBuildHasher, FxHashMap};
 use num::Complex;
@@ -492,6 +498,70 @@ where
     v
 }
 
+/// Taylor partition and backward-error tolerance for a real step.
+///
+/// Matches the tolerance to the basis truncation: when the PC prunes coarsely
+/// (drop_tol >= 1e-4) a double-precision exp is ~10 orders more accurate than
+/// the state it acts on, so the relaxed (tol=1e-6, still >=100x tighter than
+/// the cut) table is used — it admits a lower-degree Taylor polynomial and
+/// cuts the SpMV count with no effect on the truncated result. At tight/zero
+/// drop_tol we keep double precision so the exact-reference paths (orbit-rep
+/// / merged) still agree bit-for-bit.
+fn select_real_expm(t_norm: f64, drop_tol: f64) -> (u32, u32, f64) {
+    if drop_tol >= 1e-4 {
+        let (m, s) = expm::select_ms_loose(t_norm);
+        (m, s, 1e-6)
+    } else {
+        let (m, s) = expm::select_ms(t_norm);
+        (m, s, 1e-12)
+    }
+}
+
+/// Apply `exp(dt · M)` to the real coefficients of an adaptive step, in place.
+///
+/// When every jump is a Hermitian Pauli the model has a
+/// [`crate::pauli_plan::PauliActionPlan`]; the generator is then stored as the
+/// paired connection cache of [`crate::unit_expm`], and the workspace keeps
+/// that cache and the Taylor work vector for the next call. Other models use
+/// [`expm_apply_mf`].
+pub(crate) fn expm_apply_inplace<const C: usize>(
+    spec: &LindbladSpec<C>,
+    basis: &[Word<C>],
+    dt: f64,
+    coefficients: &mut [f64],
+    drop_tol: f64,
+    workspace: &mut PcStepWorkspace<C>,
+) {
+    let Some(plan) = &spec.pauli_plan else {
+        let evolved = expm_apply_mf(spec, basis, dt, coefficients, drop_tol);
+        coefficients.copy_from_slice(&evolved);
+        return;
+    };
+    if basis.is_empty() {
+        return;
+    }
+    let (cache, (mu, bound)) = UnitCache::build(plan, basis, workspace.generator.take());
+    let (m, s, tol) = select_real_expm(dt.abs() * bound, drop_tol);
+    workspace.taylor.resize(2 * basis.len(), 0.0);
+    quspin_expm::ExpmOp::from_parts(
+        UnitOp {
+            cache: &cache,
+            plan,
+        },
+        dt,
+        mu,
+        s as usize,
+        m as usize,
+        tol,
+    )
+    .apply_into(
+        ndarray::ArrayViewMut1::from(coefficients),
+        &mut workspace.taylor,
+    )
+    .expect("expm apply");
+    workspace.generator = Some(cache);
+}
+
 /// Compute `exp(dt · M) · coeffs` for the in-basis-restricted generator
 /// `M`, matrix-free, via `quspin-expm`. Returns a fresh `Vec<f64>` of length
 /// `basis.len()`.
@@ -511,22 +581,8 @@ pub(crate) fn expm_apply_mf<const C: usize>(
     }
     let index = build_basis_index(basis);
     let (mat, per_col) = build_mf_cols(spec, basis, &index);
-
-    // Pick the Taylor backward-error tolerance to match the basis truncation:
-    // when the PC prunes coarsely (drop_tol >= 1e-4) a double-precision exp is
-    // ~10 orders more accurate than the state it acts on, so the relaxed
-    // (tol=1e-6, still >=100x tighter than the cut) table is used — it admits a
-    // lower-degree Taylor polynomial and cuts the SpMV count with no effect on
-    // the truncated result. At tight/zero drop_tol we keep double precision so
-    // the exact-reference paths (orbit-rep / merged) still agree bit-for-bit.
     expm_apply_cached(&mat, &per_col, dt, coeffs, |t_norm| {
-        if drop_tol >= 1e-4 {
-            let (m, s) = expm::select_ms_loose(t_norm);
-            (m, s, 1e-6)
-        } else {
-            let (m, s) = expm::select_ms(t_norm);
-            (m, s, 1e-12)
-        }
+        select_real_expm(t_norm, drop_tol)
     })
 }
 

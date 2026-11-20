@@ -5,7 +5,8 @@
 //! settings. A [`Sum`] carries no settings, so it is only changed through
 //! [`Sum::add_term`]/[`Sum::mul_term`], which take them explicitly.
 
-use crate::term::{Inner, Sum, Term};
+use crate::sum::Sum;
+use crate::term::{Inner, Term};
 
 impl Sum {
     /// Add a non-`Sum` representation, with the truncation of [`Sum::add_term`].
@@ -126,7 +127,8 @@ impl std::ops::Add<Term> for f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::term::{Prod, Var};
+    use crate::prod::Prod;
+    use crate::term::Var;
     use ppvm_traits_2::ImaginaryUnit;
 
     #[test]

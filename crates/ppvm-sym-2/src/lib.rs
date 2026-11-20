@@ -12,6 +12,8 @@ mod coeff;
 mod display;
 mod eval;
 mod mul;
+mod prod;
+mod sum;
 mod term;
 
 pub use eval::MissingVariable;

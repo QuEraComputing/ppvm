@@ -8,7 +8,9 @@
 
 use std::fmt::Display;
 
-use crate::term::{Inner, Prod, Sum, Term};
+use crate::prod::Prod;
+use crate::sum::Sum;
+use crate::term::{Inner, Term};
 
 impl Display for Prod {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

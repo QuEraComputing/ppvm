@@ -4,7 +4,9 @@
 //! The ring product on [`Prod`], [`Sum`] and [`Term`]. Operators take their
 //! right operand by value so a `Sum` operand can be moved in instead of copied.
 
-use crate::term::{Factor, Inner, Prod, Sum, Term, merge_factors};
+use crate::prod::{Factor, Prod, merge_factors};
+use crate::sum::Sum;
+use crate::term::{Inner, Term};
 
 impl Prod {
     /// Multiply this product by an additional `sin(x_u)`.

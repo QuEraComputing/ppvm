@@ -9,7 +9,9 @@ use std::mem::MaybeUninit;
 
 use num::Complex;
 
-use crate::term::{Inner, Prod, Sum, Term};
+use crate::prod::Prod;
+use crate::sum::Sum;
+use crate::term::{Inner, Term};
 
 /// Evaluation needed a variable `vals` has no value for: `vals.len() <= k`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

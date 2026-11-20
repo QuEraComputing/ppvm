@@ -6,7 +6,9 @@
 
 use ppvm_traits_2::{Angle, Coefficient, Conjugate, ImaginaryUnit};
 
-use crate::term::{Inner, ONE, Prod, Sum, Term, Var};
+use crate::prod::{ONE, Prod};
+use crate::sum::Sum;
+use crate::term::{Inner, Term, Var};
 
 impl Coefficient for Term {
     /// Flips the stored signs in place (or does nothing for `+1`); never a

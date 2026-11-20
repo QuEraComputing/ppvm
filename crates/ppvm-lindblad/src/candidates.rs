@@ -93,7 +93,9 @@ impl<const C: usize> ActionScratch<C> {
         }
     }
 
-    /// Fill [`Self::terms`] with `L*(word)`.
+    /// Fill [`Self::terms`] with `L*(word)`. Runs once per source string in
+    /// the generation loop, whose speed depends on this being inlined.
+    #[inline]
     pub(crate) fn fill(&mut self, spec: &LindbladSpec<C>, word: &Word<C>) {
         if let Some(plan) = &spec.pauli_plan {
             plan.fill_keyed(word, &mut self.active, &mut self.terms);

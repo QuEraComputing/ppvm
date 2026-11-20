@@ -22,6 +22,9 @@ impl IndexedCandidates {
         self.table = HashTable::new();
     }
 
+    /// Add `value` to `word`'s rate, inserting the word into the tail if new.
+    /// Runs once per generated term; inlined into the accumulation loop.
+    #[inline]
     pub(crate) fn add<const C: usize>(
         &mut self,
         buffer: &mut CandidateBuffer<'_, C>,

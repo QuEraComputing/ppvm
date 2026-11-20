@@ -302,14 +302,6 @@ pub struct ShortlistScoreProposer<const C: usize = { crate::W_CHUNKS }> {
     use_fallback: bool,
 }
 impl<const C: usize> ShortlistScoreProposer<C> {
-    pub(crate) fn allocation_bytes(&self) -> [usize; 3] {
-        [
-            self.shortlist.h.capacity() * std::mem::size_of::<(Word<C>, f64)>(),
-            self.shortlist.order.capacity() * std::mem::size_of::<usize>(),
-            self.shortlist.positions.table.allocation_size(),
-        ]
-    }
-
     /// Oversample the admission budget by `extra_percent` before exact scoring.
     pub fn new(extra_percent: usize) -> Self {
         Self {

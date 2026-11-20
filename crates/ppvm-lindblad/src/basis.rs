@@ -31,49 +31,6 @@ pub struct PcStepWorkspace<const C: usize = { crate::W_CHUNKS }> {
     pub(crate) coefficient_auxiliary: Vec<f64>,
 }
 
-impl<const C: usize> PcStepWorkspace<C> {
-    /// Requested vector, shortlist-index and generator capacities retained between
-    /// steps. Excludes the main state, the protected-word hash set, and metadata
-    /// owned by a separately supplied candidate proposer.
-    pub fn allocation_bytes(&self) -> [(&'static str, usize); 12] {
-        let [terms, order, index] = self.proposer.allocation_bytes();
-        [
-            ("shortlist_terms", terms),
-            ("source_order", order),
-            ("shortlist_index", index),
-            ("candidate_words", 0),
-            ("candidate_rates", 0),
-            (
-                "candidate_state",
-                self.proposer.streaming.indexed.state.capacity(),
-            ),
-            (
-                "candidate_free",
-                self.proposer.streaming.indexed.free.capacity() * 4,
-            ),
-            ("candidate_rank", 0),
-            (
-                "generation",
-                self.proposer
-                    .streaming
-                    .outputs
-                    .iter()
-                    .map(|v| v.capacity() * std::mem::size_of::<(Word<C>, f64)>())
-                    .sum(),
-            ),
-            (
-                "generator",
-                self.generator.as_ref().map_or(0, |p| p.allocation_bytes()),
-            ),
-            ("numeric_scratch", self.taylor.capacity() * 8),
-            (
-                "coefficient_auxiliary",
-                self.coefficient_auxiliary.capacity() * 8,
-            ),
-        ]
-    }
-}
-
 /// Build a `word → row` map for a basis assumed to contain unique Pauli
 /// words; debug-asserts the uniqueness invariant.
 pub fn build_basis_index<const C: usize>(basis: &[Word<C>]) -> FxHashMap<Word<C>, u32> {

@@ -75,14 +75,6 @@ impl<U> Default for Block<U> {
     }
 }
 
-impl<U> Block<U> {
-    fn allocation_bytes(&self) -> usize {
-        self.tiles.capacity() * 4
-            + self.entries.capacity() * std::mem::size_of::<Entry<U>>()
-            + self.diagonal.capacity() * 8
-    }
-}
-
 enum Blocks {
     Narrow(Vec<Block<i16>>),
     Wide(Vec<Block<i32>>),
@@ -157,19 +149,6 @@ impl Bounds {
 }
 
 impl UnitCache {
-    pub(crate) fn allocation_bytes(&self) -> usize {
-        match &self.blocks {
-            Blocks::Narrow(b) => {
-                b.capacity() * std::mem::size_of::<Block<i16>>()
-                    + b.iter().map(Block::allocation_bytes).sum::<usize>()
-            }
-            Blocks::Wide(b) => {
-                b.capacity() * std::mem::size_of::<Block<i32>>()
-                    + b.iter().map(Block::allocation_bytes).sum::<usize>()
-            }
-        }
-    }
-
     #[cfg(test)]
     fn block_count(&self) -> usize {
         match &self.blocks {

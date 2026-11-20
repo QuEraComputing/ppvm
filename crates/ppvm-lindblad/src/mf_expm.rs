@@ -502,26 +502,6 @@ pub(crate) enum RealCache {
     Units(crate::unit_expm::UnitCache),
 }
 
-impl RealCache {
-    pub(crate) fn allocation_bytes(&self) -> usize {
-        match self {
-            Self::Coefficients(cache) => cache.allocation_bytes(),
-            Self::Units(cache) => cache.allocation_bytes(),
-        }
-    }
-}
-
-impl BlockCsr<f64> {
-    pub(crate) fn allocation_bytes(&self) -> usize {
-        self.ranges.capacity() * std::mem::size_of::<CsrRange<f64>>()
-            + self
-                .ranges
-                .iter()
-                .map(|r| r.offsets.capacity() * 4 + r.cols.capacity() * 4 + r.vals.capacity() * 8)
-                .sum::<usize>()
-    }
-}
-
 pub(crate) fn real_bounds(per_col: &[(f64, f64)]) -> (f64, f64) {
     let mu = per_col.iter().map(|(_, diagonal)| *diagonal).sum::<f64>() / per_col.len() as f64;
     let norm = per_col

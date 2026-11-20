@@ -2334,6 +2334,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppvm-sym-2"
+version = "0.4.1"
+dependencies = [
+ "fxhash",
+ "num",
+ "ppvm-traits-2",
+]
+
+[[package]]
 name = "ppvm-tableau"
 version = "0.4.1"
 dependencies = [

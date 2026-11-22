@@ -1,37 +1,63 @@
-device circuit.n_qubits 2;
-device circuit.backend paulisum;
-device circuit.observable ZZ;
-device circuit.coefficient_threshold 1e-6;
+sst v1
+.section(root):
+    .section(ppvm):
+    .header(ppvm):
+        circuit.n_qubits 2;
+        circuit.backend paulisum;
+        circuit.observable ZZ;
+        circuit.coefficient_threshold 1e-6;
+        metadata {
+            strings: ["main", "paulisum_trotter_truncate.sst", "Z?*"],
+            functions: [
+                {
+                    name: 0, // main
+                    signature: { params: [], ret: [] },
+                    local_count: 0,
+                    start_address: 0,
+                    end_address: 21,
+                    file: 1,
+                },
+            ],
+            labels: [],
+            constants: [],
+            main_function: 0, // main
+            source_symbols: [],
+            extra: {},
+        };
+    .header(ppvm).
+    .text(ppvm):
+        fn @main() {
+            // Two Trotter layers of RXX(0.1) RZZ(0.05), with explicit truncate
+            // between layers. RXX branches Z->Y so the sum grows; truncate prunes
+            // small-coefficient terms via `coefficient_threshold`.
+            execution::program::const_u64 0
+            execution::program::const_u64 1
+            execution::program::const_f64 0.1
+            circuit::circuit::rxx
 
-fn @main() {
-    // Two Trotter layers of RXX(0.1) RZZ(0.05), with explicit truncate
-    // between layers. RXX branches Z->Y so the sum grows; truncate prunes
-    // small-coefficient terms via `coefficient_threshold`.
-    cpu::cpu.const u64, 0
-    cpu::cpu.const u64, 1
-    cpu::cpu.const f64, 0.1
-    circuit::circuit.rxx
+            execution::program::const_u64 0
+            execution::program::const_u64 1
+            execution::program::const_f64 0.05
+            circuit::circuit::rzz
 
-    cpu::cpu.const u64, 0
-    cpu::cpu.const u64, 1
-    cpu::cpu.const f64, 0.05
-    circuit::circuit.rzz
+            circuit::circuit::truncate
 
-    circuit::circuit.truncate
+            execution::program::const_u64 0
+            execution::program::const_u64 1
+            execution::program::const_f64 0.1
+            circuit::circuit::rxx
 
-    cpu::cpu.const u64, 0
-    cpu::cpu.const u64, 1
-    cpu::cpu.const f64, 0.1
-    circuit::circuit.rxx
+            execution::program::const_u64 0
+            execution::program::const_u64 1
+            execution::program::const_f64 0.05
+            circuit::circuit::rzz
 
-    cpu::cpu.const u64, 0
-    cpu::cpu.const u64, 1
-    cpu::cpu.const f64, 0.05
-    circuit::circuit.rzz
+            circuit::circuit::truncate
 
-    circuit::circuit.truncate
-
-    cpu::cpu.const str, "Z?*"
-    circuit::circuit.trace
-    cpu::cpu.ret 0
-}
+            execution::program::const_string "Z?*"
+            circuit::circuit::trace
+            execution::program::ret 0
+        }
+    .text(ppvm).
+    .section(ppvm).
+.section(root).

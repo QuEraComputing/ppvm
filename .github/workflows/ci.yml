@@ -140,6 +140,16 @@ jobs:
       - name: Run Python tests
         run: uv run --project ppvm-python --python ${{ matrix.python-version }} --group dev pytest ppvm-python/test/ docs/examples/
 
+  # Stable required-check name for the branch ruleset, independent of the matrix.
+  python-tests-result:
+    name: Python tests
+    needs: python-tests
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Python test matrix result
+        run: test "${{ needs.python-tests.result }}" = "success"
+
   # The pure-Rust crates are platform-agnostic and fully verified on Linux by
   # the jobs above. The PyO3 extension is the only OS-sensitive artifact (macOS
   # `-undefined dynamic_lookup`, Windows `python3.lib`), so it is the only thing

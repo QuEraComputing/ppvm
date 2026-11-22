@@ -2168,7 +2168,7 @@ dependencies = [
 
 [[package]]
 name = "ppvm"
-version = "0.3.0"
+version = "0.4.1"
 dependencies = [
  "ppvm-pauli-sum",
  "ppvm-sym",
@@ -2177,7 +2177,7 @@ dependencies = [
 
 [[package]]
 name = "ppvm-cli"
-version = "0.3.0"
+version = "0.4.1"
 dependencies = [
  "clap",
  "eyre",
@@ -2188,7 +2188,7 @@ dependencies = [
 
 [[package]]
 name = "ppvm-lindblad"
-version = "0.3.0"
+version = "0.4.1"
 dependencies = [
  "approx",
  "criterion 0.7.0",
@@ -2216,8 +2216,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppvm-pauli-kernels"
+version = "0.4.1"
+
+[[package]]
 name = "ppvm-pauli-sum"
-version = "0.3.0"
+version = "0.4.1"
 dependencies = [
  "approx",
  "bon",
@@ -2249,7 +2253,7 @@ dependencies = [
 
 [[package]]
 name = "ppvm-pauli-word"
-version = "0.3.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "bincode",
@@ -2265,13 +2269,14 @@ dependencies = [
 
 [[package]]
 name = "ppvm-pauli-word-2"
-version = "0.3.0"
+version = "0.4.1"
 dependencies = [
  "bitvec",
  "bytemuck",
  "foldhash",
  "fxhash",
  "num",
+ "ppvm-pauli-kernels",
  "ppvm-traits-2",
 ]
 
@@ -2286,7 +2291,7 @@ dependencies = [
 
 [[package]]
 name = "ppvm-python-native"
-version = "0.3.0"
+version = "0.4.1"
 dependencies = [
  "bnum",
  "mimalloc",
@@ -2314,7 +2319,7 @@ dependencies = [
 
 [[package]]
 name = "ppvm-stim"
-version = "0.3.0"
+version = "0.4.1"
 dependencies = [
  "bitvec",
  "bnum",
@@ -2323,6 +2328,7 @@ dependencies = [
  "num",
  "ppvm-pauli-sum",
  "ppvm-tableau",
+ "rand 0.10.3",
  "rayon",
  "smallvec",
  "stim-parser",
@@ -2331,7 +2337,7 @@ dependencies = [
 
 [[package]]
 name = "ppvm-sym"
-version = "0.3.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "fxhash",
@@ -2341,8 +2347,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppvm-sym-2"
+version = "0.4.1"
+dependencies = [
+ "fxhash",
+ "num",
+ "ppvm-traits-2",
+]
+
+[[package]]
 name = "ppvm-tableau"
-version = "0.3.0"
+version = "0.4.1"
 dependencies = [
  "bitvec",
  "bnum",
@@ -2361,8 +2376,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppvm-tableau-2"
+version = "0.0.0"
+dependencies = [
+ "num-complex",
+ "ppvm-pauli-kernels",
+ "ppvm-pauli-word-2",
+ "ppvm-phased-pauli-word-2",
+ "ppvm-traits-2",
+ "rand 0.10.3",
+ "stim-parser",
+]
+
+[[package]]
 name = "ppvm-tableau-sum"
-version = "0.3.0"
+version = "0.4.1"
 dependencies = [
  "bitvec",
  "bytemuck",
@@ -2382,7 +2410,7 @@ dependencies = [
 
 [[package]]
 name = "ppvm-traits"
-version = "0.3.0"
+version = "0.4.1"
 dependencies = [
  "ahash",
  "bitvec",
@@ -2399,29 +2427,30 @@ dependencies = [
 
 [[package]]
 name = "ppvm-traits-2"
-version = "0.3.0"
+version = "0.4.1"
 dependencies = [
  "num",
+ "ppvm-pauli-kernels",
 ]
 
 [[package]]
 name = "ppvm-tui"
-version = "0.3.0"
+version = "0.4.1"
 dependencies = [
  "eyre",
  "ppvm-vihaco",
  "ratatui",
+ "vihaco",
 ]
 
 [[package]]
 name = "ppvm-vihaco"
-version = "0.3.0"
+version = "0.4.1"
 dependencies = [
  "bitvec",
  "bnum",
  "chumsky 0.10.1",
  "eyre",
- "log",
  "num",
  "ppvm-pauli-sum",
  "ppvm-tableau",
@@ -2432,7 +2461,7 @@ dependencies = [
  "vihaco-circuit-isa",
  "vihaco-cpu",
  "vihaco-parser",
- "vihaco-parser-derive",
+ "vihaco-stdlib",
 ]
 
 [[package]]
@@ -3160,7 +3189,7 @@ checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
 name = "stim-parser"
-version = "0.3.0"
+version = "0.4.1"
 dependencies = [
  "ariadne",
  "chumsky 0.12.0",
@@ -3464,9 +3493,9 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vihaco"
-version = "0.4.1"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "868af4f85b69eaed7e7f7ce8b80dedae1c1f84ab349d99f5062924200d9e48d8"
+checksum = "87ff9f708c02bf49013e897422bf12d17a6a56a25146fb4383858018b5459b4a"
 dependencies = [
  "byteorder",
  "chumsky 0.10.1",
@@ -3488,22 +3517,23 @@ dependencies = [
 
 [[package]]
 name = "vihaco-abi"
-version = "0.4.1"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c41eba1bb03d1c13acac5b6bcdc195d410dfcf31fec55dcabc1ba77ef1b72b62"
+checksum = "1c8d35406059c26eb577c0860e4613b0f001793563f7f742bed81e593beb53fe"
 dependencies = [
  "byteorder",
  "chumsky 0.10.1",
  "eyre",
  "smallvec",
  "vihaco-abi-derive",
+ "vihaco-parser",
 ]
 
 [[package]]
 name = "vihaco-abi-derive"
-version = "0.4.1"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49d82820d6174e30131097191fbe81af06151d4000294e7a30017d9ef170b288"
+checksum = "a65cd9383ce24d12bd8a283fad1517e5e931dc476284ba3d1e468fac99db334c"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -3513,9 +3543,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-bytecode"
-version = "0.4.1"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94e2e4dce87f22f042ca709df72b07f3c154e19bb3f3a97f2dc976a0dcc34ee8"
+checksum = "4faba6dc3c5d385b4ca72ac99351991b14cfe626a4772e2c4ae0f5e3ea733cb8"
 dependencies = [
  "byteorder",
  "chumsky 0.10.1",
@@ -3525,47 +3555,51 @@ dependencies = [
 
 [[package]]
 name = "vihaco-circuit-isa"
-version = "0.3.0"
+version = "0.4.1"
 dependencies = [
  "chumsky 0.10.1",
  "eyre",
  "smallvec",
  "vihaco",
- "vihaco-parser",
 ]
 
 [[package]]
 name = "vihaco-cpu"
-version = "0.4.1"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e9b331dceb7844b2b14e0d71ec3f089cb75219a424d0fb204020381fde0a887"
+checksum = "bc9ce858874644fcb913c3033c66f8e15cb5c6f203cddaecc8a594acd9ba7a9d"
 dependencies = [
  "chumsky 0.10.1",
  "codespan",
  "eyre",
  "log",
- "vihaco",
+ "vihaco-abi",
+ "vihaco-module",
+ "vihaco-parser",
+ "vihaco-parser-derive",
+ "vihaco-runtime",
+]
+
+[[package]]
+name = "vihaco-module"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d340f2263216a26650e8711a02baca2756616aea50b074a72dc18fed9b4e5c7e"
+dependencies = [
+ "chumsky 0.10.1",
+ "colored",
+ "eyre",
+ "vihaco-abi",
+ "vihaco-bytecode",
  "vihaco-parser",
  "vihaco-parser-derive",
 ]
 
 [[package]]
-name = "vihaco-module"
-version = "0.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "154e6af7c180498f6d91122eef2bc1fb78265d565467e51f5b3c2aa09298b7ad"
-dependencies = [
- "colored",
- "eyre",
- "vihaco-abi",
- "vihaco-bytecode",
-]
-
-[[package]]
 name = "vihaco-parser"
-version = "0.4.1"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de2817e4f96bebb254211655ecbf55ab31f8ffbd04149820cf747a196483940a"
+checksum = "8d30ef40bb8adfaf529b6af7d394253f9d039144c75ac8e9953bdc73cdc7b720"
 dependencies = [
  "byteorder",
  "chumsky 0.10.1",
@@ -3574,9 +3608,9 @@ dependencies = [
 
 [[package]]
 name = "vihaco-parser-derive"
-version = "0.4.1"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49716816ec02d2098acd1ce7f73feb9c95c6cf6c8adab6c9cbc84671a1417fe0"
+checksum = "709f6dab7563d5b570514bd7fdaff3592615d5aef6e8316aab3dd61ee730ea2d"
 dependencies = [
  "chumsky 0.10.1",
  "eyre",
@@ -3588,24 +3622,26 @@ dependencies = [
 
 [[package]]
 name = "vihaco-runtime"
-version = "0.4.1"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90d88037beb7373cfd99f270010f4b7b6215cc0d4107cbfd05a042efa5ec5a85"
+checksum = "2dce0dfe9ab6e0a026ed59912471b7389610fa99e98d2f1d0207ff77966721d9"
 dependencies = [
  "chumsky 0.10.1",
  "eyre",
+ "smallvec",
  "vihaco-abi",
  "vihaco-bytecode",
  "vihaco-module",
  "vihaco-parser",
+ "vihaco-parser-derive",
  "vihaco-runtime-derive",
 ]
 
 [[package]]
 name = "vihaco-runtime-derive"
-version = "0.4.1"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3f2e39337a9b2c34a1d849ad601c6fa3a5da1c2fc5971637670643913b831a7"
+checksum = "305c7fc6066150f720dd767e0e70afd0c59b40c2a133bbf79fe16b48f76c06e5"
 dependencies = [
  "convert_case",
  "proc-macro-crate",
@@ -3616,23 +3652,32 @@ dependencies = [
 
 [[package]]
 name = "vihaco-stdlib"
-version = "0.4.1"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f144e86c79b496099e751fcb2f7ef35fe8d8a5486cd93324d67f76f6d7d3943"
+checksum = "b8f652472324851594c9cb45e3fe0bff28fd1a71b548da3bfbd85ed71a4f5c53"
 dependencies = [
+ "chumsky 0.10.1",
  "eyre",
+ "vihaco-abi",
+ "vihaco-bytecode",
+ "vihaco-cpu",
+ "vihaco-module",
+ "vihaco-parser",
+ "vihaco-parser-derive",
  "vihaco-runtime",
 ]
 
 [[package]]
 name = "vihaco-syntax"
-version = "0.4.1"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f845dd3cc8b4f6497ce391cd216b57c78419d80475f9a9f3db996b5becbd6e0"
+checksum = "91c97335fd6c6e73f2ddebcdbe42b8d93b0f726a0ef04f31d5af0ee11e5d4dfa"
 dependencies = [
  "chumsky 0.10.1",
  "eyre",
+ "vihaco-abi",
  "vihaco-bytecode",
+ "vihaco-module",
  "vihaco-parser",
 ]
 

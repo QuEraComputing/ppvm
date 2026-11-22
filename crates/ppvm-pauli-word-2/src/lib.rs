@@ -13,5 +13,7 @@ mod storage;
 
 pub use column::PauliKeyColumn;
 pub use data::PauliWord;
+#[doc(hidden)]
+pub use data::xor_bits2;
 pub use hash::HashFinalize;
 pub use storage::{DefaultStorage, PauliStorage};

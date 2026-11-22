@@ -54,6 +54,13 @@ class MeasurementResult(enum.IntEnum):
 # refcount. Shared with ``GeneralizedTableauSum``.
 _BY_VALUE = (MeasurementResult.ZERO, MeasurementResult.ONE, MeasurementResult.LOST)
 
+# The Rust-side form of each outcome: `Option<bool>`, `None` = lost.
+_TO_RUST = {
+    MeasurementResult.ZERO: False,
+    MeasurementResult.ONE: True,
+    MeasurementResult.LOST: None,
+}
+
 
 @dataclass(frozen=True)
 class GeneralizedTableau(
@@ -201,6 +208,35 @@ class GeneralizedTableau(
             A list of ``MeasurementResult`` outcomes, one per target.
         """
         return [_BY_VALUE[v] for v in self._interface.measure_many(_normalize_targets(targets))]
+
+    def project(self, addr0: int, outcome: MeasurementResult, *, tol: float = 1e-12) -> float:
+        """Post-select a measurement of the specified qubit onto ``outcome``.
+
+        Collapses the state as `measure` would have on ``outcome`` and records
+        it. ``LOST`` has probability 1 on a lost qubit and 0 on a live one.
+        Chaining it gives exact bitstring probabilities:
+
+        ```python
+        p = 1.0
+        for q, bit in enumerate(bits):
+            p *= tab.project(q, MeasurementResult(bit))
+        ```
+
+        Args:
+            addr0: The index of the target qubit.
+            outcome: The outcome to project onto.
+            tol: Smallest probability accepted for ``outcome``, in ``(0, 1]``.
+
+        Returns:
+            The probability of measuring ``outcome`` before the projection.
+
+        Raises:
+            ValueError: If ``tol`` is invalid, or, leaving the state unchanged,
+                if the probability of ``outcome`` is below ``tol``.
+        """
+        if not 0 < tol <= 1:
+            raise ValueError(f"tol must be in (0, 1], got {tol}")
+        return self._interface.project(addr0, _TO_RUST[outcome], tol)
 
     def current_measurement_record(self) -> list[MeasurementResult]:
         """Return all measurement outcomes recorded so far.
@@ -523,10 +559,28 @@ class GeneralizedTableau(
         if n_qubits is None:
             n_qubits = max(1, prog.num_qubits)
         native_cls = _native_tableau_cls(n_qubits)
-        buf, (n, m) = native_cls.sample(prog, n_qubits, min_abs_coeff, num_shots, seed)
-        if as_numpy:
-            return np.frombuffer(buf, dtype=np.int8).reshape(n, m)
-        return [[_BY_VALUE[x] for x in buf[i * m : (i + 1) * m]] for i in range(n)]
+        _check_n_qubits(prog, n_qubits)
+        buf, shape = native_cls.sample(prog, n_qubits, min_abs_coeff, num_shots, seed)
+        return _shots(buf, shape, as_numpy)
+
+
+def _check_n_qubits(prog: StimProgram, n_qubits: int | None) -> None:
+    if n_qubits is not None and n_qubits < prog.num_qubits:
+        raise ValueError(
+            f"n_qubits={n_qubits} is less than the {prog.num_qubits} qubits the program uses"
+        )
+
+
+def _shots(
+    buf: bytearray, shape: tuple[int, int], as_numpy: bool
+) -> list[list[MeasurementResult]] | np.ndarray:
+    n, m = shape
+    if as_numpy:
+        return np.frombuffer(buf, dtype=np.int8).reshape(n, m)
+    return [[_BY_VALUE[x] for x in buf[i * m : (i + 1) * m]] for i in range(n)]
+
+
+SampleMethod = Literal["auto", "tableau", "css"]
 
 
 @overload
@@ -537,6 +591,7 @@ def sample_stim(
     num_shots: int = ...,
     seed: int | None = ...,
     as_numpy: Literal[False] = ...,
+    method: SampleMethod = ...,
 ) -> list[list[MeasurementResult]]: ...
 
 
@@ -549,6 +604,7 @@ def sample_stim(
     seed: int | None = ...,
     *,
     as_numpy: Literal[True],
+    method: SampleMethod = ...,
 ) -> np.ndarray: ...
 
 
@@ -560,6 +616,7 @@ def sample_stim(
     num_shots: int = ...,
     seed: int | None = ...,
     as_numpy: bool = ...,
+    method: SampleMethod = ...,
 ) -> list[list[MeasurementResult]] | np.ndarray: ...
 
 
@@ -570,14 +627,29 @@ def sample_stim(
     num_shots: int = 1,
     seed: int | None = None,
     as_numpy: bool = False,
+    method: SampleMethod = "auto",
 ) -> list[list[MeasurementResult]] | np.ndarray:
-    """Multi-shot sampling — module-level alias for ``GeneralizedTableau.sample``.
+    """Multi-shot sampling of a Stim program.
+
+    ``method="tableau"`` runs `GeneralizedTableau.sample`. ``method="css"`` runs the
+    CSS frame sampler, which simulates loss and leakage exactly with many shots per
+    machine word, but only for circuits that are CSS up to Hadamard gates (see
+    `StimProgram.is_css`); it ignores ``min_abs_coeff`` and needs no ``n_qubits``.
+    ``method="auto"`` (the default) uses the CSS sampler whenever the program allows
+    it. Both samplers draw from the same distribution, but a given seed yields
+    different shots in each.
 
     When ``n_qubits`` is ``None`` (the default) the qubit count is inferred from
     the program; see `GeneralizedTableau.sample`. Shots are sampled in parallel
     across CPU cores with the GIL released; see `GeneralizedTableau.sample` for
     seeding, ``RAYON_NUM_THREADS`` and the ``as_numpy`` array format.
     """
+    if method not in ("auto", "tableau", "css"):
+        raise ValueError(f"method must be 'auto', 'tableau' or 'css', got {method!r}")
+    if method == "css" or (method == "auto" and prog.is_css):
+        _check_n_qubits(prog, n_qubits)
+        buf, shape = prog._sample_css(num_shots, seed)
+        return _shots(buf, shape, as_numpy)
     return GeneralizedTableau.sample(
         prog,
         n_qubits,

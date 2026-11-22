@@ -21,7 +21,7 @@ fn parse_mz_alias() {
     let Instruction::Measure(MeasureOp { name, .. }) = &p.instructions[0] else {
         panic!()
     };
-    assert_eq!(*name, MeasureName::MZ);
+    assert_eq!(*name, MeasureName::M);
 }
 
 #[test]
@@ -110,7 +110,7 @@ fn parse_mz_with_noise_arg() {
     let Instruction::Measure(MeasureOp { name, args, .. }) = &p.instructions[0] else {
         panic!()
     };
-    assert_eq!(*name, MeasureName::MZ);
+    assert_eq!(*name, MeasureName::M);
     assert_eq!(args.len(), 1);
     assert!((args[0] - 0.5).abs() < 1e-12);
 }

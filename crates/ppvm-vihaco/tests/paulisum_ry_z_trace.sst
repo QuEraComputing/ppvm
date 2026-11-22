@@ -1,17 +1,43 @@
-device circuit.n_qubits 1;
-device circuit.backend paulisum;
-device circuit.observable Z;
+sst v1
+.section(root):
+    .section(ppvm):
+    .header(ppvm):
+        circuit.n_qubits 1;
+        circuit.backend paulisum;
+        circuit.observable Z;
+        metadata {
+            strings: ["main", "paulisum_ry_z_trace.sst", "Z?*"],
+            functions: [
+                {
+                    name: 0, // main
+                    signature: { params: [], ret: [] },
+                    local_count: 0,
+                    start_address: 0,
+                    end_address: 6,
+                    file: 1,
+                },
+            ],
+            labels: [],
+            constants: [],
+            main_function: 0, // main
+            source_symbols: [],
+            extra: {},
+        };
+    .header(ppvm).
+    .text(ppvm):
+        fn @main() {
+            // PauliSum already runs in the Heisenberg picture: `circuit.ry` performs
+            // RY(θ)† Z RY(θ) = cos(θ)·Z + sin(θ)·X. A single gate means no
+            // reversal is needed beyond that. Trace against Z/I-only Paulis picks
+            // up the cos(θ) coefficient on Z; the sin(θ)·X term contributes 0.
+            execution::program::const_u64 0
+            execution::program::const_f64 0.7
+            circuit::circuit::ry
 
-fn @main() {
-    // PauliSum already runs in the Heisenberg picture: `circuit.ry` performs
-    // RY(θ)† Z RY(θ) = cos(θ)·Z + sin(θ)·X. A single gate means no
-    // reversal is needed beyond that. Trace against Z/I-only Paulis picks
-    // up the cos(θ) coefficient on Z; the sin(θ)·X term contributes 0.
-    cpu::cpu.const u64, 0
-    cpu::cpu.const f64, 0.7
-    circuit::circuit.ry
-
-    cpu::cpu.const str, "Z?*"
-    circuit::circuit.trace
-    cpu::cpu.ret 0
-}
+            execution::program::const_string "Z?*"
+            circuit::circuit::trace
+            execution::program::ret 0
+        }
+    .text(ppvm).
+    .section(ppvm).
+.section(root).

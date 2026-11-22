@@ -7,6 +7,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, "");
 const toc = [
   { label: "Parse and sample",  href: "#sample" },
   { label: "Measurement results", href: "#results" },
+  { label: "CSS circuits", href: "#css" },
   { label: "Where to go next", href: "#next" },
 ];
 ---
@@ -51,6 +52,20 @@ const toc = [
         is covered in
         <a href={`${base}/quickstart/python/loss-channel`}>§ 5 Loss channel
         details</a>.
+      </p>
+    </section>
+
+    <section id="css">
+      <h2>CSS circuits</h2>
+      <p>
+        Circuits that are CSS up to Hadamard gates — resets, measurements and
+        CNOT / CZ gates in the Z and X bases, as in most memory experiments —
+        run on a much faster CSS frame sampler that still simulates loss and
+        leakage exactly (<code>prog.is_css</code> tells you whether a program
+        qualifies). <code>sample_stim</code> picks it automatically; pass
+        <code>method="tableau"</code> or <code>method="css"</code> to choose.
+        Both samplers draw from the same distribution, but a given seed yields
+        different shots in each.
       </p>
     </section>
 

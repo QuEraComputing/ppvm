@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 ppvm-traits-2 = { path = "../ppvm-traits-2"}
+ppvm-pauli-kernels = { path = "../ppvm-pauli-kernels" }
 bitvec = "1.0.1"
 bytemuck = { version = "1", features = ["min_const_generics"] }
 foldhash = "0.1.5"

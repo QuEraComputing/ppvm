@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1](https://github.com/QuEraComputing/ppvm/compare/v0.4.0...v0.4.1) - 2026-11-19
+
+### Fixed
+
+- *(ppvm-sym)* correct real-valued results in Term arithmetic ([#305](https://github.com/QuEraComputing/ppvm/pull/305))
+
+## [0.4.0](https://github.com/QuEraComputing/ppvm/compare/v0.3.1...v0.4.0) - 2026-11-19
+
+### Added
+
+- *(stim-parser)* fuse consecutive compatible instructions like Stim ([#291](https://github.com/QuEraComputing/ppvm/pull/291)) ([#301](https://github.com/QuEraComputing/ppvm/pull/301))
+- *(stim)* CSS frame sampler with exact loss and leakage ([#306](https://github.com/QuEraComputing/ppvm/pull/306))
+
+### Other
+
+- Upgrade ppvm-vihaco to vihaco v0.7.0 ([#289](https://github.com/QuEraComputing/ppvm/pull/289))
+
+## [0.3.1](https://github.com/QuEraComputing/ppvm/compare/v0.3.0...v0.3.1) - 2026-11-17
+
+### Added
+
+- post-selected measurement via `GeneralizedTableau.project` ([#299](https://github.com/QuEraComputing/ppvm/pull/299))
+
 ## [0.3.0](https://github.com/QuEraComputing/ppvm/compare/v0.2.1...v0.3.0) - 2026-11-09
 
 ### Other

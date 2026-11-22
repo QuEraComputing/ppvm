@@ -1,0 +1,11 @@
+name = "ppvm"
+version = "0.1.0"
+keywords = ["quantum", "pauli", "clifford"]
+defaultTargets = ["PPVM"]
+
+[leanOptions]
+pp.unicode.fun = true
+relaxedAutoImplicit = false
+
+[[lean_lib]]
+name = "PPVM"

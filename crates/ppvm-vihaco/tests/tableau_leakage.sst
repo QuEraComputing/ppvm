@@ -1,20 +1,46 @@
-device circuit.n_qubits 1;
+sst v1
+.section(root):
+    .section(ppvm):
+    .header(ppvm):
+        circuit.n_qubits 1;
+        metadata {
+            strings: ["main", "tableau_leakage.sst"],
+            functions: [
+                {
+                    name: 0, // main
+                    signature: { params: [], ret: [] },
+                    local_count: 0,
+                    start_address: 0,
+                    end_address: 9,
+                    file: 1,
+                },
+            ],
+            labels: [],
+            constants: [],
+            main_function: 0, // main
+            source_symbols: [],
+            extra: {},
+        };
+    .header(ppvm).
+    .text(ppvm):
+    // Deterministic leakage: p0=0, p1=1 pins q0 to |1⟩ and marks it leaked.
+    // Stack order for `circuit.leakage`: qubit, then p0, then p1.
+    // A subsequent X is a no-op on a leaked qubit, so measurement still
+    // returns 1 (the pinned bit, not LOST).
+        fn @main() {
+            execution::program::const_u64 0
+            execution::program::const_f64 0.0
+            execution::program::const_f64 1.0
+            circuit::circuit::leakage
 
-// Deterministic leakage: p0=0, p1=1 pins q0 to |1⟩ and marks it leaked.
-// Stack order for `circuit.leakage`: qubit, then p0, then p1.
-// A subsequent X is a no-op on a leaked qubit, so measurement still
-// returns 1 (the pinned bit, not LOST).
-fn @main() {
-    cpu::cpu.const u64, 0
-    cpu::cpu.const f64, 0.0
-    cpu::cpu.const f64, 1.0
-    circuit::circuit.leakage
+            execution::program::const_u64 0
+            circuit::circuit::x
 
-    cpu::cpu.const u64, 0
-    circuit::circuit.x
+            execution::program::const_u64 0
+            circuit::circuit::measure
 
-    cpu::cpu.const u64, 0
-    circuit::circuit.measure
-
-    cpu::cpu.ret 0
-}
+            execution::program::ret 0
+        }
+    .text(ppvm).
+    .section(ppvm).
+.section(root).

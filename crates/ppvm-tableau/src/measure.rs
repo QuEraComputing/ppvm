@@ -83,6 +83,59 @@ impl<I, R> Default for MeasureScratch<I, R> {
     }
 }
 
+/// How [`GeneralizedTableau::collapse_with_scratch`] picks the outcome.
+#[derive(Clone, Copy, Debug)]
+enum OutcomeChoice {
+    /// Draw the outcome from the tableau's RNG (ordinary measurement).
+    Sample,
+    /// Use the given outcome (post-selection), `None` = lost. Rejected if its
+    /// probability is below `tol`.
+    Forced { outcome: Option<bool>, tol: f64 },
+}
+
+/// Reject a forced `outcome` whose probability `prob` is below its `tol`
+/// (or NaN). Sampled outcomes (`forced = None`) always pass.
+fn check_tol(
+    forced: Option<(bool, f64)>,
+    outcome: bool,
+    prob: f64,
+) -> Result<(), ImpossibleOutcome> {
+    match forced {
+        Some((_, tol)) if prob.is_nan() || prob < tol => Err(ImpossibleOutcome {
+            outcome: Some(outcome),
+            prob,
+            tol,
+        }),
+        _ => Ok(()),
+    }
+}
+
+/// [`GeneralizedTableau::project`] was asked for an outcome with probability
+/// below `tol`. The tableau is left as it was before the call.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ImpossibleOutcome {
+    pub outcome: Option<bool>,
+    pub prob: f64,
+    pub tol: f64,
+}
+
+impl std::fmt::Display for ImpossibleOutcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let outcome = match self.outcome {
+            Some(false) => "0",
+            Some(true) => "1",
+            None => "lost",
+        };
+        write!(
+            f,
+            "cannot project onto outcome {outcome}: its probability {:e} is below tol = {:e}",
+            self.prob, self.tol
+        )
+    }
+}
+
+impl std::error::Error for ImpossibleOutcome {}
+
 impl<T: Config, I, C: SparseVector<Complex<T::Coeff>, I>> LossyMeasure
     for GeneralizedTableau<T, I, C>
 where
@@ -107,24 +160,10 @@ where
     I: TableauIndex + Debug,
 {
     fn measure(&mut self, addr0: usize) -> Option<bool> {
-        if self.qubit_status[addr0] == QubitStatus::Lost {
-            self.measurement_record.push(None);
-            return None;
-        }
-
-        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) =
-            self.compute_decomposition(addr0, Pauli::Z);
-
         // Standalone callers don't get cross-call cache benefits; `measure_all`
         // threads through a long-lived scratch.
         let mut scratch = MeasureScratch::new();
-        self.measure_with_scratch(
-            addr0,
-            &mut scratch,
-            phase_decomp,
-            stab_anticomm_bits,
-            destab_anticomm_bits,
-        )
+        self.measure_with_scratch(addr0, &mut scratch)
     }
 
     /// Override the trait default (a per-target `measure` loop, which allocates
@@ -161,45 +200,92 @@ where
         + Copy,
     I: TableauIndex + Debug,
 {
+    /// Z-measure `addr0` reusing `scratch`; shared by `measure`, `measure_all`
+    /// and `measure_many` so every path measures and records identically.
     pub(crate) fn measure_with_scratch(
         &mut self,
         addr0: usize,
         scratch: &mut MeasureScratch<I, T::Coeff>,
-        phase_decomp: u8,
-        stab_anticomm_bits: I,
-        destab_anticomm_bits: I,
     ) -> Option<bool> {
-        if stab_anticomm_bits == I::zero() {
-            // Case b (fast path): Z is already a stabilizer. Overlap + filter in place.
+        self.collapse_with_scratch(addr0, scratch, OutcomeChoice::Sample)
+            .expect("sampling always yields an outcome")
+            .0
+    }
 
-            // Compute overlap directly on self.coefficients without draining.
-            let mut z_overlap_re = 0.0f64;
-            let mut norm_sqr = 0.0f64;
-            for &(coeff, idx) in self.coefficients.iter() {
-                let norm_sq = coeff.norm_sqr().to_f64().unwrap_or(0.0);
-                norm_sqr += norm_sq;
-                let phase = (phase_decomp
-                    + (2 * symplectic_inner(destab_anticomm_bits, idx) as u8) % 4)
-                    % 4;
-                if !phase.is_multiple_of(2) {
-                    continue;
-                }
-                if phase == 0 {
-                    z_overlap_re += norm_sq;
-                } else {
-                    z_overlap_re -= norm_sq;
-                }
+    /// Shared body of `measure` and [`project`](Self::project): collapse
+    /// `addr0` onto the outcome picked by `choice`, record it, and return it
+    /// with its probability. A rejected `Forced` outcome mutates nothing.
+    fn collapse_with_scratch(
+        &mut self,
+        addr0: usize,
+        scratch: &mut MeasureScratch<I, T::Coeff>,
+        choice: OutcomeChoice,
+    ) -> Result<(Option<bool>, f64), ImpossibleOutcome> {
+        // Loss is classical: a lost qubit measures `None` with probability 1.
+        if self.qubit_status[addr0] == QubitStatus::Lost {
+            if let OutcomeChoice::Forced {
+                outcome: outcome @ Some(_),
+                tol,
+            } = choice
+            {
+                return Err(ImpossibleOutcome {
+                    outcome,
+                    prob: 0.0,
+                    tol,
+                });
             }
+            self.measurement_record.push(None);
+            return Ok((None, 1.0));
+        }
+        let forced = match choice {
+            OutcomeChoice::Sample => None,
+            OutcomeChoice::Forced {
+                outcome: Some(outcome),
+                tol,
+            } => Some((outcome, tol)),
+            OutcomeChoice::Forced { outcome: None, tol } => {
+                return Err(ImpossibleOutcome {
+                    outcome: None,
+                    prob: 0.0,
+                    tol,
+                });
+            }
+        };
 
-            // Gate-time truncation drops branches without renormalizing, so
-            // divide by ⟨ψ|ψ⟩ rather than assuming it is 1.
-            let prob_1 = 0.5 - 0.5 * z_overlap_re / norm_sqr;
-            let outcome = self.tableau.rng.random::<f64>() < prob_1;
+        let (phase_decomp, stab_anticomm_bits, destab_anticomm_bits) =
+            self.compute_decomposition(addr0, Pauli::Z);
+        if stab_anticomm_bits == I::zero() {
+            // Case b (fast path): Z is already a stabilizer. Split + filter in place.
 
             debug_assert!(
                 phase_decomp == 0 || phase_decomp == 2,
                 "Measurement result cannot be imaginary!"
             );
+
+            // Every coefficient is a Z eigenstate, so P(b) is the weight of the
+            // matching eigenstates. Summing each directly (rather than
+            // 1/2 ∓ ⟨Z⟩/2) keeps full relative precision for rare outcomes.
+            let mut plus_sqr = 0.0f64;
+            let mut minus_sqr = 0.0f64;
+            for &(coeff, idx) in self.coefficients.iter() {
+                let norm_sq = coeff.norm_sqr().to_f64().unwrap_or(0.0);
+                let parity = symplectic_inner(destab_anticomm_bits, idx) % 2 != 0;
+                if parity == (phase_decomp == 2) {
+                    plus_sqr += norm_sq;
+                } else {
+                    minus_sqr += norm_sq;
+                }
+            }
+
+            // Gate-time truncation drops branches without renormalizing, so
+            // divide by ⟨ψ|ψ⟩ rather than assuming it is 1.
+            let norm_sqr = plus_sqr + minus_sqr;
+            let outcome = match forced {
+                None => self.tableau.rng.random::<f64>() < minus_sqr / norm_sqr,
+                Some((outcome, _)) => outcome,
+            };
+            let prob = if outcome { minus_sqr } else { plus_sqr } / norm_sqr;
+            check_tol(forced, outcome, prob)?;
 
             let old_len = self.coefficients.len();
             let z_sign = phase_decomp == 2;
@@ -213,7 +299,7 @@ where
 
             // Case-b doesn't mutate destabilizers, so the cached mask remains valid.
             self.measurement_record.push(Some(outcome));
-            Some(outcome)
+            Ok((Some(outcome), prob))
         } else {
             // Case a: Z is not a stabilizer — sort-merge instead of HashMap.
             let mut by_idx: Vec<(I, Complex<T::Coeff>)> =
@@ -238,70 +324,74 @@ where
                 }
             }
 
-            let odd_phase_mask = *scratch
-                .odd_phase_mask
-                .get_or_insert_with(|| self.odd_phase_destabilizer_mask());
-
-            // OVERLAP: 2-way merge of by_idx and shifted (each entry XOR'd by stab_anticomm_bits).
-            // At equal key k: by_idx has (k, a_k) and shifted has (k, a_{k^s}), matching
-            // the HashMap overlap's coeff / coeff_branch pair — counted once per key from
-            // each side, exactly as the HashMap iterates every (idx, branch_index) pair.
-            let mut shifted: Vec<(I, Complex<T::Coeff>)> = by_idx
-                .iter()
-                .map(|&(i, c)| (i ^ stab_anticomm_bits, c))
-                .collect();
-            shifted.sort_unstable_by_key(|a| a.0);
-
-            let mut z_overlap_re = 0.0f64;
-            {
-                let mut ii = 0usize;
-                let mut jj = 0usize;
-                while ii < by_idx.len() && jj < shifted.len() {
-                    match by_idx[ii].0.cmp(&shifted[jj].0) {
-                        std::cmp::Ordering::Less => {
-                            ii += 1;
-                        }
-                        std::cmp::Ordering::Greater => {
-                            jj += 1;
-                        }
-                        std::cmp::Ordering::Equal => {
-                            let (idx, a) = by_idx[ii];
-                            let (_, b) = shifted[jj];
-                            let phase = (phase_decomp
-                                + compute_phase_with_mask_static(
-                                    destab_anticomm_bits,
-                                    idx,
-                                    stab_anticomm_bits,
-                                    odd_phase_mask,
-                                ))
-                                % 4;
-                            let a_re = a.re.to_f64().unwrap_or(0.0);
-                            let a_im = a.im.to_f64().unwrap_or(0.0);
-                            let b_re = b.re.to_f64().unwrap_or(0.0);
-                            let b_im = b.im.to_f64().unwrap_or(0.0);
-                            let re_w = a_re * b_re + a_im * b_im;
-                            let im_w = a_re * b_im - a_im * b_re;
-                            match phase {
-                                0 => z_overlap_re += re_w,
-                                1 => z_overlap_re += im_w,
-                                2 => z_overlap_re -= re_w,
-                                3 => z_overlap_re -= im_w,
-                                _ => unreachable!(),
-                            }
-                            ii += 1;
-                            jj += 1;
-                        }
-                    }
-                }
-            }
-
             // See case b: the state is not necessarily normalized.
             let norm_sqr: f64 = by_idx
                 .iter()
                 .map(|(_, c)| c.norm_sqr().to_f64().unwrap_or(0.0))
                 .sum();
-            let prob_1 = 0.5 - 0.5 * z_overlap_re / norm_sqr;
-            let outcome = self.tableau.rng.random::<f64>() < prob_1;
+            let outcome = match forced {
+                Some((outcome, _)) => outcome,
+                None => {
+                    let odd_phase_mask = *scratch
+                        .odd_phase_mask
+                        .get_or_insert_with(|| self.odd_phase_destabilizer_mask());
+
+                    // OVERLAP: 2-way merge of by_idx and shifted (each entry XOR'd by stab_anticomm_bits).
+                    // At equal key k: by_idx has (k, a_k) and shifted has (k, a_{k^s}), matching
+                    // the HashMap overlap's coeff / coeff_branch pair — counted once per key from
+                    // each side, exactly as the HashMap iterates every (idx, branch_index) pair.
+                    let mut shifted: Vec<(I, Complex<T::Coeff>)> = by_idx
+                        .iter()
+                        .map(|&(i, c)| (i ^ stab_anticomm_bits, c))
+                        .collect();
+                    shifted.sort_unstable_by_key(|a| a.0);
+
+                    let mut z_overlap_re = 0.0f64;
+                    {
+                        let mut ii = 0usize;
+                        let mut jj = 0usize;
+                        while ii < by_idx.len() && jj < shifted.len() {
+                            match by_idx[ii].0.cmp(&shifted[jj].0) {
+                                std::cmp::Ordering::Less => {
+                                    ii += 1;
+                                }
+                                std::cmp::Ordering::Greater => {
+                                    jj += 1;
+                                }
+                                std::cmp::Ordering::Equal => {
+                                    let (idx, a) = by_idx[ii];
+                                    let (_, b) = shifted[jj];
+                                    let phase = (phase_decomp
+                                        + compute_phase_with_mask_static(
+                                            destab_anticomm_bits,
+                                            idx,
+                                            stab_anticomm_bits,
+                                            odd_phase_mask,
+                                        ))
+                                        % 4;
+                                    let a_re = a.re.to_f64().unwrap_or(0.0);
+                                    let a_im = a.im.to_f64().unwrap_or(0.0);
+                                    let b_re = b.re.to_f64().unwrap_or(0.0);
+                                    let b_im = b.im.to_f64().unwrap_or(0.0);
+                                    let re_w = a_re * b_re + a_im * b_im;
+                                    let im_w = a_re * b_im - a_im * b_re;
+                                    match phase {
+                                        0 => z_overlap_re += re_w,
+                                        1 => z_overlap_re += im_w,
+                                        2 => z_overlap_re -= re_w,
+                                        3 => z_overlap_re -= im_w,
+                                        _ => unreachable!(),
+                                    }
+                                    ii += 1;
+                                    jj += 1;
+                                }
+                            }
+                        }
+                    }
+                    let prob_1 = 0.5 - 0.5 * z_overlap_re / norm_sqr;
+                    self.tableau.rng.random::<f64>() < prob_1
+                }
+            };
 
             // PROJECTION: partition A (k-bit=0) and B (k-bit=1), transform B, merge.
             let q_idx = stab_anticomm_bits.trailing_zeros() as usize;
@@ -314,7 +404,7 @@ where
 
             let mut a: Vec<(I, Complex<T::Coeff>)> = Vec::new();
             let mut bt: Vec<(I, Complex<T::Coeff>)> = Vec::new();
-            for (idx, coeff) in by_idx {
+            for &(idx, coeff) in &by_idx {
                 if (idx & k) == I::zero() {
                     a.push((idx, coeff));
                 } else {
@@ -362,9 +452,23 @@ where
                 }
             }
 
-            let norm_sqr = merged
+            // `merged` is √2·Πψ in the post-measurement frame, so
+            // P = ‖merged‖² / (2‖ψ‖²). Unlike 1/2 ∓ ⟨Z⟩/2 this keeps relative
+            // precision for rare outcomes, up to cancellation within the merge.
+            let merged_norm_sqr = merged
                 .iter()
                 .fold(T::Coeff::zero(), |acc, (_, c)| acc + c.norm_sqr());
+            let prob = merged_norm_sqr.to_f64().unwrap_or(0.0) / (2.0 * norm_sqr);
+            if let Err(err) = check_tol(forced, outcome, prob) {
+                // Restore the coefficients drained into `by_idx` (possibly re-sorted).
+                for (idx, coeff) in by_idx {
+                    self.coefficients.unsafe_insert(idx, coeff);
+                }
+                return Err(err);
+            }
+            drop(by_idx);
+
+            let norm_sqr = merged_norm_sqr;
             let cutoff_sq = self.coefficient_threshold.clone() * self.coefficient_threshold.clone();
             let threshold = cutoff_sq.to_f64().unwrap_or(0.0) * norm_sqr.to_f64().unwrap_or(0.0);
             self.coefficients.reserve(merged.len());
@@ -379,7 +483,7 @@ where
                 .update_tableau_according_to_outcome(addr0, q_idx, outcome);
             scratch.odd_phase_mask = None;
             self.measurement_record.push(Some(outcome));
-            Some(outcome)
+            Ok((Some(outcome), prob))
         }
     }
 
@@ -550,6 +654,32 @@ where
         } else {
             bit
         }
+    }
+
+    /// Post-selected measurement: collapse qubit `addr0` onto `outcome` (as
+    /// returned by [`measure`](LossyMeasure::measure), `None` = lost), record
+    /// it, and return its probability. Chaining it gives
+    /// `P(z) = Π_i P(z_i | z_<i)`.
+    ///
+    /// Loss is classical: `None` has probability 1 on a lost qubit and 0 on a
+    /// live one, and `Some(_)` has probability 0 on a lost qubit.
+    ///
+    /// `tol` must be in `(0, 1]`. Returns [`ImpossibleOutcome`],
+    /// leaving the tableau untouched, if `P(outcome) < tol`.
+    pub fn project(
+        &mut self,
+        addr0: usize,
+        outcome: Option<bool>,
+        tol: f64,
+    ) -> Result<f64, ImpossibleOutcome> {
+        debug_assert!(tol > 0.0 && tol <= 1.0, "tol must be in (0, 1], got {tol}");
+        let mut scratch = MeasureScratch::new();
+        let (_, prob) = self.collapse_with_scratch(
+            addr0,
+            &mut scratch,
+            OutcomeChoice::Forced { outcome, tol },
+        )?;
+        Ok(prob)
     }
 }
 

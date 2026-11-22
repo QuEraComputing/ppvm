@@ -1,13 +1,39 @@
-device circuit.n_qubits 1;
+sst v1
+.section(root):
+    .section(ppvm):
+    .header(ppvm):
+        circuit.n_qubits 1;
+        metadata {
+            strings: ["main", "tableau_ry_z_trace.sst", "Z{1}"],
+            functions: [
+                {
+                    name: 0, // main
+                    signature: { params: [], ret: [] },
+                    local_count: 0,
+                    start_address: 0,
+                    end_address: 6,
+                    file: 1,
+                },
+            ],
+            labels: [],
+            constants: [],
+            main_function: 0, // main
+            source_symbols: [],
+            extra: {},
+        };
+    .header(ppvm).
+    .text(ppvm):
+        fn @main() {
+            // RY(θ)|0⟩ = cos(θ/2)|0⟩ + sin(θ/2)|1⟩, so ⟨ψ|Z|ψ⟩ = cos(θ).
+            // Hard-coded θ = 0.7 → cos(0.7) ≈ 0.7648421872844885.
+            execution::program::const_u64 0
+            execution::program::const_f64 0.7
+            circuit::circuit::ry
 
-fn @main() {
-    // RY(θ)|0⟩ = cos(θ/2)|0⟩ + sin(θ/2)|1⟩, so ⟨ψ|Z|ψ⟩ = cos(θ).
-    // Hard-coded θ = 0.7 → cos(0.7) ≈ 0.7648421872844885.
-    cpu::cpu.const u64, 0
-    cpu::cpu.const f64, 0.7
-    circuit::circuit.ry
-
-    cpu::cpu.const str, "Z{1}"
-    circuit::circuit.trace
-    cpu::cpu.ret 0
-}
+            execution::program::const_string "Z{1}"
+            circuit::circuit::trace
+            execution::program::ret 0
+        }
+    .text(ppvm).
+    .section(ppvm).
+.section(root).

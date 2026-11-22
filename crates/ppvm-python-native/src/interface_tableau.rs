@@ -55,6 +55,20 @@ macro_rules! create_interface {
                     .collect()
             }
 
+            /// Post-selected measurement onto `outcome` (`None` = lost);
+            /// `ImpossibleOutcome` becomes `ValueError`.
+            #[pyo3(signature = (addr0, outcome, tol = 1e-12))]
+            pub fn project(
+                &mut self,
+                addr0: usize,
+                outcome: Option<bool>,
+                tol: f64,
+            ) -> PyResult<f64> {
+                self.inner
+                    .project(addr0, outcome, tol)
+                    .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
+            }
+
             pub fn current_measurement_record(&self) -> Vec<i64> {
                 self.inner
                     .current_measurement_record()
@@ -367,8 +381,8 @@ macro_rules! create_interface {
                 // use the validated path to skip redundant re-validation.
                 let raw = py.detach(|| {
                     ppvm_stim::sample_validated(
-                        &prog.0.instructions,
-                        prog.0.measurement_count(),
+                        &prog.program.instructions,
+                        prog.program.measurement_count(),
                         num_shots,
                         |i| match seed {
                             Some(s) => GeneralizedTableau::<$type, $indexType>::new_with_seed(

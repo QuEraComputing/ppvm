@@ -130,7 +130,24 @@ pub trait ResetLossChannel {
 /// The total loss probability depends on the populations, so the channel reads `⟨Z⟩`.
 pub trait AsymmetricLossChannel<C: Coefficient> {
     /// Apply asymmetric loss to `qubit`, with `p0` / `p1` the loss probabilities
-    /// from `|0⟩` / `|1⟩`. See the backend impl for the trajectory approximation
-    /// used (the survival back-action is omitted).
+    /// from `|0⟩` / `|1⟩`. Backends document whether they apply the survival
+    /// back-action.
     fn asymmetric_loss_channel(&mut self, qubit: usize, p0: C, p1: C);
+}
+
+/// Single-qubit leakage: with probability `p0` the qubit leaks and is pinned to
+/// `|0⟩`, with `p1` to `|1⟩`. A leaked qubit stays measurable and returns the
+/// pinned bit; gates skip it.
+pub trait LeakageChannel<C: Coefficient> {
+    /// Apply leakage to `qubit`, with `p0` / `p1` the probabilities of leaking
+    /// into `|0⟩` / `|1⟩`.
+    fn leakage_channel(&mut self, qubit: usize, p0: C, p1: C);
+}
+
+/// Return a leaked qubit to the computational subspace in `|0⟩`, modelling a
+/// leakage-reduction step.
+pub trait ResetLeakageChannel {
+    /// Clear leakage at `qubit` and reset it to `|0⟩`. No-op on a live qubit; a
+    /// lost qubit is not recovered.
+    fn reset_leakage_channel(&mut self, qubit: usize);
 }

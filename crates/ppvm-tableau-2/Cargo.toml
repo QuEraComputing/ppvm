@@ -1,0 +1,17 @@
+[package]
+name = "ppvm-tableau-2"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+num-complex = "0.4.6"
+ppvm-pauli-kernels = { path = "../ppvm-pauli-kernels" }
+ppvm-traits-2 = { path = "../ppvm-traits-2" }
+rand = "0.10.1"
+
+[dev-dependencies]
+ppvm-pauli-word-2 = { path = "../ppvm-pauli-word-2" }
+ppvm-phased-pauli-word-2 = { path = "../ppvm-phased-pauli-word-2" }
+stim-parser = { path = "../stim-parser" }

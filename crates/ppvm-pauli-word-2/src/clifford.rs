@@ -2,207 +2,68 @@
 // SPDX-License-Identifier: Apache-2.0
 
 //! Clifford conjugation of packed Pauli words, discarding all phase signs.
-//! Fused gates refresh the eager hash once instead of hashing each primitive step.
-//! Symplectic bit operations remain available; `PhaseTrack` is a no-op.
+//! `PauliWord` implements `ApplyGateRule`, so `Clifford` comes from the blanket impl
+//! and each gate's bits from `ppvm_pauli_kernels::heisenberg`. The hash is
+//! refreshed once per gate, and only when a bit changes.
 //! Phase signs must be handled separately by phased words or the sum engine.
 
 use std::hash::BuildHasher;
 
-use ppvm_traits_2::{Clifford, PhaseTrack, SymplecticColumns};
+use ppvm_traits_2::ApplyGateRule;
 
-use crate::data::PauliWord;
+use crate::data::{PauliWord, xor_bits2};
 use crate::{HashFinalize, PauliStorage};
 
-impl<A, H> Clifford for PauliWord<A, H>
+/// Whether a gate that changes no bit skips the hash refresh. Measured on arm64:
+/// for one storage word the hash is cheaper than the unpredictable branch, for
+/// larger storage skipping it is faster.
+const fn skips_unchanged<A>() -> bool {
+    std::mem::size_of::<A>() > 8
+}
+
+impl<A, H> ApplyGateRule for PauliWord<A, H>
 where
     A: PauliStorage,
     H: BuildHasher + Default + HashFinalize,
 {
-    #[inline]
-    fn x(&mut self, q: usize) {
-        debug_assert!(q < self.nqubits, "qubit {q} out of bounds");
-    }
+    type B = bool;
 
+    /// The sign flip is dropped: an unsigned word has no sign. Only changed bits
+    /// are written, and the hash is refreshed once if any changed.
     #[inline]
-    fn y(&mut self, q: usize) {
+    fn apply1(&mut self, q: usize, rule: impl Fn(bool, bool) -> ([bool; 2], bool)) {
         debug_assert!(q < self.nqubits, "qubit {q} out of bounds");
-    }
-
-    #[inline]
-    fn z(&mut self, q: usize) {
-        debug_assert!(q < self.nqubits, "qubit {q} out of bounds");
-    }
-
-    #[inline]
-    fn h(&mut self, q: usize) {
-        debug_assert!(q < self.nqubits, "qubit {q} out of bounds");
-        let x = self.xbits[q];
-        self.xbits.set(q, self.zbits[q]);
-        self.zbits.set(q, x);
+        let (x, z) = (self.xbits[q], self.zbits[q]);
+        let ([x2, z2], _) = rule(x, z);
+        let (tx, tz) = (x ^ x2, z ^ z2);
+        if skips_unchanged::<A>() && !(tx || tz) {
+            return;
+        }
+        xor_bits2(&mut self.xbits, q, tx, q, false);
+        xor_bits2(&mut self.zbits, q, tz, q, false);
         self.refresh_hash();
     }
 
     #[inline]
-    fn s(&mut self, q: usize) {
-        debug_assert!(q < self.nqubits, "qubit {q} out of bounds");
-        let z = self.zbits[q] ^ self.xbits[q];
-        self.zbits.set(q, z);
-        self.refresh_hash();
-    }
-
-    #[inline]
-    fn cnot(&mut self, control: usize, target: usize) {
-        debug_assert_ne!(control, target, "CNOT requires distinct qubits");
-        debug_assert!(
-            control < self.nqubits && target < self.nqubits,
-            "qubit out of bounds"
-        );
-        let xt = self.xbits[target] ^ self.xbits[control];
-        let zc = self.zbits[control] ^ self.zbits[target];
-        self.xbits.set(target, xt);
-        self.zbits.set(control, zc);
-        self.refresh_hash();
-    }
-
-    #[inline]
-    fn cz(&mut self, a: usize, b: usize) {
-        debug_assert_ne!(a, b, "CZ requires distinct qubits");
+    fn apply2(&mut self, a: usize, b: usize, rule: impl Fn([bool; 4]) -> ([bool; 4], bool)) {
+        debug_assert_ne!(a, b, "two-qubit gates require distinct qubits");
         debug_assert!(a < self.nqubits && b < self.nqubits, "qubit out of bounds");
-        let za = self.zbits[a] ^ self.xbits[b];
-        let zb = self.zbits[b] ^ self.xbits[a];
-        self.zbits.set(a, za);
-        self.zbits.set(b, zb);
+        let old = [self.xbits[a], self.zbits[a], self.xbits[b], self.zbits[b]];
+        let (new, _) = rule(old);
+        let [txa, tza, txb, tzb] = [0, 1, 2, 3].map(|i| old[i] ^ new[i]);
+        if skips_unchanged::<A>() && !(txa || tza || txb || tzb) {
+            return;
+        }
+        xor_bits2(&mut self.xbits, a, txa, b, txb);
+        xor_bits2(&mut self.zbits, a, tza, b, tzb);
         self.refresh_hash();
     }
-    #[inline]
-    fn s_dag(&mut self, q: usize) {
-        self.s(q);
-    }
 
+    /// X, Y and Z only flip signs, so they leave an unsigned word unchanged.
     #[inline]
-    fn sqrt_x(&mut self, q: usize) {
+    fn apply_sign1(&mut self, q: usize, _rule: impl Fn(bool, bool) -> ([bool; 2], bool)) {
         debug_assert!(q < self.nqubits, "qubit {q} out of bounds");
-        let x = self.xbits[q] ^ self.zbits[q];
-        self.xbits.set(q, x);
-        self.refresh_hash();
     }
-
-    #[inline]
-    fn sqrt_x_dag(&mut self, q: usize) {
-        self.sqrt_x(q);
-    }
-
-    #[inline]
-    fn sqrt_y(&mut self, q: usize) {
-        self.h(q);
-    }
-
-    #[inline]
-    fn sqrt_y_dag(&mut self, q: usize) {
-        self.h(q);
-    }
-
-    #[inline]
-    fn cy(&mut self, control: usize, target: usize) {
-        debug_assert_ne!(control, target, "CY requires distinct qubits");
-        debug_assert!(
-            control < self.nqubits && target < self.nqubits,
-            "qubit out of bounds"
-        );
-        let xc = self.xbits[control];
-        let zc = self.zbits[control];
-        let xt = self.xbits[target];
-        let zt = self.zbits[target];
-        self.zbits.set(control, zc ^ xt ^ zt);
-        self.xbits.set(target, xt ^ xc);
-        self.zbits.set(target, zt ^ xc);
-        self.refresh_hash();
-    }
-}
-
-impl<A, H> SymplecticColumns for PauliWord<A, H>
-where
-    A: PauliStorage,
-    H: BuildHasher + Default + HashFinalize,
-{
-    #[inline]
-    fn n_qubits(&self) -> usize {
-        self.nqubits
-    }
-
-    /// `H` on `q`: swap the X and Z bits. Touches only in-range slot `q`, so the
-    /// canonical-unused-bits invariant is preserved.
-    #[inline]
-    fn swap_xz(&mut self, q: usize) {
-        debug_assert!(q < self.nqubits, "qubit {q} out of bounds");
-        let xb = self.xbits[q];
-        let zb = self.zbits[q];
-        self.xbits.set(q, zb);
-        self.zbits.set(q, xb);
-        self.refresh_hash();
-    }
-
-    /// `S` on `q`: `z_q ⊕= x_q` (maps `X → Y`).
-    #[inline]
-    fn xor_z_from_x(&mut self, q: usize) {
-        debug_assert!(q < self.nqubits, "qubit {q} out of bounds");
-        let z = self.zbits[q] ^ self.xbits[q];
-        self.zbits.set(q, z);
-        self.refresh_hash();
-    }
-
-    /// `CNOT` bit rule, part one: `x_tgt ⊕= x_ctrl`.
-    #[inline]
-    fn xor_x_col(&mut self, ctrl: usize, tgt: usize) {
-        debug_assert!(
-            ctrl < self.nqubits && tgt < self.nqubits,
-            "qubit out of bounds"
-        );
-        let x = self.xbits[tgt] ^ self.xbits[ctrl];
-        self.xbits.set(tgt, x);
-        self.refresh_hash();
-    }
-
-    /// `CNOT` bit rule, part two: `z_ctrl ⊕= z_tgt`.
-    #[inline]
-    fn xor_z_col(&mut self, tgt: usize, ctrl: usize) {
-        debug_assert!(
-            ctrl < self.nqubits && tgt < self.nqubits,
-            "qubit out of bounds"
-        );
-        let z = self.zbits[ctrl] ^ self.zbits[tgt];
-        self.zbits.set(ctrl, z);
-        self.refresh_hash();
-    }
-
-    /// `CZ` on `(a, b)`: `z_a ⊕= x_b` and `z_b ⊕= x_a`.
-    #[inline]
-    fn cz_bits(&mut self, a: usize, b: usize) {
-        debug_assert!(a < self.nqubits && b < self.nqubits, "qubit out of bounds");
-        let za = self.zbits[a] ^ self.xbits[b];
-        let zb = self.zbits[b] ^ self.xbits[a];
-        self.zbits.set(a, za);
-        self.zbits.set(b, zb);
-        self.refresh_hash();
-    }
-}
-
-/// Bare words store no phase, so phase updates deliberately do nothing.
-impl<A: PauliStorage, H> PhaseTrack for PauliWord<A, H> {
-    #[inline]
-    fn flip_phase_where_xz(&mut self, _q: usize) {}
-    #[inline]
-    fn s_phase(&mut self, _q: usize) {}
-    #[inline]
-    fn cnot_phase(&mut self, _ctrl: usize, _tgt: usize) {}
-    #[inline]
-    fn cz_phase(&mut self, _a: usize, _b: usize) {}
-    #[inline]
-    fn x_phase(&mut self, _q: usize) {}
-    #[inline]
-    fn y_phase(&mut self, _q: usize) {}
-    #[inline]
-    fn z_phase(&mut self, _q: usize) {}
 }
 
 #[cfg(test)]
@@ -223,7 +84,7 @@ mod tests {
 
     #[test]
     fn single_qubit_operations_enforce_logical_bounds() {
-        let operations: [fn(&mut PauliWord, usize); 12] = [
+        let operations: [fn(&mut PauliWord, usize); 10] = [
             PauliWord::x,
             PauliWord::y,
             PauliWord::z,
@@ -234,8 +95,6 @@ mod tests {
             PauliWord::sqrt_x_dag,
             PauliWord::sqrt_y,
             PauliWord::sqrt_y_dag,
-            PauliWord::swap_xz,
-            PauliWord::xor_z_from_x,
         ];
         for operation in operations {
             for invalid in [1, 7, 63] {
@@ -247,14 +106,8 @@ mod tests {
 
     #[test]
     fn two_qubit_operations_enforce_logical_bounds() {
-        let operations: [fn(&mut PauliWord, usize, usize); 6] = [
-            PauliWord::cnot,
-            PauliWord::cy,
-            PauliWord::cz,
-            PauliWord::xor_x_col,
-            PauliWord::xor_z_col,
-            PauliWord::cz_bits,
-        ];
+        let operations: [fn(&mut PauliWord, usize, usize); 3] =
+            [PauliWord::cnot, PauliWord::cy, PauliWord::cz];
         for operation in operations {
             for input in ["X", "Y", "Z"] {
                 for invalid in [1, 7, 63] {
@@ -363,5 +216,83 @@ mod tests {
             assert_eq!(conj(input, |w| w.y(0)), input);
             assert_eq!(conj(input, |w| w.z(0)), input);
         }
+    }
+
+    fn random_gate<C: Clifford>(c: &mut C, g: u64, a: usize, b: usize) {
+        match g % 13 {
+            0 => c.x(a),
+            1 => c.y(a),
+            2 => c.z(a),
+            3 => c.h(a),
+            4 => c.s(a),
+            5 => c.s_dag(a),
+            6 => c.sqrt_x(a),
+            7 => c.sqrt_x_dag(a),
+            8 => c.sqrt_y(a),
+            9 => c.sqrt_y_dag(a),
+            10 => c.cnot(a, b),
+            11 => c.cz(a, b),
+            _ => c.cy(a, b),
+        }
+    }
+
+    /// Xorshift64, so the tests need no dependency.
+    fn rng(mut seed: u64) -> impl FnMut() -> u64 {
+        move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        }
+    }
+
+    /// After any gate sequence the cached hash equals that of a freshly built word.
+    fn hash_stays_structural<A: PauliStorage>(n: usize)
+    where
+        PauliWord<A>: Clifford,
+    {
+        let mut next = rng(0x9E37_79B9_7F4A_7C15);
+        for _ in 0..64 {
+            let start: String = (0..n)
+                .map(|_| ['I', 'X', 'Y', 'Z'][(next() % 4) as usize])
+                .collect();
+            let mut w = PauliWord::<A>::from(start.as_str());
+            for _ in 0..64 {
+                let a = (next() % n as u64) as usize;
+                let b = (a + 1 + (next() % (n as u64 - 1)) as usize) % n;
+                random_gate(&mut w, next(), a, b);
+                let fresh = PauliWord::<A>::from(w.to_string().as_str());
+                assert_eq!(w, fresh);
+                assert_eq!(w.key_hash(), fresh.key_hash());
+            }
+        }
+    }
+
+    /// One-word storage always writes; larger storage skips gates that change no
+    /// bit. Both must agree on every circuit.
+    #[test]
+    fn storage_sizes_agree() {
+        let mut next = rng(0xD1B5_4A32_D192_ED03);
+        for _ in 0..64 {
+            let start: String = (0..64)
+                .map(|_| ['I', 'X', 'Y', 'Z'][(next() % 4) as usize])
+                .collect();
+            let mut small = PauliWord::<u64>::from(start.as_str());
+            let mut large = PauliWord::<[u64; 4]>::from(start.as_str());
+            for _ in 0..256 {
+                let (g, a) = (next(), (next() % 64) as usize);
+                let b = (a + 1 + (next() % 63) as usize) % 64;
+                random_gate(&mut small, g, a, b);
+                random_gate(&mut large, g, a, b);
+            }
+            assert_eq!(small.to_string(), large.to_string());
+        }
+    }
+
+    #[test]
+    fn gates_keep_the_hash_structural() {
+        // One storage word always refreshes; larger storage skips unchanged gates.
+        hash_stays_structural::<u64>(5);
+        hash_stays_structural::<[u64; 4]>(200);
     }
 }

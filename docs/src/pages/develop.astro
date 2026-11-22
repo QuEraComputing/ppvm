@@ -127,7 +127,7 @@ const toc = [
 │   ├── ppvm-tableau         # Stabilizer + generalized-tableau simulator
 │   ├── ppvm-sym             # Symbolic (parametric) Pauli propagation
 │   ├── ppvm-lindblad        # Adaptive Heisenberg-picture Lindbladian evolution
-│   ├── ppvm-stim            # Stim program execution against the tableau
+│   ├── ppvm-stim            # Stim program execution: the tableau and a CSS frame sampler
 │   ├── stim-parser          # Standalone parser for the Stim circuit format
 │   └── ppvm-python-native   # PyO3 bindings, compiled into `ppvm` as `ppvm._core`
 ├── ppvm-python/             # Python package `ppvm` (maturin: wrapper + `ppvm._core`)
@@ -591,6 +591,10 @@ npm run build          # extract everything, then `astro build` → dist/</code>
         <code>StimProgram.from_file</code>. Execute parsed programs with
         <code>tab.run(prog)</code> or sample many shots with
         <code>ppvm.sample_stim</code> / <code>GeneralizedTableau.sample</code>.
+        Programs that are CSS up to Hadamard gates also run on the bit-packed
+        frame sampler <code>ppvm_stim::css::CssProgram</code>, with exact loss
+        and leakage; <code>sample_stim</code> uses it by default when
+        <code>StimProgram.is_css</code> is true.
       </li>
     </ul>
 

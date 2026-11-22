@@ -23,7 +23,7 @@ use crate::validate::{ExecError, validate};
 /// control slot of a controlled Pauli may be a `rec[...]`, so every target
 /// reached here through a non-control path is a qubit.
 #[inline]
-fn qubit(t: Target) -> usize {
+pub(crate) fn qubit(t: Target) -> usize {
     t.as_qubit()
         .expect("non-control gate targets are validated as qubits by validate")
 }

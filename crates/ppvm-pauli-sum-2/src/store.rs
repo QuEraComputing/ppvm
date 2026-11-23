@@ -34,20 +34,30 @@ pub trait SignFlipByKey: Support {
     fn flip_sign_by_key(&mut self, negate: impl Fn(&Self::Key) -> bool);
 }
 
+/// Update original coefficients, then accumulate optional generated terms.
+pub trait BranchInPlace: Support {
+    /// Visit each original term once; merge branches only after all visits finish.
+    /// Collisions add coefficients, exact zeros remain stored, and widths must match.
+    fn branch_in_place(
+        &mut self,
+        transform: impl FnMut(&Self::Key, &mut Self::Coeff) -> Option<(Self::Key, Self::Coeff)>,
+    );
+}
+
 /// Hash-map storage whose keys supply their own structural digests.
 /// Exact-zero coefficients remain present until [`Accumulate::reduce`] is called.
 #[derive(Debug)]
 pub struct HashMapStore<K, C> {
     terms: HashMap<K, C, IdentityBuildHasher>,
-    // Empty between operations; holds the terms whose keys a gate changes.
-    moved: Vec<(K, C)>,
+    // Empty between operations; buffers rekeyed or generated terms.
+    buffer: Vec<(K, C)>,
 }
 
 impl<K: Clone, C: Clone> Clone for HashMapStore<K, C> {
     fn clone(&self) -> Self {
         Self {
             terms: self.terms.clone(),
-            moved: Vec::new(),
+            buffer: Vec::new(),
         }
     }
 }
@@ -56,13 +66,13 @@ impl<K, C> StoreAlloc for HashMapStore<K, C> {
     fn with_capacity(capacity: usize) -> Self {
         Self {
             terms: HashMap::with_capacity_and_hasher(capacity, IdentityBuildHasher),
-            moved: Vec::new(),
+            buffer: Vec::new(),
         }
     }
 
     fn clear(&mut self) {
         self.terms.clear();
-        self.moved.clear();
+        self.buffer.clear();
     }
 }
 
@@ -137,7 +147,7 @@ impl<K: Indexable, C: Coefficient> Retain<K, C> for HashMapStore<K, C> {
 
 impl<K: Indexable, C: Coefficient> RekeyBijective for HashMapStore<K, C> {
     fn rekey_bijective(&mut self, mut transform: impl FnMut(&K, &mut C) -> Option<K>) {
-        let mut moved = std::mem::take(&mut self.moved);
+        let mut moved = std::mem::take(&mut self.buffer);
         // Unchanged keys stay in place; only changed keys move to new buckets.
         self.terms.retain(|key, coeff| match transform(key, coeff) {
             None => true,
@@ -151,7 +161,7 @@ impl<K: Indexable, C: Coefficient> RekeyBijective for HashMapStore<K, C> {
             let replaced = self.terms.insert(key, coeff);
             debug_assert!(replaced.is_none(), "rekey must preserve distinct keys");
         }
-        self.moved = moved;
+        self.buffer = moved;
     }
 }
 
@@ -162,6 +172,21 @@ impl<K: Indexable, C: Coefficient> SignFlipByKey for HashMapStore<K, C> {
                 coeff.mul_sign_assign(-1);
             }
         }
+    }
+}
+
+impl<K: Indexable, C: Coefficient> BranchInPlace for HashMapStore<K, C> {
+    fn branch_in_place(&mut self, mut transform: impl FnMut(&K, &mut C) -> Option<(K, C)>) {
+        let mut branches = std::mem::take(&mut self.buffer);
+        for (key, coeff) in &mut self.terms {
+            if let Some(branch) = transform(key, coeff) {
+                branches.push(branch);
+            }
+        }
+        for (key, coeff) in branches.drain(..) {
+            self.terms.accumulate(key, coeff);
+        }
+        self.buffer = branches;
     }
 }
 

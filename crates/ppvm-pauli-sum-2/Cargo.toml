@@ -16,3 +16,7 @@ ppvm-lossy-pauli-word-2 = { path = "../ppvm-lossy-pauli-word-2" }
 ppvm-phased-pauli-word-2 = { path = "../ppvm-phased-pauli-word-2" }
 num = "0.4"
 approx = { version = "0.5.1", features = ["num-complex"] }
+
+[dev-dependencies]
+ppvm-pauli-sum = { path = "../ppvm-pauli-sum" }
+criterion = "0.8.2"

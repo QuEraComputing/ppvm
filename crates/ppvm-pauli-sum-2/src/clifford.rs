@@ -126,6 +126,7 @@ impl<S, P> Clifford for Sum<S, P>
 where
     S: RekeyBijective + SignFlipByKey,
     S::Key: PauliBits + LossInfo,
+    Phased<S::Key>: Clifford,
 {
     fn x(&mut self, qubit: usize) {
         self.check_qubit(qubit);
@@ -192,6 +193,7 @@ impl<S, P> CliffordBatch for Sum<S, P>
 where
     S: RekeyBijective + SignFlipByKey,
     S::Key: PauliBits + LossInfo,
+    Phased<S::Key>: Clifford,
 {
     fn x_many(&mut self, indices: &[usize]) {
         if let &[qubit] = indices {

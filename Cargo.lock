@@ -2250,6 +2250,7 @@ dependencies = [
  "ppvm-pauli-sum",
  "ppvm-pauli-word-2",
  "ppvm-phased-pauli-word-2",
+ "ppvm-tableau-2",
  "ppvm-traits-2",
 ]
 

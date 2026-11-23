@@ -9,6 +9,9 @@ mod loss;
 mod noise;
 mod ops;
 mod policy;
+mod product;
+mod projection;
+mod readout;
 mod rotation;
 mod store;
 mod sum;
@@ -16,6 +19,7 @@ mod sum;
 pub use policy::{
     CoefficientThreshold, CombinedPolicy, MaxLossWeight, MaxPauliWeight, NoPolicy, Policy,
 };
+pub use readout::{ParsePatternError, Pattern, SiteSet};
 pub use store::{
     BranchInPlace, HashMapStore, RekeyBijective, SignFlipByKey, StoreAlloc, UpdateCoefficients,
 };

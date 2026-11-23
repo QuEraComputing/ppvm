@@ -4,8 +4,8 @@
 use std::collections::HashMap;
 
 use ppvm_traits_2::{
-    Accumulate, Coefficient, IdentityBuildHasher, Indexable, Pair, Retain, Scale, Support,
-    TermBatch,
+    Accumulate, Coefficient, IdentityBuildHasher, ImaginaryUnit, Indexable, KeyProduct, Multiply,
+    Pair, Retain, Scale, Support, TermBatch,
 };
 
 /// Allocation and reuse of sparse-sum storage.
@@ -145,6 +145,18 @@ where
     K: Indexable,
     C: Coefficient,
 {
+}
+
+/// Delegates to the map's product, which absorbs each key product's phase
+/// into its coefficient and leaves exact zeros stored.
+impl<K, C> Multiply for HashMapStore<K, C>
+where
+    K: Indexable + KeyProduct,
+    C: ImaginaryUnit,
+{
+    fn multiply_into(&self, other: &Self, acc: &mut Self) {
+        self.terms.multiply_into(&other.terms, &mut acc.terms);
+    }
 }
 
 impl<K: Indexable, C: Coefficient> Retain<K, C> for HashMapStore<K, C> {

@@ -135,6 +135,19 @@ impl<S: Support + StoreAlloc, P> Sum<S, P> {
     pub fn clear(&mut self) {
         self.storage.clear();
     }
+
+    /// An empty sum with this sum's width, policy, and preserved keys.
+    pub(crate) fn empty_like(&self, capacity: usize) -> Self
+    where
+        P: Clone,
+    {
+        Self {
+            storage: S::with_capacity(capacity),
+            policy: self.policy.clone(),
+            n_sites: self.n_sites,
+            preserved_keys: self.preserved_keys.clone(),
+        }
+    }
 }
 
 impl<S, P> Sum<S, P>

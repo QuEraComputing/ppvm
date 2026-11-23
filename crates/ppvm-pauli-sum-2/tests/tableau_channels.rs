@@ -10,7 +10,8 @@ use approx::assert_abs_diff_eq;
 use ppvm_pauli_sum_2::LossyPauliSum;
 use ppvm_tableau_2::{ActiveDormant, DenseState, GeneralizedTableau};
 use ppvm_traits_2::{
-    Clifford, Depolarizing, Depolarizing2, LossChannel, Measure, PauliError, TwoQubitPauliError,
+    Clifford, CorrelatedLossChannel, Depolarizing, Depolarizing2, LossChannel, Measure, PauliError,
+    ResetLossChannel, TwoQubitPauliError,
 };
 
 type Sim = GeneralizedTableau<ActiveDormant<DenseState>>;
@@ -119,4 +120,30 @@ fn pauli_and_depolarizing_averages_agree_with_tableau() {
         ),
     ];
     assert_matches_tableau(&["00", "11", "L1", "1L", "LL"], &channels);
+}
+
+#[test]
+fn loss_observables_agree_with_tableau_trajectories() {
+    let channels: [ChannelPair; 4] = [
+        (|s| s.loss_channel(0, 0.23), |s| s.loss_channel(0, 0.23)),
+        (
+            |s| s.correlated_loss_channel(0, 1, [0.11, 0.19, 0.37]),
+            |s| s.correlated_loss_channel(0, 1, [0.11, 0.19, 0.37]),
+        ),
+        (|s| s.reset_loss_channel(0), |s| s.reset_loss_channel(0)),
+        (
+            |s| {
+                s.loss_channel(0, 0.23);
+                s.correlated_loss_channel(0, 1, [0.11, 0.19, 0.37]);
+                s.reset_loss_channel(1);
+            },
+            // Heisenberg order: the last forward channel acts first.
+            |s| {
+                s.reset_loss_channel(1);
+                s.correlated_loss_channel(0, 1, [0.11, 0.19, 0.37]);
+                s.loss_channel(0, 0.23);
+            },
+        ),
+    ];
+    assert_matches_tableau(&["10", "L1", "1L", "LL"], &channels);
 }

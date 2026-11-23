@@ -3,7 +3,9 @@
 
 mod clifford;
 mod compare;
+mod damping;
 mod display;
+mod loss;
 mod noise;
 mod ops;
 mod policy;

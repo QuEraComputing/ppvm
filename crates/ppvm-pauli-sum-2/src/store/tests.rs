@@ -53,6 +53,37 @@ fn scaling_and_retaining_do_not_implicitly_reduce() {
 }
 
 #[test]
+fn branching_merges_many_branches_per_term_after_all_visits() {
+    let mut store = Store::with_capacity(4);
+    for (word, coeff) in [("X", 1.0), ("Y", 2.0), ("Z", 3.0)] {
+        store.accumulate(word.into(), coeff);
+    }
+    let (x, y) = (PauliWord::from("X"), PauliWord::from("Y"));
+    let mut visits = 0;
+    store.branch_in_place(|key, coeff| {
+        visits += 1;
+        *coeff *= 10.0;
+        if *key == x {
+            // Two branches: one new key, one colliding with an original key.
+            vec![("I".into(), 0.5), ("Z".into(), 4.0)]
+        } else if *key == y {
+            // Cancels X's new branch; the exact zero stays stored.
+            vec![("I".into(), -0.5)]
+        } else {
+            vec![]
+        }
+    });
+    // Only originals are visited, and Z is scaled before X's branch lands:
+    // merging early would give (3 + 4) * 10 = 70.
+    assert_eq!(visits, 3);
+    assert_eq!(store.len(), 4);
+    for (word, coeff) in [("I", 0.0), ("X", 10.0), ("Y", 20.0), ("Z", 34.0)] {
+        assert_eq!(store.get(&word.into()), Some(coeff), "{word}");
+    }
+    assert!(store.buffer.is_empty());
+}
+
+#[test]
 fn complex_pairings_preserve_operand_order() {
     let x = PauliWord::from("X");
     let mut left = HashMapStore::<PauliWord, Complex<f64>>::with_capacity(2);

@@ -28,6 +28,14 @@ pub trait RekeyBijective: Support {
     );
 }
 
+/// Negate selected coefficients without moving keys or rebuilding storage.
+/// Kept apart from [`UpdateCoefficients`]: Clifford `X`/`Y`/`Z` measured ~25%
+/// slower when routed through the general update closure.
+pub trait SignFlipByKey: Support {
+    /// Negate a coefficient exactly when `negate` returns true for its key.
+    fn flip_sign_by_key(&mut self, negate: impl Fn(&Self::Key) -> bool);
+}
+
 /// Change coefficients without copying keys or generating terms.
 pub trait UpdateCoefficients: Support {
     /// Visit each coefficient in place, preserving keys and explicit zeros.
@@ -162,6 +170,16 @@ impl<K: Indexable, C: Coefficient> RekeyBijective for HashMapStore<K, C> {
             debug_assert!(replaced.is_none(), "rekey must preserve distinct keys");
         }
         self.buffer = moved;
+    }
+}
+
+impl<K: Indexable, C: Coefficient> SignFlipByKey for HashMapStore<K, C> {
+    fn flip_sign_by_key(&mut self, negate: impl Fn(&K) -> bool) {
+        for (key, coeff) in &mut self.terms {
+            if negate(key) {
+                coeff.mul_sign_assign(-1);
+            }
+        }
     }
 }
 

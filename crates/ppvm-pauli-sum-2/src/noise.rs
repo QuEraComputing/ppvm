@@ -106,7 +106,9 @@ where
         self.check_pair(a, b);
         let factor = S::Coeff::one() - p * S::Coeff::from(16.0 / 15.0);
         self.storage.update_coefficients(|key, coeff| {
-            if live_code(key, a) != 0 || live_code(key, b) != 0 {
+            let active_a = !key.is_lost(a) && key.pauli_code(a) != 0;
+            let active_b = !key.is_lost(b) && key.pauli_code(b) != 0;
+            if active_a || active_b {
                 *coeff *= &factor;
             }
         });

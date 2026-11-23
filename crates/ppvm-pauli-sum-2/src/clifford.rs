@@ -4,7 +4,7 @@
 use ppvm_phased_pauli_word_2::Phased;
 use ppvm_traits_2::{Clifford, CliffordBatch, Coefficient, PauliBits, Phase, loss::LossInfo};
 
-use crate::{RekeyBijective, Sum, UpdateCoefficients};
+use crate::{RekeyBijective, SignFlipByKey, Sum};
 
 /// Whether a gate on `qubit` can change `key`: every Clifford fixes `I` and lost sites.
 fn active<K: PauliBits + LossInfo>(key: &K, qubit: usize) -> bool {
@@ -93,15 +93,7 @@ where
     }
 }
 
-impl<S: UpdateCoefficients, P> Sum<S, P> {
-    fn flip_signs(&mut self, negate: impl Fn(&S::Key) -> bool) {
-        self.storage.update_coefficients(|key, coeff| {
-            if negate(key) {
-                coeff.mul_sign_assign(-1);
-            }
-        });
-    }
-
+impl<S: SignFlipByKey, P> Sum<S, P> {
     fn flip_signs_many(&mut self, indices: &[usize], negate: impl Fn(&S::Key, usize) -> bool) {
         if indices.is_empty() {
             return;
@@ -109,7 +101,8 @@ impl<S: UpdateCoefficients, P> Sum<S, P> {
         for &qubit in indices {
             self.check_qubit(qubit);
         }
-        self.flip_signs(|key| indices.iter().fold(false, |flip, &q| flip ^ negate(key, q)));
+        self.storage
+            .flip_sign_by_key(|key| indices.iter().fold(false, |flip, &q| flip ^ negate(key, q)));
     }
 }
 
@@ -117,23 +110,26 @@ impl<S: UpdateCoefficients, P> Sum<S, P> {
 /// Two-qubit gates also require distinct indices, including on empty sums.
 impl<S, P> Clifford for Sum<S, P>
 where
-    S: RekeyBijective + UpdateCoefficients,
+    S: RekeyBijective + SignFlipByKey,
     S::Key: PauliBits + LossInfo,
     Phased<S::Key>: Clifford,
 {
     fn x(&mut self, qubit: usize) {
         self.check_qubit(qubit);
-        self.flip_signs(|key| !key.is_lost(qubit) && key.z_bit(qubit));
+        self.storage
+            .flip_sign_by_key(|key| !key.is_lost(qubit) && key.z_bit(qubit));
     }
 
     fn y(&mut self, qubit: usize) {
         self.check_qubit(qubit);
-        self.flip_signs(|key| !key.is_lost(qubit) && (key.x_bit(qubit) ^ key.z_bit(qubit)));
+        self.storage
+            .flip_sign_by_key(|key| !key.is_lost(qubit) && (key.x_bit(qubit) ^ key.z_bit(qubit)));
     }
 
     fn z(&mut self, qubit: usize) {
         self.check_qubit(qubit);
-        self.flip_signs(|key| !key.is_lost(qubit) && key.x_bit(qubit));
+        self.storage
+            .flip_sign_by_key(|key| !key.is_lost(qubit) && key.x_bit(qubit));
     }
 
     fn h(&mut self, qubit: usize) {
@@ -181,7 +177,7 @@ where
 /// Pauli batches only update signs. Validate the whole batch before changing terms.
 impl<S, P> CliffordBatch for Sum<S, P>
 where
-    S: RekeyBijective + UpdateCoefficients,
+    S: RekeyBijective + SignFlipByKey,
     S::Key: PauliBits + LossInfo,
     Phased<S::Key>: Clifford,
 {

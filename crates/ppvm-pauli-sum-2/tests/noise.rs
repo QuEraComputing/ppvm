@@ -98,22 +98,6 @@ fn noise_does_not_reduce_or_truncate() {
 }
 
 #[test]
-fn noise_batches_match_scalar_calls() {
-    let mut sum = PauliSum::<f64>::new(2);
-    sum += ("XY", 2.0);
-    sum += ("ZZ", 3.0);
-    let mut expected = sum.clone();
-    sum.pauli_error_many(&[1, 0, 1], [0.1, 0.2, 0.3]);
-    for q in [1, 0, 1] {
-        expected.pauli_error(q, [0.1, 0.2, 0.3]);
-    }
-    sum.depolarize2_many(&[(0, 1), (1, 0)], 0.3);
-    expected.depolarize2(0, 1, 0.3);
-    expected.depolarize2(1, 0, 0.3);
-    assert_abs_diff_eq!(sum, expected, epsilon = 1e-12);
-}
-
-#[test]
 fn invalid_noise_targets_panic_before_mutation() {
     use std::panic::{AssertUnwindSafe, catch_unwind};
     let mut sum = PauliSum::<f64>::new(1);

@@ -23,19 +23,16 @@ where
             if key.is_lost(qubit) {
                 return None;
             }
-            // Packed codes: I = 0, X = 1, Z = 2, Y = 3.
-            match key.pauli_code(qubit) {
-                1 | 3 => {
-                    *coeff *= transverse;
-                    None
-                }
-                2 => {
-                    let branch = *coeff * gamma;
-                    *coeff *= survive;
-                    Some((key.toggled_bits(qubit, false, true), branch))
-                }
-                _ => None,
+            if key.x_bit(qubit) {
+                *coeff *= transverse;
+                return None;
             }
+            if !key.z_bit(qubit) {
+                return None;
+            }
+            let branch = *coeff * gamma;
+            *coeff *= survive;
+            Some((key.toggled_bits(qubit, false, true), branch))
         });
     }
 }

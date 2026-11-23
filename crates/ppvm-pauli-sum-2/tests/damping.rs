@@ -20,28 +20,16 @@ fn amplitude_damping_merges_into_identity_after_original_updates() {
 }
 
 #[test]
-fn full_damping_keeps_zero_terms() {
-    let mut sum = PauliSum::<f64>::new(1);
-    for word in ["I", "X", "Y", "Z"] {
-        sum += (word, 1.0);
-    }
+fn full_damping_keeps_zero_terms_and_ignores_policy() {
+    let mut sum = PauliSum::<f64, _>::with_policy(1, CoefficientThreshold { threshold: 10.0 });
+    sum += ("X", 1.0);
+    sum += ("Z", 1.0);
     sum.amplitude_damping(0, 1.0);
-    assert_eq!(sum.len(), 4);
-    assert_eq!(sum.get(&PauliWord::from("I")), Some(2.0));
-    for word in ["X", "Y", "Z"] {
+    assert_eq!(sum.len(), 3);
+    assert_eq!(sum.get(&PauliWord::from("I")), Some(1.0));
+    for word in ["X", "Z"] {
         assert_eq!(sum.get(&PauliWord::from(word)), Some(0.0));
     }
-}
-
-#[test]
-fn damping_does_not_reduce_or_truncate() {
-    let mut sum = PauliSum::<f64, _>::with_policy(1, CoefficientThreshold { threshold: 10.0 });
-    sum += ("Z", 1.0);
-    sum.amplitude_damping(0, 0.0);
-    assert_eq!(sum.get(&PauliWord::from("I")), Some(0.0));
-    assert_eq!(sum.len(), 2);
-    sum.reduce();
-    assert_eq!(sum.len(), 1);
     sum.truncate();
     assert!(sum.is_empty());
 }

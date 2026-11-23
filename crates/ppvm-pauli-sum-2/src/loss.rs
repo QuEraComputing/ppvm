@@ -1,9 +1,10 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
-//! Heisenberg loss maps matching the existing engine. Loss branches clear an
-//! observable's loss flag; reset maps I/Z to an additional lost observable.
-//! Zero coefficients stay stored, and truncation remains caller-controlled.
+//! Heisenberg loss maps matching `ppvm-tableau-2`. `I` projects onto a live
+//! site and `L` onto a lost one. Loss branches clear an observable's loss flag;
+//! reset adds an `L` copy of each `I`/`Z` term, since a lost qubit returns in
+//! `|0>`. Zero coefficients stay stored; reduction is caller-controlled.
 
 use crate::{BranchInPlace, Sum};
 use num::{One, Zero};
@@ -42,24 +43,28 @@ where
     ) {
         self.check_pair(a, b);
         let survive = S::Coeff::one() - (single.clone() + single.clone()) - both.clone();
-        let one_lost = S::Coeff::one() - after_loss.clone();
+        let partner_survives = S::Coeff::one() - after_loss.clone();
         self.storage.branch_in_place(|key, coeff| {
             let mut branches = [None, None, None];
             match (key.is_lost(a), key.is_lost(b)) {
+                (false, false) => *coeff *= &survive,
+                // Reached from one already lost (p_LN) or from both live (p_LL).
                 (true, true) => {
                     let weight = coeff.clone() * after_loss.clone();
-                    branches[0] = Some((key.loss_cleared(a), weight.clone()));
-                    branches[1] = Some((key.loss_cleared(b), weight));
-                    let mut cleared = key.loss_cleared(a);
-                    cleared.clear_lost(b);
-                    branches[2] = Some((cleared, coeff.clone() * both.clone()));
+                    let mut neither = key.loss_cleared(a);
+                    neither.clear_lost(b);
+                    branches = [
+                        Some((key.loss_cleared(a), weight.clone())),
+                        Some((key.loss_cleared(b), weight)),
+                        Some((neither, coeff.clone() * both.clone())),
+                    ];
                 }
-                (lost_a, lost_b) if lost_a || lost_b => {
-                    let qubit = if lost_a { a } else { b };
-                    branches[0] = Some((key.loss_cleared(qubit), coeff.clone() * single.clone()));
-                    *coeff *= &one_lost;
+                // Reached from both live (p_LQ), or the partner survived p_LN.
+                (lost_a, _) => {
+                    let lost = if lost_a { a } else { b };
+                    branches[0] = Some((key.loss_cleared(lost), coeff.clone() * single.clone()));
+                    *coeff *= &partner_survives;
                 }
-                _ => *coeff *= &survive,
             }
             branches.into_iter().flatten()
         });

@@ -6,7 +6,7 @@
 //! `⟨0…0|O|0…0⟩`; conjugate by `X` first to read other basis states. `I`
 //! denotes a live site, so lost sites only match patterns that accept `L`.
 
-use std::{fmt, ops::BitOr, str::FromStr};
+use std::ops::BitOr;
 
 use num::Zero;
 
@@ -47,37 +47,19 @@ impl BitOr for SiteSet {
 }
 
 /// One accepted [`SiteSet`] per site; a word matches when every site does.
-/// Parses from one token per site: `I`, `X`, `Y`, `Z`, `L`, `_` (any), or a
-/// bracketed union such as `[IZ]`.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+/// Build one from a `Vec<SiteSet>` in site order.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pattern {
     sites: Vec<SiteSet>,
 }
 
 impl Pattern {
-    /// The same set on every site.
-    pub fn uniform(n_sites: usize, set: SiteSet) -> Self {
-        Self {
-            sites: vec![set; n_sites],
-        }
-    }
-
     /// `{I, Z}` on every site: readout in the all-zero state.
     pub fn zero_state(n_sites: usize) -> Self {
-        Self::uniform(n_sites, SiteSet::I | SiteSet::Z)
+        vec![SiteSet::I | SiteSet::Z; n_sites].into()
     }
 
-    pub fn n_sites(&self) -> usize {
-        self.sites.len()
-    }
-
-    /// Whether every site of `word` is accepted. Panics if the widths differ.
-    pub fn matches<W: PauliBits + LossInfo>(&self, word: &W) -> bool {
-        assert_eq!(
-            word.n_sites(),
-            self.n_sites(),
-            "pattern width must match word width"
-        );
+    fn matches<W: PauliBits + LossInfo>(&self, word: &W) -> bool {
         self.sites
             .iter()
             .enumerate()
@@ -92,64 +74,6 @@ impl From<Vec<SiteSet>> for Pattern {
     }
 }
 
-/// An invalid pattern string, with the reason.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ParsePatternError(String);
-
-impl fmt::Display for ParsePatternError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "invalid pattern: {}", self.0)
-    }
-}
-
-impl std::error::Error for ParsePatternError {}
-
-fn letter(c: char) -> Option<SiteSet> {
-    Some(match c {
-        'I' => SiteSet::I,
-        'X' => SiteSet::X,
-        'Y' => SiteSet::Y,
-        'Z' => SiteSet::Z,
-        'L' => SiteSet::L,
-        _ => return None,
-    })
-}
-
-impl FromStr for Pattern {
-    type Err = ParsePatternError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let error = |reason: String| Err(ParsePatternError(reason));
-        let mut sites = Vec::new();
-        let mut chars = s.chars();
-        while let Some(c) = chars.next() {
-            let set = match c {
-                '_' => SiteSet::ANY,
-                '[' => {
-                    let mut set = SiteSet(0);
-                    loop {
-                        match chars.next() {
-                            Some(']') if set != SiteSet(0) => break set,
-                            Some(']') => return error("empty `[]`".into()),
-                            Some(c) => match letter(c) {
-                                Some(value) => set = set | value,
-                                None => return error(format!("unexpected `{c}` in `[...]`")),
-                            },
-                            None => return error("unclosed `[`".into()),
-                        }
-                    }
-                }
-                c => match letter(c) {
-                    Some(set) => set,
-                    None => return error(format!("unexpected `{c}`")),
-                },
-            };
-            sites.push(set);
-        }
-        Ok(Self { sites })
-    }
-}
-
 impl<S: Support, P> Sum<S, P>
 where
     S::Key: PauliBits + LossInfo,
@@ -158,7 +82,7 @@ where
     /// Panics if the pattern's width differs from the sum's.
     pub fn trace(&self, pattern: &Pattern) -> S::Coeff {
         assert_eq!(
-            pattern.n_sites(),
+            pattern.sites.len(),
             self.n_sites(),
             "pattern width must match sum width"
         );

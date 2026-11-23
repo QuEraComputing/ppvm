@@ -7,7 +7,7 @@
 //! words have no product. Exact zeros stay stored; reduction and truncation are
 //! explicit. Results keep the left operand's policy and preserved keys.
 
-use std::ops::{Mul, MulAssign};
+use std::ops::Mul;
 
 use ppvm_traits_2::{ImaginaryUnit, KeyProduct, Multiply};
 
@@ -34,17 +34,5 @@ where
         let mut out = self.empty_like(self.len().max(rhs.len()));
         self.storage.multiply_into(&rhs.storage, &mut out.storage);
         out
-    }
-}
-
-impl<S, P, P2> MulAssign<&Sum<S, P2>> for Sum<S, P>
-where
-    S: Multiply + StoreAlloc,
-    S::Key: KeyProduct,
-    S::Coeff: ImaginaryUnit,
-    P: Clone,
-{
-    fn mul_assign(&mut self, rhs: &Sum<S, P2>) {
-        *self = &*self * rhs;
     }
 }

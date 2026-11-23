@@ -19,7 +19,7 @@ mod sum;
 pub use policy::{
     CoefficientThreshold, CombinedPolicy, MaxLossWeight, MaxPauliWeight, NoPolicy, Policy,
 };
-pub use readout::{ParsePatternError, Pattern, SiteSet};
+pub use readout::{Pattern, SiteSet};
 pub use store::{
     BranchInPlace, HashMapStore, RekeyBijective, SignFlipByKey, StoreAlloc, UpdateCoefficients,
 };

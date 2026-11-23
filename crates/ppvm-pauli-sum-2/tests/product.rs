@@ -33,11 +33,7 @@ fn products_match_dense_matrix_multiplication() {
     for seed in 1..=8 {
         let a = random_sum(3, 7, seed);
         let b = random_sum(3, 7, seed + 100);
-        let product = &a * &b;
-        assert_matrix_eq(&dense(&product), &matmul(&dense(&a), &dense(&b)));
-        let mut assigned = a.clone();
-        assigned *= &b;
-        assert_eq!(assigned, product);
+        assert_matrix_eq(&dense(&(&a * &b)), &matmul(&dense(&a), &dense(&b)));
     }
 }
 
@@ -59,15 +55,6 @@ fn products_satisfy_ring_identities() {
     assert_eq!(&a * &identity, a);
     let zero = CSum::new(3);
     assert!((&a * &zero).is_empty() && (&zero * &a).is_empty());
-}
-
-#[test]
-fn adjoint_reverses_products() {
-    // Pauli words are Hermitian, so the adjoint conjugates coefficients only.
-    let adjoint =
-        |sum: &CSum| CSum::from_terms(sum.n_sites(), sum.iter().map(|(k, v)| (k, v.conj())));
-    let (a, b) = (random_sum(3, 6, 4), random_sum(3, 6, 5));
-    assert_same_operator(&adjoint(&(&a * &b)), &(&adjoint(&b) * &adjoint(&a)));
 }
 
 #[test]

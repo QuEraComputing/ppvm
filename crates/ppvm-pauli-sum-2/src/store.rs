@@ -34,6 +34,12 @@ pub trait SignFlipByKey: Support {
     fn flip_sign_by_key(&mut self, negate: impl Fn(&Self::Key) -> bool);
 }
 
+/// Change coefficients without copying keys or generating terms.
+pub trait UpdateCoefficients: Support {
+    /// Visit each coefficient in place, preserving keys and explicit zeros.
+    fn update_coefficients(&mut self, update: impl FnMut(&Self::Key, &mut Self::Coeff));
+}
+
 /// Update original coefficients, then accumulate optional generated terms.
 pub trait BranchInPlace: Support {
     /// Visit each original term once; merge branches only after all visits finish.
@@ -171,6 +177,14 @@ impl<K: Indexable, C: Coefficient> SignFlipByKey for HashMapStore<K, C> {
             if negate(key) {
                 coeff.mul_sign_assign(-1);
             }
+        }
+    }
+}
+
+impl<K: Indexable, C: Coefficient> UpdateCoefficients for HashMapStore<K, C> {
+    fn update_coefficients(&mut self, mut update: impl FnMut(&K, &mut C)) {
+        for (key, coeff) in &mut self.terms {
+            update(key, coeff);
         }
     }
 }

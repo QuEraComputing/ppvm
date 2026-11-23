@@ -6,13 +6,14 @@ mod compare;
 mod display;
 mod ops;
 mod policy;
+mod rotation;
 mod store;
 mod sum;
 
 pub use policy::{
     CoefficientThreshold, CombinedPolicy, MaxLossWeight, MaxPauliWeight, NoPolicy, Policy,
 };
-pub use store::{HashMapStore, RekeyBijective, SignFlipByKey, StoreAlloc};
+pub use store::{BranchInPlace, HashMapStore, RekeyBijective, SignFlipByKey, StoreAlloc};
 pub use sum::{PreserveSet, Sum};
 
 pub use ppvm_lossy_pauli_word_2::LossyPauliWord;

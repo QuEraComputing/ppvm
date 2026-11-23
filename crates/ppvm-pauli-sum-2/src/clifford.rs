@@ -2,23 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use ppvm_phased_pauli_word_2::Phased;
-use ppvm_traits_2::{
-    Clifford, CliffordBatch, Coefficient, PauliBits, Phase, Support, loss::LossInfo,
-};
+use ppvm_traits_2::{Clifford, CliffordBatch, Coefficient, PauliBits, Phase, loss::LossInfo};
 
 use crate::{RekeyBijective, SignFlipByKey, Sum};
-
-impl<S: Support, P> Sum<S, P> {
-    fn check_qubit(&self, qubit: usize) {
-        assert!(qubit < self.n_sites(), "qubit out of bounds");
-    }
-
-    fn check_pair(&self, qubit0: usize, qubit1: usize) {
-        self.check_qubit(qubit0);
-        self.check_qubit(qubit1);
-        assert_ne!(qubit0, qubit1, "two-qubit gates require distinct qubits");
-    }
-}
 
 /// Whether a gate on `qubit` can change `key`: every Clifford fixes `I` and lost sites.
 fn active<K: PauliBits + LossInfo>(key: &K, qubit: usize) -> bool {
@@ -126,6 +112,7 @@ impl<S, P> Clifford for Sum<S, P>
 where
     S: RekeyBijective + SignFlipByKey,
     S::Key: PauliBits + LossInfo,
+    Phased<S::Key>: Clifford,
 {
     fn x(&mut self, qubit: usize) {
         self.check_qubit(qubit);
@@ -192,6 +179,7 @@ impl<S, P> CliffordBatch for Sum<S, P>
 where
     S: RekeyBijective + SignFlipByKey,
     S::Key: PauliBits + LossInfo,
+    Phased<S::Key>: Clifford,
 {
     fn x_many(&mut self, indices: &[usize]) {
         if let &[qubit] = indices {

@@ -19,18 +19,11 @@ fn colliding_branches_use_original_coefficients() {
         sum += ("I", 4.0);
         sum.rotate_1(axis, 0, 0.37);
         let (sin, cos) = 0.37_f64.sin_cos();
-        assert_abs_diff_eq!(
-            sum.get(&PauliWord::from(positive)).unwrap(),
-            2.0 * cos - 3.0 * sin,
-            epsilon = 1e-12
-        );
-        assert_abs_diff_eq!(
-            sum.get(&PauliWord::from(negative)).unwrap(),
-            3.0 * cos + 2.0 * sin,
-            epsilon = 1e-12
-        );
-        assert_eq!(sum.get(&PauliWord::from("I")), Some(4.0));
-        assert_eq!(sum.len(), 3);
+        let mut expected = PauliSum::<f64>::new(1);
+        expected += (positive, 2.0 * cos - 3.0 * sin);
+        expected += (negative, 3.0 * cos + 2.0 * sin);
+        expected += ("I", 4.0);
+        assert_abs_diff_eq!(sum, expected, epsilon = 1e-12);
     }
 }
 
@@ -40,16 +33,10 @@ fn complex_coefficients_with_real_angles() {
     let coeff = Complex::new(2.0, -3.0);
     sum += ("Z", coeff);
     sum.rx(0, 0.37_f64);
-    assert_abs_diff_eq!(
-        sum.get(&PauliWord::from("Z")).unwrap(),
-        coeff * 0.37_f64.cos(),
-        epsilon = 1e-12
-    );
-    assert_abs_diff_eq!(
-        sum.get(&PauliWord::from("Y")).unwrap(),
-        coeff * 0.37_f64.sin(),
-        epsilon = 1e-12
-    );
+    let mut expected = PauliSum::<Complex<f64>>::new(1);
+    expected += ("Z", coeff * 0.37_f64.cos());
+    expected += ("Y", coeff * 0.37_f64.sin());
+    assert_abs_diff_eq!(sum, expected, epsilon = 1e-12);
 }
 
 #[test]
@@ -63,7 +50,10 @@ fn zeros_and_truncation_remain_explicit() {
     assert_eq!(sum.len(), 1);
     sum.truncate();
     assert!(sum.is_empty());
+}
 
+#[test]
+fn exact_cancellation_keeps_zero_until_reduced() {
     // Z cancels exactly: sin(theta) * cos(theta) - cos(theta) * sin(theta).
     let (sin, cos) = 0.37_f64.sin_cos();
     let mut sum = PauliSum::<f64>::new(1);
@@ -72,6 +62,8 @@ fn zeros_and_truncation_remain_explicit() {
     sum.rx(0, 0.37);
     assert_eq!(sum.get(&PauliWord::from("Z")), Some(0.0));
     assert_eq!(sum.len(), 2);
+    sum.reduce();
+    assert_eq!(sum.len(), 1);
 }
 
 #[test]

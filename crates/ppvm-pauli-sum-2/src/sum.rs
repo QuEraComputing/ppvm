@@ -29,6 +29,16 @@ pub struct Sum<S: Support, P = NoPolicy> {
 }
 
 impl<S: Support, P> Sum<S, P> {
+    pub(crate) fn check_qubit(&self, qubit: usize) {
+        assert!(qubit < self.n_sites(), "qubit out of bounds");
+    }
+
+    pub(crate) fn check_pair(&self, qubit0: usize, qubit1: usize) {
+        self.check_qubit(qubit0);
+        self.check_qubit(qubit1);
+        assert_ne!(qubit0, qubit1, "two-qubit gates require distinct qubits");
+    }
+
     /// Number of sites, including when the sum is empty.
     pub fn n_sites(&self) -> usize {
         self.n_sites

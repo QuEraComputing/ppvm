@@ -3,8 +3,8 @@
 
 //! Heisenberg rotations, with reduction and truncation left to the caller.
 //! Two-site generators drop lost sites, leaving a rotation on the survivor.
-//! CRx inherits this convention through Rx(theta/2) and RZX(-theta/2): a lost
-//! control cancels the rotations; a lost target leaves Rz(-theta/2) on control.
+//! For CRx, a lost control cancels the rotations; a lost target leaves
+//! Rz(-theta/2) on the control.
 
 use ppvm_traits_2::{
     Angle, CRx, Coefficient, Pauli, PauliBits, RotXY, RotationOne, RotationOneBatch, RotationTwo,
@@ -20,35 +20,19 @@ where
     A: Angle<S::Coeff>,
 {
     fn rotate_1(&mut self, axis: Pauli, qubit: usize, theta: A) {
-        assert!(qubit < self.n_sites(), "qubit out of bounds");
+        self.check_qubit(qubit);
         if axis == Pauli::I {
             return;
         }
         let (sin, cos) = theta.sin_cos();
-        self.storage.branch_in_place(|key, coeff| {
-            if key.is_lost(qubit) {
-                return None;
-            }
-            let x = key.x_bit(qubit);
-            let z = key.z_bit(qubit);
-            // Heisenberg conjugation: Rx sends Z to cos(theta) Z + sin(theta) Y.
-            let (toggle_x, toggle_z, negative) = match axis {
-                Pauli::X if z => (true, false, x),
-                Pauli::Y if x != z => (true, true, z),
-                Pauli::Z if x => (false, true, !z),
-                _ => return None,
-            };
-            let branch = coeff.clone() * sin.mul_sign(if negative { -1 } else { 1 });
-            *coeff *= &cos;
-            Some((key.toggled_bits(qubit, toggle_x, toggle_z), branch))
-        });
+        self.storage
+            .branch_in_place(|key, coeff| single_branch(key, coeff, axis, qubit, &sin, &cos));
     }
 }
 
-impl<S, P, A> RotationOneBatch<S::Coeff, A> for Sum<S, P>
+impl<S: Support, P, A> RotationOneBatch<S::Coeff, A> for Sum<S, P>
 where
-    S: BranchInPlace,
-    S::Key: PauliBits + LossInfo,
+    Self: RotationOne<S::Coeff, A>,
     A: Angle<S::Coeff>,
 {
 }
@@ -60,11 +44,7 @@ where
     A: Angle<S::Coeff>,
 {
     fn rotate_2(&mut self, axis_a: Pauli, axis_b: Pauli, a: usize, b: usize, theta: A) {
-        assert!(
-            a < self.n_sites() && b < self.n_sites(),
-            "qubit out of bounds"
-        );
-        assert_ne!(a, b, "rotation requires distinct qubits");
+        self.check_pair(a, b);
         let (sin, cos) = theta.sin_cos();
         self.storage.branch_in_place(|key, coeff| {
             // A lost site drops out of the generator, preserving the reference's
@@ -86,11 +66,7 @@ where
 
     #[inline]
     fn rxx(&mut self, a: usize, b: usize, theta: A) {
-        assert!(
-            a < self.n_sites() && b < self.n_sites(),
-            "qubit out of bounds"
-        );
-        assert_ne!(a, b, "rotation requires distinct qubits");
+        self.check_pair(a, b);
         let (sin, cos) = theta.sin_cos();
         self.storage.branch_in_place(|key, coeff| {
             if key.is_lost(a) {
@@ -119,11 +95,7 @@ where
 
     #[inline]
     fn ryy(&mut self, a: usize, b: usize, theta: A) {
-        assert!(
-            a < self.n_sites() && b < self.n_sites(),
-            "qubit out of bounds"
-        );
-        assert_ne!(a, b, "rotation requires distinct qubits");
+        self.check_pair(a, b);
         let (sin, cos) = theta.sin_cos();
         self.storage.branch_in_place(|key, coeff| {
             if key.is_lost(a) {
@@ -150,11 +122,7 @@ where
 
     #[inline]
     fn rzz(&mut self, a: usize, b: usize, theta: A) {
-        assert!(
-            a < self.n_sites() && b < self.n_sites(),
-            "qubit out of bounds"
-        );
-        assert_ne!(a, b, "rotation requires distinct qubits");
+        self.check_pair(a, b);
         let (sin, cos) = theta.sin_cos();
         self.storage.branch_in_place(|key, coeff| {
             if key.is_lost(a) {
@@ -193,10 +161,9 @@ fn local_product(axis: Pauli, x: bool, z: bool) -> ([bool; 2], bool, bool) {
     }
 }
 
-impl<S, P, A> RotationTwoBatch<S::Coeff, A> for Sum<S, P>
+impl<S: Support, P, A> RotationTwoBatch<S::Coeff, A> for Sum<S, P>
 where
-    S: BranchInPlace,
-    S::Key: PauliBits + LossInfo,
+    Self: RotationTwo<S::Coeff, A>,
     A: Angle<S::Coeff>,
 {
 }
@@ -246,11 +213,7 @@ where
     A: Angle<S::Coeff> + Clone + std::ops::Mul<f64, Output = A> + std::ops::Neg<Output = A>,
 {
     fn crx(&mut self, control: usize, target: usize, theta: A) {
-        assert!(
-            control < self.n_sites() && target < self.n_sites(),
-            "qubit out of bounds"
-        );
-        assert_ne!(control, target, "rotation requires distinct qubits");
+        self.check_pair(control, target);
         // |1><1| ⊗ X = (IX - ZX)/2. The two generators commute.
         // Loss follows the constituent rotations' surviving-site convention.
         let half = theta * 0.5;
@@ -259,7 +222,7 @@ where
     }
 }
 
-// Single-site fallback for a two-site rotation whose other site is lost.
+// Shared by single-qubit rotations and the surviving-site loss fallback.
 #[inline]
 fn single_branch<W: PauliBits + LossInfo + Clone, C: Coefficient>(
     key: &W,
@@ -272,11 +235,16 @@ fn single_branch<W: PauliBits + LossInfo + Clone, C: Coefficient>(
     if key.is_lost(qubit) {
         return None;
     }
-    let (mask, anti, negative) = local_product(axis, key.x_bit(qubit), key.z_bit(qubit));
-    if !anti {
-        return None;
-    }
+    let x = key.x_bit(qubit);
+    let z = key.z_bit(qubit);
+    // Heisenberg conjugation: Rx sends Z to cos(theta) Z + sin(theta) Y.
+    let (toggle_x, toggle_z, negative) = match axis {
+        Pauli::X if z => (true, false, x),
+        Pauli::Y if x != z => (true, true, z),
+        Pauli::Z if x => (false, true, !z),
+        _ => return None,
+    };
     let branch = coeff.clone() * sin.mul_sign(if negative { -1 } else { 1 });
     *coeff *= cos;
-    Some((key.toggled_bits(qubit, mask[0], mask[1]), branch))
+    Some((key.toggled_bits(qubit, toggle_x, toggle_z), branch))
 }

@@ -3,7 +3,7 @@
 
 use approx::assert_abs_diff_eq;
 use num::Complex;
-use ppvm_pauli_sum_2::{LossyPauliSum, LossyPauliWord, PauliSum};
+use ppvm_pauli_sum_2::{LossyPauliSum, LossyPauliWord, PauliSum, PauliWord};
 use ppvm_traits_2::{
     CRx, Pauli, RotXY, RotationOne, RotationOneBatch, RotationTwo, RotationTwoBatch, TGate, U3Gate,
 };
@@ -52,7 +52,7 @@ fn observable() -> PauliSum<C> {
         for (j, (_, b)) in AXES.iter().enumerate() {
             sum += (
                 format!("{a}{b}").as_str(),
-                C::new((i * 4 + j + 1) as f64 / 17.0, (i as f64 - j as f64) / 9.0),
+                C::new((i * 4 + j + 1) as f64, i as f64 - j as f64),
             );
         }
     }
@@ -63,7 +63,7 @@ fn matrix(sum: &PauliSum<C>) -> Matrix {
     let mut out = [[C::new(0.0, 0.0); 4]; 4];
     for (a, ca) in AXES {
         for (b, cb) in AXES {
-            let key = ppvm_pauli_sum_2::PauliWord::from(format!("{ca}{cb}").as_str());
+            let key = PauliWord::from(format!("{ca}{cb}").as_str());
             let coeff = sum.get(&key).unwrap_or_default();
             let term = pauli(a, b);
             for i in 0..4 {
@@ -121,33 +121,27 @@ fn lost_sites_reduce_to_surviving_rotation() {
 }
 
 #[test]
-fn composite_interfaces_match_dense_unitaries() {
+fn u3_matches_dense_unitary() {
     let mut sum = observable();
     sum.u3(1, 0.37, -0.51, 0.82);
-    check_conjugation(
-        &sum,
-        multiply(
-            multiply(
-                rotation(Pauli::I, Pauli::Z, -0.51),
-                rotation(Pauli::I, Pauli::Y, 0.37),
-            ),
-            rotation(Pauli::I, Pauli::Z, 0.82),
-        ),
-    );
+    let phi = rotation(Pauli::I, Pauli::Z, -0.51);
+    let theta = rotation(Pauli::I, Pauli::Y, 0.37);
+    let lambda = rotation(Pauli::I, Pauli::Z, 0.82);
+    check_conjugation(&sum, multiply(multiply(phi, theta), lambda));
+}
 
+#[test]
+fn xy_rotation_matches_dense_unitary() {
     let mut sum = observable();
     sum.r(1, 0.51, 0.37);
-    check_conjugation(
-        &sum,
-        multiply(
-            multiply(
-                rotation(Pauli::I, Pauli::Z, 0.51),
-                rotation(Pauli::I, Pauli::X, 0.37),
-            ),
-            rotation(Pauli::I, Pauli::Z, -0.51),
-        ),
-    );
+    let forward = rotation(Pauli::I, Pauli::Z, 0.51);
+    let x = rotation(Pauli::I, Pauli::X, 0.37);
+    let backward = rotation(Pauli::I, Pauli::Z, -0.51);
+    check_conjugation(&sum, multiply(multiply(forward, x), backward));
+}
 
+#[test]
+fn t_matches_dense_unitary_and_t_dag_inverts_it() {
     let mut sum = observable();
     sum.t(1);
     check_conjugation(
@@ -156,24 +150,25 @@ fn composite_interfaces_match_dense_unitaries() {
     );
     sum.t_dag(1);
     assert_abs_diff_eq!(sum, observable(), epsilon = 1e-12);
+}
 
+#[test]
+fn crx_matches_dense_unitary() {
     for theta in [0.0, 0.37, -0.81] {
         let mut sum = observable();
         sum.crx(0, 1, theta);
-        // Build a controlled Rx directly: identity in the control=0 block.
+        // Identity for control=0, Rx for control=1.
         let rx = rotation(Pauli::I, Pauli::X, theta);
         let mut unitary = pauli(Pauli::I, Pauli::I);
         for i in 2..4 {
-            for j in 2..4 {
-                unitary[i][j] = rx[i][j];
-            }
+            unitary[i][2..4].copy_from_slice(&rx[i][2..4]);
         }
         check_conjugation(&sum, unitary);
     }
 }
 
 #[test]
-fn batches_match_ordered_scalar_calls() {
+fn single_batches_match_ordered_scalar_calls() {
     type Single = fn(&mut PauliSum<C>, usize, f64);
     type Singles = fn(&mut PauliSum<C>, &[usize], f64);
     let singles: [(Single, Singles); 3] = [
@@ -190,6 +185,10 @@ fn batches_match_ordered_scalar_calls() {
         }
         assert_abs_diff_eq!(sum, expected, epsilon = 1e-12);
     }
+}
+
+#[test]
+fn pair_batches_match_ordered_scalar_calls() {
     type Pair = fn(&mut PauliSum<C>, usize, usize, f64);
     type Pairs = fn(&mut PauliSum<C>, &[(usize, usize)], f64);
     let pairs: [(Pair, Pairs); 9] = [
@@ -211,6 +210,10 @@ fn batches_match_ordered_scalar_calls() {
         scalar(&mut expected, 1, 0, 0.37);
         assert_abs_diff_eq!(sum, expected, epsilon = 1e-12);
     }
+}
+
+#[test]
+fn t_batches_invert_each_other() {
     let mut sum = observable();
     sum.t_many(&[0, 1]);
     sum.t_dag_many(&[0, 1]);
@@ -237,10 +240,13 @@ fn two_qubit_zero_branches_remain_until_reduced() {
     sum += ("ZI", 2.0);
     sum.rxx(0, 1, 0.0);
     assert_eq!(sum.len(), 2);
-    assert_eq!(sum.get(&ppvm_pauli_sum_2::PauliWord::from("YX")), Some(0.0));
+    assert_eq!(sum.get(&PauliWord::from("YX")), Some(0.0));
     sum.reduce();
     assert_eq!(sum.len(), 1);
+}
 
+#[test]
+fn crx_accepts_complex_angles() {
     let mut sum = observable();
     sum.crx(0, 1, C::new(0.37, 0.0));
     let mut expected = observable();
@@ -279,18 +285,19 @@ fn specialized_pairs_match_generic_with_loss_and_complex_coefficients() {
         (Pauli::Y, LossyPauliSum::ryy),
         (Pauli::Z, LossyPauliSum::rzz),
     ];
+    let mut original = LossyPauliSum::<C>::new(2);
+    for (i, x) in "IXYZL".chars().enumerate() {
+        for (j, y) in "IXYZL".chars().enumerate() {
+            original += (
+                format!("{x}{y}").as_str(),
+                C::new(i as f64 - 2.0, j as f64 - 1.0),
+            );
+        }
+    }
     for (axis, gate) in gates {
         for theta in [0.0, 0.37, -0.81] {
             for (a, b) in [(0, 1), (1, 0)] {
-                let mut sum = LossyPauliSum::<C>::new(2);
-                for (i, x) in "IXYZL".chars().enumerate() {
-                    for (j, y) in "IXYZL".chars().enumerate() {
-                        sum += (
-                            format!("{x}{y}").as_str(),
-                            C::new(i as f64 - 2.0, j as f64 - 1.0),
-                        );
-                    }
-                }
+                let mut sum = original.clone();
                 let mut expected = sum.clone();
                 expected.rotate_2(axis, axis, a, b, theta);
                 gate(&mut sum, a, b, theta);

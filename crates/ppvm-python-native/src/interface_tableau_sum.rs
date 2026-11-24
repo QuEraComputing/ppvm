@@ -144,6 +144,12 @@ macro_rules! create_sum_interface {
                 self.cz(targets)
             }
 
+            pub fn ccz(&mut self, targets: Vec<usize>) -> PyResult<()> {
+                let triples = crate::flat_triples(&targets, self.inner.n_qubits)?;
+                self.inner.ccz_many(&triples);
+                Ok(())
+            }
+
             pub fn t(&mut self, targets: Vec<usize>) {
                 self.inner.t_many(targets.as_slice());
             }

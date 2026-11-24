@@ -124,6 +124,40 @@ def _split_targets_parameter_truncate(
     return args, value, truncate
 
 
+class CCZMixin:
+    """Native controlled-controlled-Z gates."""
+
+    _interface: Any
+
+    def ccz(self, *targets: int | Iterable[int]) -> None:
+        """Apply CCZ over consecutive triples of distinct qubits.
+
+        CCZ changes the sign of ``|111⟩`` and leaves other basis states unchanged.
+        A triple containing a lost or leaked qubit has no effect.
+
+        Args:
+            *targets: Flat qubit indices, such as ``ccz(0, 1, 2)`` or
+                ``ccz([0, 1, 2, 3, 4, 5])`` for two gates.
+        """
+        self._interface.ccz(_normalize_targets(targets))
+
+
+class TruncatingCCZMixin(CCZMixin):
+    """CCZ gates with optional Pauli-sum truncation."""
+
+    def ccz(self, *targets: int | Iterable[int], truncate: bool = True) -> None:
+        """Apply CCZ over consecutive triples of distinct qubits.
+
+        See `CCZMixin.ccz` for the gate and loss behavior.
+
+        Args:
+            *targets: A flat list of qubit indices, grouped in triples.
+            truncate: Apply the configured truncation strategy after all triples.
+                Pass ``False`` to defer truncation.
+        """
+        self._interface.ccz(_normalize_targets(targets), truncate)
+
+
 class CliffordMixin:
     """Clifford gates without per-gate truncation control."""
 

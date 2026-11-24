@@ -153,6 +153,10 @@ fn bench_non_clifford_gates(c: &mut Criterion) {
     // |0,0> state: XX anticommutes with Z⊗I stabilizer → branching for rxx
     let tab_zero_2q = Tab::new(N_QUBITS, 1e-10);
 
+    // |+++> state: CCZ creates eight coefficient branches.
+    let mut tab_plus_3q = Tab::new(N_QUBITS, 1e-10);
+    tab_plus_3q.h_many(&[0, 1, 2]);
+
     let mut group = c.benchmark_group("gates/non-clifford");
 
     let pi_4 = std::f64::consts::FRAC_PI_4;
@@ -189,6 +193,13 @@ fn bench_non_clifford_gates(c: &mut Criterion) {
         b.iter_batched_ref(
             || tab_plus.fork(None),
             |t| t.u3(0, pi_4, pi_4, pi_4),
+            criterion::BatchSize::SmallInput,
+        );
+    });
+    group.bench_function("ccz", |b| {
+        b.iter_batched_ref(
+            || tab_plus_3q.fork(None),
+            |t| t.ccz(0, 1, 2),
             criterion::BatchSize::SmallInput,
         );
     });

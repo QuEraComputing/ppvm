@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: 2026 The PPVM Authors
 // SPDX-License-Identifier: Apache-2.0
 
+mod ccz;
 mod crx;
 mod proj;
 mod rot1;
@@ -8,6 +9,7 @@ mod rot2;
 mod tgate;
 mod u3;
 
+pub use ccz::CCZGate;
 pub use crx::CRx;
 pub use proj::Projection;
 pub use rot1::{RotXY, RotationOne};

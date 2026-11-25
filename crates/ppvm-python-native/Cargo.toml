@@ -15,6 +15,7 @@ crate-type = ["cdylib"]
 test = false
 
 [dependencies]
+ppvm-code = { path = "../ppvm-code" }
 bnum = "0.13.0"
 # mimalloc reduces peak RSS for the allocation-heavy adaptive-Pauli (lindblad)
 # paths; installed as the global allocator in lib.rs.

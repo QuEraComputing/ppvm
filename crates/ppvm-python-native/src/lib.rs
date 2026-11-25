@@ -11,6 +11,7 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
+pub mod code;
 pub mod interface;
 pub mod interface_tableau;
 pub mod interface_tableau_sum;
@@ -38,6 +39,9 @@ pub(crate) fn flat_pairs(targets: &[usize]) -> PyResult<Vec<(usize, usize)>> {
 #[pymodule]
 pub mod _core {
     // NOTE: it's not possible to use #[pymodule_export] inside a macro_rules!
+
+    #[pymodule_export]
+    pub use crate::code::CodeSpec;
 
     // PauliSum
     #[pymodule_export]

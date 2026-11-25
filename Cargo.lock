@@ -2186,6 +2186,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "ppvm-code"
+version = "0.4.1"
+dependencies = [
+ "ppvm-pauli-kernels",
+]
+
+[[package]]
 name = "ppvm-lindblad"
 version = "0.4.1"
 dependencies = [
@@ -2285,6 +2292,7 @@ dependencies = [
  "num",
  "numpy",
  "paste",
+ "ppvm-code",
  "ppvm-lindblad",
  "ppvm-pauli-sum",
  "ppvm-stim",

@@ -26,6 +26,7 @@ dependencies = [
     "bloqade-circuit>=0.15.5",
     "kirin-toolchain~=0.22.2",
     "numpy>=2.2.6",
+    "stim>=1.15",
     "typing-extensions>=4.0",
 ]
 

@@ -12,6 +12,7 @@ ppvm-sym = { version = "0.4.1", path = "crates/ppvm-sym" }
 
 [workspace]
 members = [
+    "crates/ppvm-code",
     "crates/ppvm-traits",
     "crates/ppvm-pauli-word",
     "crates/ppvm-pauli-sum",

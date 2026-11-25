@@ -2,6 +2,39 @@ from collections.abc import Sequence
 
 import numpy as np
 
+class CodeSpec:
+    def contains_stabilizer(self, op: str) -> bool: ...
+    def terminal_readout(
+        self, axes: str, logical_axes: str
+    ) -> tuple[list[tuple[list[int], bool]], list[tuple[list[int], bool]]]: ...
+    def __init__(
+        self,
+        n: int,
+        stabilizers: list[str],
+        logical_xs: list[str] | None = ...,
+        logical_zs: list[str] | None = ...,
+    ) -> None: ...
+    @staticmethod
+    def from_tableau(
+        xs: np.ndarray,
+        zs: np.ndarray,
+        signs: np.ndarray,
+        logical_xs: list[str] | None = ...,
+        logical_zs: list[str] | None = ...,
+    ) -> CodeSpec: ...
+    @property
+    def n(self) -> int: ...
+    @property
+    def k(self) -> int: ...
+    @property
+    def stabilizers(self) -> list[str]: ...
+    @property
+    def independent_stabilizers(self) -> list[str]: ...
+    @property
+    def logical_xs(self) -> list[str]: ...
+    @property
+    def logical_zs(self) -> list[str]: ...
+
 class _PauliSumBase:
     def __init__(
         self,
